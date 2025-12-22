@@ -19,32 +19,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
-    op.create_table('user_integrations',
-    sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('user_id', sa.Uuid(), nullable=False),
-    sa.Column('workspace_id', sa.Uuid(), nullable=True, comment='Workspace this integration belongs to (null = user-level)'),
-    sa.Column('integration_id', sa.String(length=100), nullable=False, comment="Integration slug (e.g., 'hubspot', 'slack')"),
-    sa.Column('integration_name', sa.String(length=200), nullable=False, comment="Display name (e.g., 'HubSpot', 'Slack')"),
-    sa.Column('credentials', sa.JSON(), nullable=False, comment='Encrypted credentials (access_token, api_key, etc.)'),
-    sa.Column('is_active', sa.Boolean(), nullable=False, default=True, comment='Whether integration is currently active'),
-    sa.Column('last_used_at', sa.DateTime(timezone=True), nullable=True, comment='Last time integration was used'),
-    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True, comment='OAuth token expiration (if applicable)'),
-    sa.Column('refresh_token', sa.Text(), nullable=True, comment='OAuth refresh token (encrypted)'),
-    sa.Column('integration_metadata', sa.JSON(), nullable=True, comment='Additional integration-specific metadata'),
-    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
-    sa.ForeignKeyConstraint(['workspace_id'], ['workspaces.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_user_integrations_integration_id'), 'user_integrations', ['integration_id'], unique=False)
-    op.create_index(op.f('ix_user_integrations_user_id'), 'user_integrations', ['user_id'], unique=False)
-    op.create_index(op.f('ix_user_integrations_workspace_id'), 'user_integrations', ['workspace_id'], unique=False)
+    """Upgrade schema - No-op migration (workspace_id already added by migration 009)."""
+    # This migration is a no-op because migration 009_add_workspace_to_calls_integrations_phones
+    # already adds workspace_id to user_integrations table
+    pass
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
-    op.drop_index(op.f('ix_user_integrations_workspace_id'), table_name='user_integrations')
-    op.drop_index(op.f('ix_user_integrations_user_id'), table_name='user_integrations')
-    op.drop_index(op.f('ix_user_integrations_integration_id'), table_name='user_integrations')
-    op.drop_table('user_integrations')
+    """Downgrade schema - No-op migration."""
+    # This migration is a no-op
+    pass
