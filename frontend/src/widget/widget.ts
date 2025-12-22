@@ -1,9 +1,9 @@
 /**
- * Voice Noob Widget - Standalone Web Component
+ * Avenge Voice Widget - Standalone Web Component
  *
  * This script creates a floating voice chat widget that can be embedded on any website.
  * Usage:
- *   <script src="https://voicenoob.com/widget/v1/widget.js" defer></script>
+ *   <script src="https://avengevoice.com/widget/v1/widget.js" defer></script>
  *   <voice-agent agent-id="ag_xK9mN2pQ"></voice-agent>
  */
 
@@ -387,7 +387,7 @@ class VoiceAgentElement extends HTMLElement {
             <span id="button-text">${this.buttonText}</span>
           </button>
           <div class="va-widget-branding">
-            Powered by <a href="https://voicenoob.com" target="_blank" rel="noopener noreferrer">Voice Noob</a>
+            Powered by <a href="https://avengevoice.com" target="_blank" rel="noopener noreferrer">Avenge Voice</a>
           </div>
         </div>
       </div>

@@ -131,10 +131,10 @@ export function AppSidebar() {
               backgroundSize: "200% 100%",
             }}
             initial={false}
-            animate={{ width: sidebarOpen ? 100 : 11 }}
+            animate={{ width: sidebarOpen ? 120 : 11 }}
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
           >
-            Voice Noob
+            Avenge Voice
           </motion.span>
         </Link>
       </div>

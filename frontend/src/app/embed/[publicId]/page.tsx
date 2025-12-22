@@ -994,13 +994,13 @@ export default function EmbedPage() {
         <div className="mt-3 text-center text-xs" style={{ color: isDark ? "#6b7280" : "#9ca3af" }}>
           Powered by{" "}
           <a
-            href="https://voicenoob.com"
+            href="https://avengevoice.com"
             target="_blank"
             rel="noopener noreferrer"
             className="transition-colors duration-200 hover:underline"
             style={{ color: primaryColor }}
           >
-            Voice Noob
+            Avenge Voice
           </a>
         </div>
       )}
