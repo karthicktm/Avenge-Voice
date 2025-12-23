@@ -13,16 +13,14 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv (fast Python package installer) and add to PATH in same layer
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    echo 'export PATH="/root/.cargo/bin:$PATH"' >> ~/.bashrc
-ENV PATH="/root/.cargo/bin:${PATH}"
+# Install uv using pip (more reliable in Docker)
+RUN pip install --no-cache-dir uv
 
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies using uv (use full path to ensure it's found)
-RUN /root/.cargo/bin/uv sync --frozen --no-dev
+# Install Python dependencies using uv
+RUN uv sync --frozen --no-dev
 
 # Copy application code
 COPY . .
@@ -35,5 +33,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Run database migrations and start server
-CMD /root/.cargo/bin/uv run alembic upgrade head && \
-    /root/.cargo/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD uv run alembic upgrade head && \
+    uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
