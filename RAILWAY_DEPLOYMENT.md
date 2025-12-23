@@ -57,12 +57,15 @@ Or use the Railway dashboard: https://railway.app/new
 
 #### A. Add Backend Service
 
-1. Click **"+ New"** → **"GitHub Repo"** or **"Empty Service"**
-2. If using GitHub:
-   - Connect your repository
+1. Click **"+ New"** → **"GitHub Repo"**
+2. Connect your repository
+3. **IMPORTANT - Monorepo Setup**:
+   - Go to **Settings** → **General**
    - Set **Root Directory**: `backend`
-   - Railway will auto-detect Dockerfile
-3. Service will be named `backend` (you can rename)
+   - **Watch Paths**: `backend/**`
+   - Railway will auto-detect `backend/Dockerfile`
+   - Builder should show: `DOCKERFILE`
+4. Service will be named `backend` (you can rename)
 
 #### B. Configure Backend Environment Variables
 
@@ -127,12 +130,15 @@ Click **"Deploy"** - Railway will:
 
 #### A. Add Frontend Service
 
-1. Click **"+ New"** → **"GitHub Repo"** or **"Empty Service"**
-2. If using GitHub:
-   - Connect same repository
+1. Click **"+ New"** → **"GitHub Repo"**
+2. Select the **same repository** as backend
+3. **IMPORTANT - Monorepo Setup**:
+   - Go to **Settings** → **General**
    - Set **Root Directory**: `frontend`
-   - Railway will auto-detect Dockerfile
-3. Service will be named `frontend`
+   - **Watch Paths**: `frontend/**`
+   - Railway will auto-detect `frontend/Dockerfile`
+   - Builder should show: `DOCKERFILE`
+4. Service will be named `frontend`
 
 #### B. Configure Frontend Environment Variables
 
