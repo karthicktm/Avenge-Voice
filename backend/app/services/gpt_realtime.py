@@ -133,6 +133,7 @@ class GPTRealtimeSession:
         agent_config: dict[str, Any],
         session_id: str | None = None,
         workspace_id: uuid.UUID | None = None,
+        agent_id: uuid.UUID | None = None,
     ) -> None:
         """Initialize GPT Realtime session.
 
@@ -142,11 +143,13 @@ class GPTRealtimeSession:
             agent_config: Agent configuration (system prompt, enabled integrations, etc.)
             session_id: Optional session ID
             workspace_id: Workspace UUID (required for API key isolation)
+            agent_id: Agent UUID (required for agent-specific tools like RAG)
         """
         self.db = db
         self.user_id = user_id  # int for ToolRegistry (Contact queries)
         self.user_id_uuid = user_id_to_uuid(user_id)  # UUID for UserSettings queries
         self.workspace_id = workspace_id  # For workspace-isolated API key lookup
+        self.agent_id = agent_id  # For agent-specific tools (RAG knowledge base)
         self.agent_config = agent_config
         self.session_id = session_id or str(uuid.uuid4())
         self.connection: Any = None
@@ -196,7 +199,11 @@ class GPTRealtimeSession:
 
         # Initialize tool registry with enabled tools and workspace context
         self.tool_registry = ToolRegistry(
-            self.db, self.user_id, integrations=integrations, workspace_id=self.workspace_id
+            self.db,
+            self.user_id,
+            integrations=integrations,
+            workspace_id=self.workspace_id,
+            agent_id=self.agent_id,
         )
 
         # Connect to OpenAI Realtime API

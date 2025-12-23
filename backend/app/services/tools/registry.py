@@ -1,5 +1,6 @@
 """Tool registry for managing available tools for voice agents."""
 
+import uuid
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,7 @@ from app.services.tools.calendly_tools import CalendlyTools
 from app.services.tools.call_control_tools import CallControlTools
 from app.services.tools.crm_tools import CRMTools
 from app.services.tools.gohighlevel_tools import GoHighLevelTools
+from app.services.tools.rag_tools import RAGTools
 from app.services.tools.shopify_tools import ShopifyTools
 from app.services.tools.sms_tools import TelnyxSMSTools, TwilioSMSTools
 
@@ -27,6 +29,7 @@ class ToolRegistry:
         user_id: int,
         integrations: dict[str, dict[str, Any]] | None = None,
         workspace_id: Any | None = None,
+        agent_id: uuid.UUID | None = None,
     ) -> None:
         """Initialize tool registry.
 
@@ -36,17 +39,20 @@ class ToolRegistry:
             integrations: Dict of integration credentials keyed by integration_id
                          e.g., {"gohighlevel": {"access_token": "...", "location_id": "..."}}
             workspace_id: Workspace UUID for scoping CRM operations
+            agent_id: Agent UUID for agent-specific tools (e.g., RAG knowledge base)
         """
         self.db = db
         self.user_id = user_id
         self.integrations = integrations or {}
         self.workspace_id = workspace_id
+        self.agent_id = agent_id
         self.crm_tools = CRMTools(db, user_id, workspace_id=workspace_id)
         self._ghl_tools: GoHighLevelTools | None = None
         self._calendly_tools: CalendlyTools | None = None
         self._shopify_tools: ShopifyTools | None = None
         self._twilio_sms_tools: TwilioSMSTools | None = None
         self._telnyx_sms_tools: TelnyxSMSTools | None = None
+        self._rag_tools: RAGTools | None = None
 
     def _get_ghl_tools(self) -> GoHighLevelTools | None:
         """Get GoHighLevel tools if credentials are available."""
@@ -129,6 +135,17 @@ class ToolRegistry:
 
         return None
 
+    def _get_rag_tools(self) -> RAGTools | None:
+        """Get RAG tools if agent_id is available."""
+        if self._rag_tools:
+            return self._rag_tools
+
+        if self.agent_id:
+            self._rag_tools = RAGTools(db=self.db, agent_id=self.agent_id)
+            return self._rag_tools
+
+        return None
+
     def get_all_tool_definitions(
         self,
         enabled_tools: list[str],
@@ -201,6 +218,13 @@ class ToolRegistry:
         if "telnyx-sms" in enabled_tools and self._get_telnyx_sms_tools():
             telnyx_tools = TelnyxSMSTools.get_tool_definitions()
             tools.extend(filter_tools("telnyx-sms", telnyx_tools))
+
+        # RAG tools - built-in, always available if agent_id is set and "rag" is enabled
+        if "rag" in enabled_tools and self._get_rag_tools():
+            rag_tools_instance = self._get_rag_tools()
+            if rag_tools_instance:
+                rag_tools = rag_tools_instance.get_tool_definitions()
+                tools.extend(filter_tools("rag", rag_tools))
 
         return tools
 
@@ -333,6 +357,20 @@ class ToolRegistry:
                     "error": "Telnyx SMS integration not configured. Please add your API credentials.",
                 }
             return await telnyx_tools.execute_tool(tool_name, arguments)
+
+        # RAG tools
+        rag_tool_names = {
+            "search_knowledge_base",
+        }
+
+        if tool_name in rag_tool_names:
+            rag_tools = self._get_rag_tools()
+            if not rag_tools:
+                return {
+                    "success": False,
+                    "error": "RAG tools not available. Agent ID required for knowledge base search.",
+                }
+            return await rag_tools.execute_tool(tool_name, arguments)
 
         # Unknown tool
         return {"success": False, "error": f"Unknown tool: {tool_name}"}

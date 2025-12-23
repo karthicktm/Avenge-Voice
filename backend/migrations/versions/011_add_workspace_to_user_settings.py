@@ -1,6 +1,6 @@
 """Add workspace_id to user_settings table for per-workspace API keys.
 
-Revision ID: 011_add_workspace_to_user_settings
+Revision ID: 011_workspace_user_settings
 Revises: e0fb7b56d9b4
 Create Date: 2024-11-29
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "011_add_workspace_to_user_settings"
+revision: str = "011_workspace_user_settings"
 down_revision: str | None = "e0fb7b56d9b4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

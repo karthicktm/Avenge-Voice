@@ -162,6 +162,30 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
       },
     ],
   },
+  {
+    id: "rag",
+    name: "Knowledge Base (RAG)",
+    slug: "knowledge-base",
+    description:
+      "Search uploaded documents to answer questions. Upload PDFs, Word docs, spreadsheets, and text files to create a custom knowledge base for your voice agent.",
+    category: "other",
+    authType: "none",
+    icon: "https://cdn.simpleicons.org/database",
+    enabled: true,
+    isBuiltIn: true,
+    badge: "Avenge Voice",
+    documentationUrl: "/docs/knowledge-base-tools",
+    tools: [
+      {
+        id: "search_knowledge_base",
+        name: "Search Knowledge Base",
+        description:
+          "Search through uploaded documents using AI-powered semantic search. Perfect for answering questions about products, policies, documentation, or any information in your knowledge base.",
+        riskLevel: "safe",
+        defaultEnabled: true,
+      },
+    ],
+  },
 
   // External CRM
   {

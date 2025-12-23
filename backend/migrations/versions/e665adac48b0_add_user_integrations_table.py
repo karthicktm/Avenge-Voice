@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema - No-op migration (workspace_id already added by migration 009)."""
-    # This migration is a no-op because migration 009_add_workspace_to_calls_integrations_phones
+    # This migration is a no-op because migration 009_workspace_to_tables
     # already adds workspace_id to user_integrations table
     pass
 

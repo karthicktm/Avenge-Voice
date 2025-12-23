@@ -140,6 +140,16 @@ async def create_agent(
     # Build provider config based on tier (from pricing-tiers.ts)
     provider_config = _get_provider_config(agent_request.pricing_tier)
 
+    # Generate unique public_id for embed functionality
+    public_id = None
+    while True:
+        candidate_id = generate_public_id()
+        # Check for collision
+        existing = await db.execute(select(Agent).where(Agent.public_id == candidate_id))
+        if not existing.scalar_one_or_none():
+            public_id = candidate_id
+            break
+
     agent = Agent(
         user_id=current_user.id,
         name=agent_request.name,
@@ -161,6 +171,7 @@ async def create_agent(
         max_tokens=agent_request.max_tokens,
         initial_greeting=agent_request.initial_greeting,
         provider_config=provider_config,
+        public_id=public_id,  # Set public_id for embed widget
         is_active=True,
         is_published=False,
     )

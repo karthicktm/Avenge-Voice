@@ -132,5 +132,13 @@ class Settings(BaseSettings):
     OTEL_SERVICE_NAME: str = "voicenoob-api"
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
 
+    # RAG (Retrieval Augmented Generation) Configuration
+    RAG_CHUNK_SIZE: int = 500  # Target chunk size in tokens
+    RAG_CHUNK_OVERLAP: int = 50  # Overlap between chunks in tokens
+    RAG_DEFAULT_TOP_K: int = 3  # Default number of search results
+    RAG_MAX_FILE_SIZE: int = 10_485_760  # 10MB max file size
+    RAG_EMBEDDING_MODEL: str = "text-embedding-3-small"  # OpenAI embedding model
+    RAG_EMBEDDING_DIMENSIONS: int = 1536  # Embedding dimensions for text-embedding-3-small
+
 
 settings = Settings()

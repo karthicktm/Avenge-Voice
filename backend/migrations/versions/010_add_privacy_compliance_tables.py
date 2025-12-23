@@ -1,7 +1,7 @@
 """Add privacy and compliance tables for GDPR/CCPA.
 
-Revision ID: 010_add_privacy_compliance_tables
-Revises: 009_add_workspace_to_calls_integrations_phones
+Revision ID: 010_privacy_compliance
+Revises: 009_workspace_to_tables
 Create Date: 2024-11-27
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "010_add_privacy_compliance_tables"
-down_revision: str | None = "009_add_workspace_to_calls_integrations_phones"
+revision: str = "010_privacy_compliance"
+down_revision: str | None = "009_workspace_to_tables"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

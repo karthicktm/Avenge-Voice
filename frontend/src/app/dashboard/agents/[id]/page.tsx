@@ -56,6 +56,7 @@ import { api } from "@/lib/api";
 import { getLanguagesForTier } from "@/lib/languages";
 import { AVAILABLE_INTEGRATIONS } from "@/lib/integrations";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { KnowledgeBaseTab } from "./knowledge-base-tab";
 
 import {
   AlertDialog,
@@ -737,6 +738,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
               {!isRealtimeProvider && <TabTriggerWithErrors value="voice" label="Voice" />}
               <TabTriggerWithErrors value="llm" label="AI Model" />
               <TabTriggerWithErrors value="tools" label="Tools" />
+              <TabTriggerWithErrors value="knowledge-base" label="Knowledge Base" />
               <TabTriggerWithErrors value="advanced" label="Advanced" />
             </TabsList>
 
@@ -1577,6 +1579,10 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                   </div>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="knowledge-base" className="mt-4">
+              <KnowledgeBaseTab agentId={agentId} />
             </TabsContent>
 
             <TabsContent value="advanced" className="mt-4 space-y-3">

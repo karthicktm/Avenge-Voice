@@ -361,6 +361,7 @@ async def embed_websocket(
                 agent_config=agent_config,
                 session_id=ws_session_id,
                 workspace_id=workspace_id,
+                agent_id=agent.id,
             ) as realtime_session:
                 await websocket.send_json(
                     {

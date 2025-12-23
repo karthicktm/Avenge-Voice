@@ -142,7 +142,8 @@ export default function EmbedPage() {
   useEffect(() => {
     async function fetchConfig() {
       try {
-        const res = await fetch(`/api/public/embed/${publicId}/config`, {
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const res = await fetch(`${API_BASE}/api/public/embed/${publicId}/config`, {
           headers: { Origin: window.location.origin },
         });
         if (!res.ok) {
@@ -281,7 +282,8 @@ export default function EmbedPage() {
       : 0;
 
     try {
-      await fetch(`/api/public/embed/${publicId}/transcript`, {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      await fetch(`${API_BASE}/api/public/embed/${publicId}/transcript`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -402,7 +404,8 @@ export default function EmbedPage() {
 
     try {
       // Get ephemeral token from backend
-      const tokenRes = await fetch(`/api/public/embed/${publicId}/token`, {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const tokenRes = await fetch(`${API_BASE}/api/public/embed/${publicId}/token`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -566,7 +569,8 @@ export default function EmbedPage() {
         args: Record<string, unknown>
       ) => {
         try {
-          const response = await fetch(`/api/public/embed/${publicId}/tool-call`, {
+          const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+          const response = await fetch(`${API_BASE}/api/public/embed/${publicId}/tool-call`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

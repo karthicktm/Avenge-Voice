@@ -1,6 +1,6 @@
 """Add workspace_id to call_records, user_integrations, and create phone_numbers table.
 
-Revision ID: 009_add_workspace_to_calls_integrations_phones
+Revision ID: 009_workspace_to_tables
 Revises: 008_add_turn_detection_settings
 Create Date: 2024-11-27
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "009_add_workspace_to_calls_integrations_phones"
+revision: str = "009_workspace_to_tables"
 down_revision: str | None = "008_add_turn_detection_settings"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

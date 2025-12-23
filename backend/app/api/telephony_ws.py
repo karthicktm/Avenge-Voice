@@ -137,6 +137,7 @@ async def twilio_media_stream(
             agent_config=agent_config,
             session_id=session_id,
             workspace_id=workspace_id,
+            agent_id=agent.id,
         ) as realtime_session:
             # Handle Twilio media stream and capture call_sid
             call_sid = await _handle_twilio_stream(
@@ -445,6 +446,7 @@ async def telnyx_media_stream(
             agent_config=agent_config,
             session_id=session_id,
             workspace_id=workspace_id,
+            agent_id=agent.id,
         ) as realtime_session:
             # Handle Telnyx media stream and capture call_control_id
             call_control_id = await _handle_telnyx_stream(

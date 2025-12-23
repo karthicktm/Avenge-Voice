@@ -28,6 +28,7 @@ from app.api import (
     campaigns,
     compliance,
     crm,
+    documents,
     embed,
     health,
     integrations,
@@ -196,6 +197,7 @@ app.include_router(crm.router, prefix=settings.API_V1_PREFIX)
 app.include_router(workspaces.router, prefix=settings.API_V1_PREFIX)
 app.include_router(agents.router)
 app.include_router(settings_api.router)
+app.include_router(documents.router, prefix=settings.API_V1_PREFIX)  # Documents API (RAG knowledge base)
 app.include_router(realtime.router)
 app.include_router(realtime.webrtc_router)  # WebRTC session endpoint
 app.include_router(tools.router)  # Tool execution endpoint
