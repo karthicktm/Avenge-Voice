@@ -23,10 +23,14 @@ const nextConfig: NextConfig = {
     ],
   },
   async rewrites() {
+    // Use private Railway URL for server-side rewrites (more secure & faster)
+    // Falls back to public URL, then localhost
+    const backendUrl = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/:path*`,
+        destination: `${backendUrl}/api/:path*`,
       },
     ];
   },
