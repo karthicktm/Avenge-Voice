@@ -6,11 +6,10 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 # Copy package files
-COPY package.json ./
-COPY package-lock.json* ./
+COPY package.json package-lock.json ./
 
-# Install dependencies (fallback to npm install if package-lock.json missing)
-RUN npm ci --prefer-offline --no-audit 2>/dev/null || npm install --prefer-offline --no-audit
+# Install dependencies
+RUN npm ci --prefer-offline --no-audit
 
 # Stage 2: Builder
 FROM node:20-alpine AS builder
