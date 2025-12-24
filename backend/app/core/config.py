@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     def assemble_db_connection(cls, v: str | None, info: Any) -> str:
         """Build database URL from components if not provided."""
         if isinstance(v, str):
+            # Convert postgres:// to postgresql+asyncpg:// for async SQLAlchemy
+            # Railway and other providers often use postgres:// scheme
+            if v.startswith("postgres://"):
+                v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif v.startswith("postgresql://"):
+                v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
             return v
 
         data = info.data

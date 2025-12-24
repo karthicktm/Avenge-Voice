@@ -78,12 +78,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: PLR0915
     logger.info("Starting application", app_name=settings.APP_NAME)
 
     try:
-        # Initialize Redis (fatal if fails)
+        # Initialize Redis (non-fatal - app can start without it for healthchecks)
         await get_redis()
         logger.info("Redis connection established")
     except Exception:
-        logger.exception("Failed to initialize Redis - application cannot start")
-        raise  # Re-raise to prevent app startup
+        logger.error(
+            "Failed to initialize Redis - app will start but features requiring Redis will fail",
+            exc_info=True,
+        )
 
     # Create default admin user if no users exist
     try:
