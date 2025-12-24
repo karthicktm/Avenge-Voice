@@ -53,7 +53,7 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
   }, [agentId]);
 
   useEffect(() => {
-    fetchDocuments();
+    void fetchDocuments();
   }, [fetchDocuments]);
 
   // Auto-refresh every 3 seconds when documents are processing
@@ -61,7 +61,7 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
     if (!hasProcessing) return;
 
     const interval = setInterval(() => {
-      fetchDocuments();
+      void fetchDocuments();
     }, 3000);
 
     return () => clearInterval(interval);
@@ -120,7 +120,7 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
+    onDrop: (files) => void onDrop(files),
     accept: {
       "application/pdf": [".pdf"],
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
@@ -304,7 +304,7 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleReindex(doc.id, doc.filename)}
+                      onClick={() => void handleReindex(doc.id, doc.filename)}
                       disabled={doc.status === "processing"}
                       title="Reprocess document"
                     >
@@ -313,7 +313,7 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDelete(doc.id, doc.filename)}
+                      onClick={() => void handleDelete(doc.id, doc.filename)}
                       disabled={doc.status === "processing"}
                       title="Delete document"
                     >

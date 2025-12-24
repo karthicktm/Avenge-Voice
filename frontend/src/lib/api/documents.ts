@@ -189,7 +189,7 @@ export function getFileTypeIcon(fileType: string): string {
     xlsx: "📊",
     xls: "📊",
   };
-  return icons[fileType.toLowerCase()] || "📎";
+  return icons[fileType.toLowerCase()] ?? "📎";
 }
 
 /**
@@ -198,7 +198,7 @@ export function getFileTypeIcon(fileType: string): string {
 export function validateFile(file: File): { valid: boolean; error?: string } {
   const maxSize = 10 * 1024 * 1024; // 10MB
   const allowedTypes = ["pdf", "docx", "doc", "txt", "md", "xlsx", "xls"];
-  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
 
   if (!allowedTypes.includes(extension)) {
     return {
