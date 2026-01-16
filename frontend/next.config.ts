@@ -5,6 +5,13 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   output: 'standalone', // Required for Docker deployment
 
+  // Increase body size limit for file uploads (default is 10MB)
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '100mb',
+    },
+  },
+
   // Skip type checking and ESLint during production builds
   // Type checking should be done in CI/CD or locally
   typescript: {
