@@ -730,10 +730,12 @@ async def save_transcript(
     if not agent:
         raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found")
 
-    # Verify user owns this agent
-    user_uuid = user_id_to_uuid(user_id)
-    if agent.user_id != user_uuid:
+    # Verify user owns this agent (agent.user_id is int, user_id is int)
+    if agent.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorized to access this agent")
+
+    # Convert user_id to UUID for CallRecord (which expects UUID)
+    user_uuid = user_id_to_uuid(user_id)
 
     # Skip if transcript is empty
     if not request.transcript.strip():
