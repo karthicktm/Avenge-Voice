@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.auth import CurrentUser, user_id_to_uuid
 from app.db.session import get_db
@@ -227,10 +228,10 @@ async def connect_integration(
                 detail="Invalid workspace_id format",
             ) from err
 
-        # Verify workspace belongs to user
+        # Verify workspace belongs to user (Workspace.user_id is int, not UUID)
         ws_result = await db.execute(
             select(Workspace).where(
-                and_(Workspace.id == workspace_uuid, Workspace.user_id == user_uuid)
+                and_(Workspace.id == workspace_uuid, Workspace.user_id == current_user.id)
             )
         )
         workspace = ws_result.scalar_one_or_none()
@@ -338,14 +339,18 @@ async def update_integration(
     # Update fields
     if request.credentials is not None:
         # Merge with existing credentials (partial update)
-        existing_creds = integration.credentials or {}
+        # Create a new dict to ensure SQLAlchemy detects the change
+        existing_creds = dict(integration.credentials or {})
         existing_creds.update(request.credentials)
         integration.credentials = existing_creds
+        flag_modified(integration, "credentials")
 
     if request.metadata is not None:
-        existing_meta = integration.integration_metadata or {}
+        # Create a new dict to ensure SQLAlchemy detects the change
+        existing_meta = dict(integration.integration_metadata or {})
         existing_meta.update(request.metadata)
         integration.integration_metadata = existing_meta
+        flag_modified(integration, "integration_metadata")
 
     if request.is_active is not None:
         integration.is_active = request.is_active

@@ -28,6 +28,7 @@ from app.api import (
     campaigns,
     compliance,
     crm,
+    documents,
     embed,
     health,
     integrations,
@@ -208,6 +209,7 @@ app.include_router(phone_numbers.router)  # Phone numbers API
 app.include_router(auth.router)  # Authentication API
 app.include_router(compliance.router)  # Compliance API (GDPR/CCPA)
 app.include_router(integrations.router)  # Integrations API (external tools)
+app.include_router(documents.router)  # Documents API (Knowledge Base/RAG)
 app.include_router(embed.router)  # Public embed API (unauthenticated)
 app.include_router(embed.ws_router)  # Public embed WebSocket
 

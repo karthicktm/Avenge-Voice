@@ -49,6 +49,13 @@ dependencies = [
     # Utilities
     "python-dotenv>=1.0.1",
     "pytz>=2025.2",
+    # Web Search
+    "duckduckgo-search>=6.0.0",
+    # RAG / Knowledge Base
+    "pypdf>=4.0.0",
+    "python-docx>=1.0.0",
+    "tiktoken>=0.5.0",
+    "pgvector>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -193,6 +200,11 @@ module = [
     "elevenlabs.*",
     "telnyx.*",
     "twilio.*",
+    "duckduckgo_search.*",
+    "pypdf.*",
+    "docx.*",
+    "tiktoken.*",
+    "pgvector.*",
 ]
 ignore_missing_imports = true
 

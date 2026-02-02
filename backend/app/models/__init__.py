@@ -6,6 +6,7 @@ from app.models.call_interaction import CallInteraction
 from app.models.call_record import CallRecord
 from app.models.campaign import Campaign, CampaignContact
 from app.models.contact import Contact
+from app.models.document import Document, DocumentChunk
 from app.models.phone_number import PhoneNumber
 from app.models.privacy_settings import ConsentRecord, PrivacySettings
 from app.models.user import User
@@ -22,6 +23,8 @@ __all__ = [
     "CampaignContact",
     "ConsentRecord",
     "Contact",
+    "Document",
+    "DocumentChunk",
     "PhoneNumber",
     "PrivacySettings",
     "User",

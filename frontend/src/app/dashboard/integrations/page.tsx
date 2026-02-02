@@ -10,6 +10,13 @@ import { Badge } from "@/components/ui/badge";
 import { api, integrationsApi, type IntegrationResponse } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search,
@@ -55,13 +62,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { AVAILABLE_INTEGRATIONS, type Integration } from "@/lib/integrations";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 interface Workspace {
   id: string;
@@ -522,29 +522,47 @@ const IntegrationConfigForm = memo(function IntegrationConfigForm({
               {field.label}
               {field.required && <span className="ml-1 text-destructive">*</span>}
             </Label>
-            <div className="relative">
-              <Input
-                id={field.name}
-                type={field.type === "password" && !showPasswords[field.name] ? "password" : "text"}
-                placeholder={field.placeholder ?? `Enter ${field.label.toLowerCase()}`}
+            {field.type === "select" && field.options ? (
+              <Select
                 value={credentials[field.name] ?? ""}
-                onChange={(e) => handleFieldChange(field.name, e.target.value)}
-                className="pr-10"
-              />
-              {field.type === "password" && (
-                <button
-                  type="button"
-                  onClick={() => togglePasswordVisibility(field.name)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showPasswords[field.name] ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </button>
-              )}
-            </div>
+                onValueChange={(value) => handleFieldChange(field.name, value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
+                </SelectTrigger>
+                <SelectContent>
+                  {field.options.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="relative">
+                <Input
+                  id={field.name}
+                  type={field.type === "password" && !showPasswords[field.name] ? "password" : "text"}
+                  placeholder={field.placeholder ?? `Enter ${field.label.toLowerCase()}`}
+                  value={credentials[field.name] ?? ""}
+                  onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                  className={field.type === "password" ? "pr-10" : ""}
+                />
+                {field.type === "password" && (
+                  <button
+                    type="button"
+                    onClick={() => togglePasswordVisibility(field.name)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPasswords[field.name] ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
             {field.description && (
               <p className="text-xs text-muted-foreground">{field.description}</p>
             )}

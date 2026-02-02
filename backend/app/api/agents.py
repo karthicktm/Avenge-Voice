@@ -35,6 +35,10 @@ class CreateAgentRequest(BaseModel):
         default_factory=dict,
         description="Granular tool selection: {integration_id: [tool_id1, tool_id2]}",
     )
+    tool_configs: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Per-tool configuration: {tool_id: {config_key: value}}",
+    )
     phone_number_id: str | None = None
     enable_recording: bool = False
     enable_transcript: bool = True
@@ -67,6 +71,10 @@ class UpdateAgentRequest(BaseModel):
         default=None,
         description="Granular tool selection: {integration_id: [tool_id1, tool_id2]}",
     )
+    tool_configs: dict[str, dict[str, Any]] | None = Field(
+        default=None,
+        description="Per-tool configuration: {tool_id: {config_key: value}}",
+    )
     phone_number_id: str | None = None
     enable_recording: bool | None = None
     enable_transcript: bool | None = None
@@ -98,6 +106,7 @@ class AgentResponse(BaseModel):
     voice: str
     enabled_tools: list[str]
     enabled_tool_ids: dict[str, list[str]]
+    tool_configs: dict[str, dict[str, Any]]
     phone_number_id: str | None
     enable_recording: bool
     enable_transcript: bool
@@ -150,6 +159,7 @@ async def create_agent(
         voice=agent_request.voice,
         enabled_tools=agent_request.enabled_tools,
         enabled_tool_ids=agent_request.enabled_tool_ids,
+        tool_configs=agent_request.tool_configs,
         phone_number_id=agent_request.phone_number_id,
         enable_recording=agent_request.enable_recording,
         enable_transcript=agent_request.enable_transcript,
@@ -349,6 +359,7 @@ def _apply_agent_updates(agent: Agent, request: UpdateAgentRequest) -> None:
         "voice",
         "enabled_tools",
         "enabled_tool_ids",
+        "tool_configs",
         "phone_number_id",
         "enable_recording",
         "enable_transcript",
@@ -444,6 +455,7 @@ def _agent_to_response(agent: Agent) -> AgentResponse:
         voice=agent.voice,
         enabled_tools=agent.enabled_tools,
         enabled_tool_ids=agent.enabled_tool_ids,
+        tool_configs=agent.tool_configs,
         phone_number_id=agent.phone_number_id,
         enable_recording=agent.enable_recording,
         enable_transcript=agent.enable_transcript,

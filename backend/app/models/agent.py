@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.document import Document
     from app.models.workspace import AgentWorkspace
 
 
@@ -119,6 +120,12 @@ class Agent(Base):
         default=dict,
         comment="Granular tool selection: {integration_id: [tool_id1, tool_id2]}",
     )
+    tool_configs: Mapped[dict[str, dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+        comment="Per-tool configuration: {tool_id: {config_key: value}}",
+    )
 
     # Phone settings
     phone_number_id: Mapped[str | None] = mapped_column(
@@ -205,6 +212,9 @@ class Agent(Base):
     # Relationships
     agent_workspaces: Mapped[list["AgentWorkspace"]] = relationship(
         "AgentWorkspace", back_populates="agent", cascade="all, delete-orphan"
+    )
+    documents: Mapped[list["Document"]] = relationship(
+        "Document", back_populates="agent", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

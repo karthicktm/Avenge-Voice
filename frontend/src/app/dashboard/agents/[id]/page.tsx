@@ -56,6 +56,7 @@ import { api } from "@/lib/api";
 import { getLanguagesForTier } from "@/lib/languages";
 import { AVAILABLE_INTEGRATIONS } from "@/lib/integrations";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { KnowledgeBaseTab } from "./knowledge-base-tab";
 
 import {
   AlertDialog,
@@ -433,6 +434,10 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
   const llmProvider = form.watch("llmProvider");
   const isRealtimeProvider = llmProvider === "openai-realtime";
 
+  // Check if Knowledge Base is enabled
+  const enabledTools = form.watch("enabledTools");
+  const hasKnowledgeBase = enabledTools?.includes("knowledge_base");
+
   // Get available languages based on agent's pricing tier
   const availableLanguages = useMemo(() => {
     const tier = (agent?.pricing_tier ?? "balanced") as "budget" | "balanced" | "premium";
@@ -737,6 +742,9 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
               {!isRealtimeProvider && <TabTriggerWithErrors value="voice" label="Voice" />}
               <TabTriggerWithErrors value="llm" label="AI Model" />
               <TabTriggerWithErrors value="tools" label="Tools" />
+              {hasKnowledgeBase && (
+                <TabTriggerWithErrors value="knowledge-base" label="Knowledge Base" />
+              )}
               <TabTriggerWithErrors value="advanced" label="Advanced" />
             </TabsList>
 
@@ -1820,6 +1828,12 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {hasKnowledgeBase && (
+              <TabsContent value="knowledge-base" className="mt-4">
+                <KnowledgeBaseTab agentId={agentId} />
+              </TabsContent>
+            )}
           </Tabs>
 
           <div className="flex justify-end gap-3">

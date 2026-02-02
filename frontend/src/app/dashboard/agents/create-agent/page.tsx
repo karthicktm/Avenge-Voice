@@ -177,6 +177,7 @@ const agentFormSchema = z.object({
   maxTokens: z.number().min(100).max(16000).default(2000),
   enabledTools: z.array(z.string()).default([]),
   enabledToolIds: z.record(z.string(), z.array(z.string())).default({}),
+  toolConfigs: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   phoneNumberId: z.string().optional(),
   enableRecording: z.boolean().default(true),
   enableTranscript: z.boolean().default(true),
@@ -206,6 +207,7 @@ export default function CreateAgentPage() {
       maxTokens: 2000,
       enabledTools: [],
       enabledToolIds: {},
+      toolConfigs: {},
       phoneNumberId: "",
       enableRecording: true,
       enableTranscript: true,
@@ -276,6 +278,7 @@ export default function CreateAgentPage() {
           : undefined,
       enabled_tools: enabledIntegrations,
       enabled_tool_ids: data.enabledToolIds,
+      tool_configs: data.toolConfigs,
       phone_number_id: data.phoneNumberId,
       enable_recording: data.enableRecording,
       enable_transcript: data.enableTranscript,
@@ -1045,6 +1048,140 @@ Guidelines:
                                         );
                                       })}
                                     </div>
+
+                                    {/* Knowledge Base Configuration */}
+                                    {integration.id === "knowledge_base" && (
+                                      <div className="mt-4 space-y-3 rounded-lg border bg-background p-4">
+                                        <h4 className="text-sm font-medium">
+                                          Embedding Configuration
+                                        </h4>
+                                        <p className="text-xs text-muted-foreground">
+                                          Configure the embedding provider for this agent&apos;s
+                                          knowledge base.
+                                        </p>
+
+                                        <div className="grid gap-3">
+                                          <div className="space-y-1.5">
+                                            <label className="text-xs font-medium">
+                                              Embedding Provider
+                                            </label>
+                                            <Select
+                                              value={
+                                                form.watch(
+                                                  "toolConfigs.knowledge_base.embedding_provider"
+                                                ) || "openai"
+                                              }
+                                              onValueChange={(value) => {
+                                                const currentConfigs =
+                                                  form.getValues("toolConfigs") || {};
+                                                form.setValue("toolConfigs", {
+                                                  ...currentConfigs,
+                                                  knowledge_base: {
+                                                    ...currentConfigs.knowledge_base,
+                                                    embedding_provider: value,
+                                                    embedding_model:
+                                                      value === "openai"
+                                                        ? "text-embedding-3-small"
+                                                        : "voyage-3",
+                                                  },
+                                                });
+                                              }}
+                                            >
+                                              <SelectTrigger className="h-8">
+                                                <SelectValue placeholder="Select provider" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="openai">OpenAI</SelectItem>
+                                                <SelectItem value="voyage">Voyage AI</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          <div className="space-y-1.5">
+                                            <label className="text-xs font-medium">
+                                              Embedding Model
+                                            </label>
+                                            <Select
+                                              value={
+                                                form.watch(
+                                                  "toolConfigs.knowledge_base.embedding_model"
+                                                ) || "text-embedding-3-small"
+                                              }
+                                              onValueChange={(value) => {
+                                                const currentConfigs =
+                                                  form.getValues("toolConfigs") || {};
+                                                form.setValue("toolConfigs", {
+                                                  ...currentConfigs,
+                                                  knowledge_base: {
+                                                    ...currentConfigs.knowledge_base,
+                                                    embedding_model: value,
+                                                  },
+                                                });
+                                              }}
+                                            >
+                                              <SelectTrigger className="h-8">
+                                                <SelectValue placeholder="Select model" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {(form.watch(
+                                                  "toolConfigs.knowledge_base.embedding_provider"
+                                                ) || "openai") === "openai" ? (
+                                                  <>
+                                                    <SelectItem value="text-embedding-3-small">
+                                                      text-embedding-3-small (1536 dim)
+                                                    </SelectItem>
+                                                    <SelectItem value="text-embedding-3-large">
+                                                      text-embedding-3-large (3072 dim)
+                                                    </SelectItem>
+                                                    <SelectItem value="text-embedding-ada-002">
+                                                      text-embedding-ada-002 (1536 dim)
+                                                    </SelectItem>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <SelectItem value="voyage-3">
+                                                      voyage-3 (1024 dim)
+                                                    </SelectItem>
+                                                    <SelectItem value="voyage-3-lite">
+                                                      voyage-3-lite (512 dim)
+                                                    </SelectItem>
+                                                  </>
+                                                )}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          <div className="space-y-1.5">
+                                            <label className="text-xs font-medium">API Key</label>
+                                            <Input
+                                              type="password"
+                                              placeholder="Enter your API key"
+                                              className="h-8"
+                                              value={
+                                                form.watch(
+                                                  "toolConfigs.knowledge_base.api_key"
+                                                ) || ""
+                                              }
+                                              onChange={(e) => {
+                                                const currentConfigs =
+                                                  form.getValues("toolConfigs") || {};
+                                                form.setValue("toolConfigs", {
+                                                  ...currentConfigs,
+                                                  knowledge_base: {
+                                                    ...currentConfigs.knowledge_base,
+                                                    api_key: e.target.value,
+                                                  },
+                                                });
+                                              }}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                              Your embedding provider API key for document
+                                              processing
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </CollapsibleContent>
                               )}

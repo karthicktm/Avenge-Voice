@@ -194,9 +194,19 @@ class GPTRealtimeSession:
                 self.user_id_uuid, self.workspace_id, self.db
             )
 
+        # Merge agent's tool_configs into integrations (agent-specific settings override workspace)
+        tool_configs = self.agent_config.get("tool_configs", {})
+        if tool_configs:
+            integrations.update(tool_configs)
+
+        # Get agent_id from config if available
+        agent_id_str = self.agent_config.get("agent_id")
+        agent_id = uuid.UUID(agent_id_str) if agent_id_str else None
+
         # Initialize tool registry with enabled tools and workspace context
         self.tool_registry = ToolRegistry(
-            self.db, self.user_id, integrations=integrations, workspace_id=self.workspace_id
+            self.db, self.user_id, integrations=integrations, workspace_id=self.workspace_id,
+            agent_id=agent_id
         )
 
         # Connect to OpenAI Realtime API

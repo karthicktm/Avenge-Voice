@@ -29,10 +29,11 @@ export interface Integration {
 export interface IntegrationField {
   name: string;
   label: string;
-  type: "text" | "password" | "url" | "email";
+  type: "text" | "password" | "url" | "email" | "select";
   placeholder?: string;
   required: boolean;
   description?: string;
+  options?: { value: string; label: string }[]; // For select type
 }
 
 export type ToolRiskLevel = "safe" | "moderate" | "high";
@@ -158,6 +159,83 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
         name: "Reschedule Appointment",
         description: "Reschedule an existing appointment to a new time",
         riskLevel: "moderate",
+        defaultEnabled: true,
+      },
+    ],
+  },
+  {
+    id: "web_search",
+    name: "Web Search",
+    slug: "web-search",
+    description: "Search the web for real-time information during calls",
+    category: "other",
+    authType: "none",
+    icon: "https://cdn.simpleicons.org/googlechrome",
+    enabled: true,
+    isBuiltIn: true,
+    badge: "Avenge Voice",
+    tools: [
+      {
+        id: "web_search",
+        name: "Web Search",
+        description: "Search the web and return relevant information",
+        riskLevel: "safe",
+        defaultEnabled: true,
+      },
+    ],
+  },
+  {
+    id: "knowledge_base",
+    name: "Knowledge Base",
+    slug: "knowledge-base",
+    description: "Upload documents to create a searchable knowledge base with AI-powered semantic search",
+    category: "database",
+    authType: "api_key",
+    icon: "https://cdn.simpleicons.org/readthedocs",
+    enabled: true,
+    isBuiltIn: true,
+    badge: "Avenge Voice",
+    fields: [
+      {
+        name: "embedding_provider",
+        label: "Embedding Provider",
+        type: "select",
+        required: true,
+        description: "Select the AI provider for generating embeddings",
+        options: [
+          { value: "openai", label: "OpenAI" },
+          { value: "voyage", label: "Voyage AI" },
+        ],
+      },
+      {
+        name: "embedding_model",
+        label: "Embedding Model",
+        type: "select",
+        required: true,
+        description: "Select the embedding model to use",
+        options: [
+          { value: "text-embedding-3-small", label: "text-embedding-3-small (OpenAI - Recommended)" },
+          { value: "text-embedding-3-large", label: "text-embedding-3-large (OpenAI - Higher quality)" },
+          { value: "text-embedding-ada-002", label: "text-embedding-ada-002 (OpenAI - Legacy)" },
+          { value: "voyage-3", label: "voyage-3 (Voyage AI)" },
+          { value: "voyage-3-lite", label: "voyage-3-lite (Voyage AI - Faster)" },
+        ],
+      },
+      {
+        name: "api_key",
+        label: "API Key",
+        type: "password",
+        required: true,
+        placeholder: "sk-...",
+        description: "Your API key for the selected embedding provider",
+      },
+    ],
+    tools: [
+      {
+        id: "search_knowledge_base",
+        name: "Search Knowledge Base",
+        description: "Search uploaded documents for relevant information",
+        riskLevel: "safe",
         defaultEnabled: true,
       },
     ],

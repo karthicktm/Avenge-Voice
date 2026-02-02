@@ -210,8 +210,11 @@ async def realtime_websocket(
         agent_config = {
             "system_prompt": agent.system_prompt,
             "enabled_tools": agent.enabled_tools,
+            "enabled_tool_ids": agent.enabled_tool_ids,
+            "tool_configs": agent.tool_configs,
             "language": agent.language,
             "voice": agent.voice or "shimmer",
+            "agent_id": str(agent.id),
         }
 
         # Initialize GPT Realtime session with internal tools
@@ -442,9 +445,13 @@ async def create_webrtc_session(
     # Get integration credentials for the workspace
     integrations = await get_workspace_integrations(user_uuid, workspace_uuid, db)
 
+    # Merge agent's tool_configs into integrations (agent-specific settings override workspace)
+    if agent.tool_configs:
+        integrations.update(agent.tool_configs)
+
     # Build tool definitions (user_id int for Contact queries, workspace_uuid for scoping)
     tool_registry = ToolRegistry(
-        db, user_id, integrations=integrations, workspace_id=workspace_uuid
+        db, user_id, integrations=integrations, workspace_id=workspace_uuid, agent_id=agent.id
     )
     tools = tool_registry.get_all_tool_definitions(agent.enabled_tools, agent.enabled_tool_ids)
 

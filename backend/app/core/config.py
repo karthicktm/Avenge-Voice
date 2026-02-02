@@ -132,5 +132,12 @@ class Settings(BaseSettings):
     OTEL_SERVICE_NAME: str = "voicenoob-api"
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
 
+    # RAG / Knowledge Base Settings
+    RAG_CHUNK_SIZE: int = 500  # Characters per chunk
+    RAG_CHUNK_OVERLAP: int = 50  # Overlap between chunks
+    RAG_EMBEDDING_MODEL: str = "text-embedding-3-small"  # OpenAI embedding model
+    RAG_MAX_FILE_SIZE: int = 52_428_800  # 50MB max file size
+    RAG_MAX_DOCUMENTS_PER_AGENT: int = 50  # Max documents per agent
+
 
 settings = Settings()
