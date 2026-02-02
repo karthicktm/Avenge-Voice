@@ -625,6 +625,7 @@ async def get_embed_ephemeral_token(  # noqa: PLR0915
                 integrations=integrations,
                 workspace_id=workspace_id,
                 agent_id=agent.id,
+                openai_api_key=api_key,
             )
             tools = tool_registry.get_all_tool_definitions(
                 agent.enabled_tools or [], agent.enabled_tool_ids
@@ -735,6 +736,15 @@ async def execute_embed_tool_call(
     if agent.tool_configs:
         integrations.update(agent.tool_configs)
 
+    # Get OpenAI API key for RAG embeddings fallback
+    from app.api.settings import get_user_api_keys
+
+    openai_api_key: str | None = None
+    user_uuid = user_id_to_uuid(agent.user_id)
+    user_settings = await get_user_api_keys(user_uuid, db, workspace_id=workspace_id)
+    if user_settings and user_settings.openai_api_key:
+        openai_api_key = user_settings.openai_api_key
+
     # Create tool registry with workspace context
     from app.services.tools.registry import ToolRegistry
 
@@ -744,6 +754,7 @@ async def execute_embed_tool_call(
         integrations=integrations,
         workspace_id=workspace_id,
         agent_id=agent.id,
+        openai_api_key=openai_api_key,
     )
 
     # Get the enabled tools for this agent (same method as token endpoint)
