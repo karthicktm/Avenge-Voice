@@ -36,8 +36,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Run database migrations and start server
+# Use timeout for migrations and || true to continue even if migrations fail
 CMD echo "Starting application..." && \
-    echo "Running database migrations..." && \
-    alembic upgrade head && \
+    echo "Running database migrations (timeout 60s)..." && \
+    timeout 60 alembic upgrade head || echo "Migrations skipped or timed out" && \
     echo "Starting uvicorn server on port ${PORT:-8000}..." && \
-    uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info
+    exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info
