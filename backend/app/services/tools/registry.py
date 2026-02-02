@@ -154,22 +154,35 @@ class ToolRegistry:
         Uses knowledge_base integration credentials if available, otherwise
         falls back to the OpenAI API key used for the voice agent.
         """
+        import structlog
+
+        logger = structlog.get_logger()
+
         if self._rag_tools:
             return self._rag_tools
 
         if not self.agent_id:
+            logger.warning("rag_tools_skipped_no_agent_id")
             return None
 
         # Get knowledge_base credentials for embedding (explicit config takes priority)
         kb_creds = self.integrations.get("knowledge_base", {})
         api_key = kb_creds.get("api_key")
 
+        logger.info(
+            "rag_tools_credential_check",
+            has_kb_creds=bool(kb_creds),
+            has_kb_api_key=bool(api_key),
+            has_openai_fallback=bool(self.openai_api_key),
+        )
+
         # Fall back to OpenAI API key if no explicit knowledge_base config
         if not api_key and self.openai_api_key:
             api_key = self.openai_api_key
+            logger.info("rag_tools_using_openai_fallback")
 
         if not api_key:
-            # No embedding credentials available
+            logger.warning("rag_tools_skipped_no_api_key")
             return None
 
         embedding_config = {
@@ -177,6 +190,13 @@ class ToolRegistry:
             "embedding_model": kb_creds.get("embedding_model", "text-embedding-3-small"),
             "embedding_provider": kb_creds.get("embedding_provider", "openai"),
         }
+
+        logger.info(
+            "rag_tools_initialized",
+            agent_id=str(self.agent_id),
+            embedding_model=embedding_config["embedding_model"],
+            embedding_provider=embedding_config["embedding_provider"],
+        )
 
         self._rag_tools = RAGTools(self.db, self.agent_id, embedding_config=embedding_config)
         return self._rag_tools
@@ -260,9 +280,26 @@ class ToolRegistry:
             tools.extend(filter_tools("web_search", web_search_tools))
 
         # Knowledge Base / RAG tools (requires agent_id)
-        if "knowledge_base" in enabled_tools and self._get_rag_tools():
-            rag_tools = RAGTools.get_tool_definitions()
-            tools.extend(filter_tools("knowledge_base", rag_tools))
+        import structlog
+
+        logger = structlog.get_logger()
+
+        kb_in_enabled = "knowledge_base" in enabled_tools
+        logger.info(
+            "knowledge_base_tool_check",
+            kb_in_enabled_tools=kb_in_enabled,
+            enabled_tools=enabled_tools,
+            agent_id=str(self.agent_id) if self.agent_id else None,
+        )
+
+        if kb_in_enabled:
+            rag_tools_instance = self._get_rag_tools()
+            if rag_tools_instance:
+                rag_tools = RAGTools.get_tool_definitions()
+                tools.extend(filter_tools("knowledge_base", rag_tools))
+                logger.info("knowledge_base_tool_registered", tool_count=len(rag_tools))
+            else:
+                logger.warning("knowledge_base_tool_not_registered_no_instance")
 
         return tools
 
