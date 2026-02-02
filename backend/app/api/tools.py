@@ -10,8 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.integrations import get_workspace_integrations
+from app.api.settings import get_user_api_keys
 from app.core.auth import CurrentUser, user_id_to_uuid
 from app.db.session import get_db
+from app.models.agent import Agent
 from app.models.workspace import AgentWorkspace
 from app.services.tools.registry import ToolRegistry
 
@@ -58,11 +60,20 @@ async def execute_tool(
     tool_logger.info("tool_execution_requested", arguments=request.arguments)
 
     try:
-        # Get workspace for the agent (for proper CRM scoping)
+        # Get workspace and agent for proper scoping
         workspace_id: uuid.UUID | None = None
+        agent_uuid: uuid.UUID | None = None
+        agent: Agent | None = None
+
         if request.agent_id:
             try:
                 agent_uuid = uuid.UUID(request.agent_id)
+
+                # Get agent to access tool_configs
+                agent_result = await db.execute(select(Agent).where(Agent.id == agent_uuid))
+                agent = agent_result.scalar_one_or_none()
+
+                # Get workspace for the agent
                 workspace_result = await db.execute(
                     select(AgentWorkspace).where(AgentWorkspace.agent_id == agent_uuid).limit(1)
                 )
@@ -73,14 +84,29 @@ async def execute_tool(
                 tool_logger.warning("invalid_agent_id_format", agent_id=request.agent_id)
 
         # Get integration credentials for the workspace
+        user_uuid = user_id_to_uuid(user_id)
         integrations: dict[str, dict[str, Any]] = {}
         if workspace_id:
-            user_uuid = user_id_to_uuid(user_id)
             integrations = await get_workspace_integrations(user_uuid, workspace_id, db)
+
+        # Merge agent's tool_configs into integrations
+        if agent and agent.tool_configs:
+            integrations.update(agent.tool_configs)
+
+        # Get OpenAI API key for RAG embeddings fallback
+        openai_api_key: str | None = None
+        user_settings = await get_user_api_keys(user_uuid, db, workspace_id=workspace_id)
+        if user_settings and user_settings.openai_api_key:
+            openai_api_key = user_settings.openai_api_key
 
         # Create tool registry and execute tool
         tool_registry = ToolRegistry(
-            db, user_id, integrations=integrations, workspace_id=workspace_id
+            db,
+            user_id,
+            integrations=integrations,
+            workspace_id=workspace_id,
+            agent_id=agent_uuid,
+            openai_api_key=openai_api_key,
         )
         result = await tool_registry.execute_tool(request.tool_name, request.arguments)
 
