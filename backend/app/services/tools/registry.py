@@ -31,6 +31,7 @@ class ToolRegistry:
         integrations: dict[str, dict[str, Any]] | None = None,
         workspace_id: Any | None = None,
         agent_id: uuid.UUID | None = None,
+        openai_api_key: str | None = None,
     ) -> None:
         """Initialize tool registry.
 
@@ -41,12 +42,14 @@ class ToolRegistry:
                          e.g., {"gohighlevel": {"access_token": "...", "location_id": "..."}}
             workspace_id: Workspace UUID for scoping CRM operations
             agent_id: Agent UUID for RAG/Knowledge Base operations
+            openai_api_key: OpenAI API key (fallback for RAG embeddings if not in integrations)
         """
         self.db = db
         self.user_id = user_id
         self.integrations = integrations or {}
         self.workspace_id = workspace_id
         self.agent_id = agent_id
+        self.openai_api_key = openai_api_key
         self.crm_tools = CRMTools(db, user_id, workspace_id=workspace_id)
         self._ghl_tools: GoHighLevelTools | None = None
         self._calendly_tools: CalendlyTools | None = None
@@ -146,21 +149,31 @@ class ToolRegistry:
         return self._web_search_tools
 
     def _get_rag_tools(self) -> RAGTools | None:
-        """Get RAG tools if agent_id and knowledge_base credentials are available."""
+        """Get RAG tools if agent_id and embedding credentials are available.
+
+        Uses knowledge_base integration credentials if available, otherwise
+        falls back to the OpenAI API key used for the voice agent.
+        """
         if self._rag_tools:
             return self._rag_tools
 
         if not self.agent_id:
             return None
 
-        # Get knowledge_base credentials for embedding
-        kb_creds = self.integrations.get("knowledge_base")
-        if not kb_creds or not kb_creds.get("api_key"):
-            # No embedding credentials configured
+        # Get knowledge_base credentials for embedding (explicit config takes priority)
+        kb_creds = self.integrations.get("knowledge_base", {})
+        api_key = kb_creds.get("api_key")
+
+        # Fall back to OpenAI API key if no explicit knowledge_base config
+        if not api_key and self.openai_api_key:
+            api_key = self.openai_api_key
+
+        if not api_key:
+            # No embedding credentials available
             return None
 
         embedding_config = {
-            "api_key": kb_creds.get("api_key"),
+            "api_key": api_key,
             "embedding_model": kb_creds.get("embedding_model", "text-embedding-3-small"),
             "embedding_provider": kb_creds.get("embedding_provider", "openai"),
         }

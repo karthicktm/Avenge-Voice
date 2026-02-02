@@ -238,12 +238,14 @@ class GPTRealtimeSession:
         agent_id = uuid.UUID(agent_id_str) if agent_id_str else None
 
         # Initialize tool registry with enabled tools and workspace context
+        # Pass OpenAI API key for RAG embeddings fallback
         self.tool_registry = ToolRegistry(
             self.db,
             self.user_id,
             integrations=integrations,
             workspace_id=self.workspace_id,
             agent_id=agent_id,
+            openai_api_key=api_key,
         )
 
         # Connect to OpenAI Realtime API
