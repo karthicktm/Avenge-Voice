@@ -51,6 +51,7 @@ def build_instructions_with_language(
     language: str,
     enabled_tools: list[str] | None = None,
     timezone: str | None = None,
+    knowledge_base_info: dict[str, Any] | None = None,
 ) -> str:
     """Build comprehensive voice agent instructions.
 
@@ -62,6 +63,9 @@ def build_instructions_with_language(
         language: Language code (e.g., "en-US", "es-ES")
         enabled_tools: List of enabled tool IDs (optional, for context)
         timezone: Workspace timezone (e.g., "America/New_York", "UTC")
+        knowledge_base_info: Info about uploaded documents (optional)
+            - document_count: Number of documents
+            - document_names: List of document filenames
 
     Returns:
         Complete instructions string optimized for voice conversations
@@ -82,6 +86,36 @@ def build_instructions_with_language(
         # Fallback if timezone is invalid
         current_datetime = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
 
+    # Build knowledge base section if available
+    knowledge_base_section = ""
+    if knowledge_base_info and knowledge_base_info.get("document_count", 0) > 0:
+        doc_count = knowledge_base_info["document_count"]
+        doc_names = knowledge_base_info.get("document_names", [])
+
+        # Format document list (limit for brevity)
+        max_docs_to_show = 10
+        if doc_names:
+            doc_list = ", ".join(doc_names[:max_docs_to_show])
+            if len(doc_names) > max_docs_to_show:
+                doc_list += f", and {len(doc_names) - max_docs_to_show} more"
+        else:
+            doc_list = f"{doc_count} documents"
+
+        knowledge_base_section = f"""
+[KNOWLEDGE BASE]
+You have access to a knowledge base with {doc_count} uploaded document(s): {doc_list}
+
+IMPORTANT: When the user asks questions about products, services, pricing, policies, FAQs,
+or any information that might be in your documentation, you MUST use the search_knowledge_base
+tool to find accurate information. Do NOT make up answers - always search first.
+
+Examples of when to search:
+- "What are your prices?" -> search_knowledge_base("pricing rates cost")
+- "How does X work?" -> search_knowledge_base("how X works features")
+- "What's your return policy?" -> search_knowledge_base("return policy refund")
+- "Tell me about your services" -> search_knowledge_base("services offerings")
+"""
+
     # Build the complete voice agent instructions
     instructions = f"""[CONTEXT]
 Language: {language_name}
@@ -94,7 +128,7 @@ Current: {current_datetime}
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses concise - this is voice, not text
 - Summarize tool results naturally
-
+{knowledge_base_section}
 [YOUR ROLE]
 {system_prompt}"""
 
@@ -205,8 +239,11 @@ class GPTRealtimeSession:
 
         # Initialize tool registry with enabled tools and workspace context
         self.tool_registry = ToolRegistry(
-            self.db, self.user_id, integrations=integrations, workspace_id=self.workspace_id,
-            agent_id=agent_id
+            self.db,
+            self.user_id,
+            integrations=integrations,
+            workspace_id=self.workspace_id,
+            agent_id=agent_id,
         )
 
         # Connect to OpenAI Realtime API
@@ -266,6 +303,30 @@ class GPTRealtimeSession:
             if workspace and workspace.settings:
                 workspace_timezone = workspace.settings.get("timezone", "UTC")
 
+        # Get knowledge base info if agent has documents
+        knowledge_base_info: dict[str, Any] | None = None
+        agent_id_str = self.agent_config.get("agent_id")
+        if agent_id_str and "knowledge_base" in enabled_tools:
+            from app.models.document import Document
+
+            agent_uuid = uuid.UUID(agent_id_str)
+            # Query ready documents for this agent
+            result = await self.db.execute(
+                select(Document.filename)
+                .where(Document.agent_id == agent_uuid)
+                .where(Document.status == "ready")
+            )
+            doc_names = [row[0] for row in result.fetchall()]
+            if doc_names:
+                knowledge_base_info = {
+                    "document_count": len(doc_names),
+                    "document_names": doc_names,
+                }
+                self.logger.info(
+                    "knowledge_base_context_loaded",
+                    document_count=len(doc_names),
+                )
+
         # Build instructions with language directive and timezone
         system_prompt = self.agent_config.get("system_prompt", "You are a helpful voice assistant.")
         language = self.agent_config.get("language", "en-US")
@@ -273,7 +334,10 @@ class GPTRealtimeSession:
         voice = self.agent_config.get("voice", "marin")
         temperature = self.agent_config.get("temperature", 0.6)
         instructions = build_instructions_with_language(
-            system_prompt, language, timezone=workspace_timezone
+            system_prompt,
+            language,
+            timezone=workspace_timezone,
+            knowledge_base_info=knowledge_base_info,
         )
 
         session_config = {
