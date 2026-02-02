@@ -628,12 +628,21 @@ async def get_ephemeral_token(
             if workspace_uuid:
                 integrations = await get_workspace_integrations(user_uuid, workspace_uuid, db)
 
+            # Merge agent's tool_configs into integrations
+            if agent.tool_configs:
+                integrations.update(agent.tool_configs)
+
             # Build tool definitions for the agent
             tool_registry = ToolRegistry(
-                db, user_id, integrations=integrations, workspace_id=workspace_uuid
+                db,
+                user_id,
+                integrations=integrations,
+                workspace_id=workspace_uuid,
+                agent_id=agent.id,
+                openai_api_key=api_key,
             )
             tools = tool_registry.get_all_tool_definitions(
-                agent.enabled_tools, agent.enabled_tool_ids
+                agent.enabled_tools or [], agent.enabled_tool_ids
             )
 
             token_logger.info(
@@ -644,10 +653,31 @@ async def get_ephemeral_token(
                 tool_names=[t.get("name") for t in tools],
             )
 
+            # Get knowledge base info if agent has documents
+            knowledge_base_info: dict[str, Any] | None = None
+            if "knowledge_base" in (agent.enabled_tools or []):
+                from app.models.document import Document
+
+                doc_result = await db.execute(
+                    select(Document.filename)
+                    .where(Document.agent_id == agent.id)
+                    .where(Document.status == "ready")
+                )
+                doc_names = [row[0] for row in doc_result.fetchall()]
+                if doc_names:
+                    knowledge_base_info = {
+                        "document_count": len(doc_names),
+                        "document_names": doc_names,
+                    }
+                    token_logger.info(
+                        "knowledge_base_context_loaded",
+                        document_count=len(doc_names),
+                    )
+
             # Build instructions with language for the frontend to use
             system_prompt = agent.system_prompt or "You are a helpful voice assistant."
             instructions_with_language = build_instructions_with_language(
-                system_prompt, agent.language
+                system_prompt, agent.language, knowledge_base_info=knowledge_base_info
             )
 
             # Return token data with agent info and tools
