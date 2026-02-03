@@ -37,7 +37,7 @@ export function RoleBadge({ role, className }: RoleBadgeProps) {
     const Icon = config.icon;
 
     return (
-        <Badge variant={config.variant} className={`${config.className} ${className || ""}`}>
+        <Badge variant={config.variant} className={`${config.className} ${className ?? ""}`}>
             <Icon className="mr-1 h-3 w-3" />
             {config.label}
         </Badge>

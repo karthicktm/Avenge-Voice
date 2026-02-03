@@ -622,7 +622,7 @@ const ProfileTab = memo(function ProfileTab() {
                   <UserIcon className="h-8 w-8 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold">{user.full_name || user.username || "User"}</h2>
+                  <h2 className="text-xl font-semibold">{user.full_name ?? user.username ?? "User"}</h2>
                   <p className="text-sm text-muted-foreground">{user.email}</p>
                 </div>
               </div>
