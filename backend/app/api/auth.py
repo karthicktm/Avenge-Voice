@@ -34,6 +34,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     username: str  # Will be used as full_name
     password: str
+    organization_name: str | None = None  # Optional: defaults to "{username}'s Organization"
 
 
 class TokenResponse(BaseModel):
@@ -48,14 +49,30 @@ class UserResponse(BaseModel):
 
     id: int
     email: str
-    username: str | None = None  # Maps to full_name
+    username: str | None = None  # Maps to full_name (legacy)
+    full_name: str | None = None
+    role: str = "user"
+    organization_id: str | None = None
+    email_verified: bool = False
+    is_active: bool = True
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
     @classmethod
     def from_user(cls, user: "User") -> "UserResponse":
         """Create response from User model."""
-        return cls(id=user.id, email=user.email, username=user.full_name)
+        return cls(
+            id=user.id,
+            email=user.email,
+            username=user.full_name,  # Legacy field
+            full_name=user.full_name,
+            role=user.role,
+            organization_id=str(user.organization_id) if user.organization_id else None,
+            email_verified=user.email_verified,
+            is_active=user.is_active,
+            created_at=user.created_at,
+        )
 
 
 # =============================================================================
@@ -105,16 +122,24 @@ async def register(
     data: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
-    """Register a new user.
+    """Register a new user with automatic organization and workspace creation.
+
+    Creates:
+    - User account (as organization owner)
+    - Organization (with user as owner)
+    - Default workspace
+    - Workspace membership (user as admin)
 
     Args:
         request: HTTP request (for rate limiter)
-        data: Registration request with email, username, password
+        data: Registration request with email, username, password, organization_name
         db: Database session
 
     Returns:
-        Created user
+        Created user with organization details
     """
+    from app.services.signup_service import create_user_with_organization
+    
     log = logger.bind(email=data.email, username=data.username)
     log.info("registering_user")
 
@@ -126,18 +151,18 @@ async def register(
             detail="Email already registered",
         )
 
-    # Create user (username is stored as full_name)
-    user = User(
+    # Create user with organization and workspace
+    user = await create_user_with_organization(
+        db=db,
         email=data.email,
         full_name=data.username,
         hashed_password=get_password_hash(data.password),
+        organization_name=data.organization_name,
     )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
 
-    log.info("user_registered", user_id=user.id)
+    log.info("user_registered", user_id=user.id, organization_id=str(user.organization_id))
     return UserResponse.from_user(user)
+
 
 
 @router.post("/login", response_model=TokenResponse)

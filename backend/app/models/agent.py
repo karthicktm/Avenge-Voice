@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.agent_assignment import AgentAssignment
     from app.models.document import Document
     from app.models.workspace import AgentWorkspace
 
@@ -215,6 +216,9 @@ class Agent(Base):
     )
     documents: Mapped[list["Document"]] = relationship(
         "Document", back_populates="agent", cascade="all, delete-orphan"
+    )
+    user_assignments: Mapped[list["AgentAssignment"]] = relationship(
+        "AgentAssignment", back_populates="agent", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

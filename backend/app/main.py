@@ -85,31 +85,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: PLR0915
         logger.exception("Failed to initialize Redis - application cannot start")
         raise  # Re-raise to prevent app startup
 
-    # Create default admin user if no users exist
+    # Create default super admin user if configured via environment variables
     try:
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(select(func.count(User.id)))
-            user_count = result.scalar() or 0
-
-            if user_count == 0:
-                admin_user = User(
-                    email=settings.ADMIN_EMAIL,
-                    hashed_password=get_password_hash(settings.ADMIN_PASSWORD),
-                    full_name=settings.ADMIN_NAME,
-                    is_active=True,
-                    is_superuser=True,
-                )
-                db.add(admin_user)
-                await db.commit()
-                logger.info(
-                    "Created default admin user",
-                    email=settings.ADMIN_EMAIL,
-                    name=settings.ADMIN_NAME,
-                )
-            else:
-                logger.debug("Users already exist, skipping admin user creation")
+        from app.cli import create_superuser_from_env
+        await create_superuser_from_env()
     except Exception:
-        logger.exception("Failed to check/create admin user - continuing anyway")
+        logger.exception("Failed to check/create super admin from environment - continuing anyway")
 
     # Initialize Sentry if configured (non-fatal)
     if settings.SENTRY_DSN:

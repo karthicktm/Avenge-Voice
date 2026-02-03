@@ -89,6 +89,8 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:8000",
+        "https://avenge-voice-production.up.railway.app",
+        "https://avenge-voice-backend-production.up.railway.app",
     ]
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: list[str] = ["*"]
@@ -97,7 +99,21 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
 
-    # Default Admin User (created on first startup if no users exist)
+    # Email Service (SMTP)
+    SMTP_HOST: str = "localhost"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    FROM_EMAIL: str = "noreply@avenge-voice.com"
+    FROM_NAME: str = "Avenge Voice"
+    FRONTEND_URL: str = "http://localhost:3000"
+
+    # Super Admin (created on startup if environment variables are set)
+    SUPER_ADMIN_EMAIL: str | None = None
+    SUPER_ADMIN_PASSWORD: str | None = None
+    SUPER_ADMIN_NAME: str = "Super Admin"
+
+    # Legacy Admin User (deprecated - use SUPER_ADMIN_* instead)
     ADMIN_EMAIL: str = "admin@voicenoob.com"
     ADMIN_PASSWORD: str = "admin"
     ADMIN_NAME: str = "Admin"

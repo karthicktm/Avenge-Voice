@@ -10,6 +10,8 @@ import {
   type UpdateSettingsRequest,
 } from "@/lib/api/settings";
 import { api } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
+import { RoleBadge } from "@/components/auth/role-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +56,11 @@ import {
   Mic,
   Volume2,
   Phone,
+  User as UserIcon,
+  Mail,
+  Calendar,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 
 interface Workspace {
@@ -293,13 +300,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="profile" className="mt-6 space-y-4">
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <SettingsIcon className="mb-4 h-16 w-16 text-muted-foreground/50" />
-              <h3 className="mb-2 text-lg font-semibold">Profile Settings</h3>
-              <p className="text-sm text-muted-foreground">Coming soon...</p>
-            </CardContent>
-          </Card>
+          <ProfileTab />
         </TabsContent>
 
         <TabsContent value="billing" className="mt-6 space-y-4">
@@ -593,5 +594,124 @@ const ApiKeyConfigForm = memo(function ApiKeyConfigForm({
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+});
+
+const ProfileTab = memo(function ProfileTab() {
+  const { user } = useAuth();
+
+  if (!user) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-16">
+          <Loader2 className="mb-4 h-16 w-16 animate-spin text-muted-foreground/50" />
+          <p className="text-sm text-muted-foreground">Loading profile...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-6">
+          <div className="space-y-6">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                  <UserIcon className="h-8 w-8 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold">{user.full_name || user.username || "User"}</h2>
+                  <p className="text-sm text-muted-foreground">{user.email}</p>
+                </div>
+              </div>
+              <RoleBadge role={user.role} />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-sm text-muted-foreground">Email Address</Label>
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">{user.email}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm text-muted-foreground">Email Verification</Label>
+                <div className="flex items-center gap-2">
+                  {user.email_verified ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <span className="text-sm text-green-600 dark:text-green-400">Verified</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-4 w-4 text-orange-500" />
+                      <span className="text-sm text-orange-600 dark:text-orange-400">Not Verified</span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm text-muted-foreground">Account Status</Label>
+                <div className="flex items-center gap-2">
+                  {user.is_active ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <span className="text-sm text-green-600 dark:text-green-400">Active</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-4 w-4 text-red-500" />
+                      <span className="text-sm text-red-600 dark:text-red-400">Inactive</span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm text-muted-foreground">Member Since</Label>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">
+                    {new Date(user.created_at).toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {user.organization_id && (
+              <div className="space-y-2 rounded-lg border bg-muted/50 p-4">
+                <Label className="text-sm text-muted-foreground">Organization ID</Label>
+                <p className="font-mono text-xs text-muted-foreground">{user.organization_id}</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-6">
+          <h3 className="mb-4 text-lg font-semibold">Account Actions</h3>
+          <div className="space-y-3">
+            <Button variant="outline" className="w-full justify-start" disabled>
+              <SettingsIcon className="mr-2 h-4 w-4" />
+              Change Password (Coming Soon)
+            </Button>
+            <Button variant="outline" className="w-full justify-start" disabled>
+              <Mail className="mr-2 h-4 w-4" />
+              Update Email (Coming Soon)
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 });

@@ -6,13 +6,21 @@ import { useRouter, usePathname } from "next/navigation";
 interface User {
   id: number;
   email: string;
-  username: string;
+  full_name: string | null;
+  username?: string; // Legacy field
+  role: "super_admin" | "organization_owner" | "user";
+  organization_id: string | null;
+  email_verified: boolean;
+  is_active: boolean;
+  created_at: string;
 }
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
+  isSuperAdmin: boolean;
+  isOrganizationOwner: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => void;
@@ -129,8 +137,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push("/login");
   };
 
+  // Computed properties for role checking
+  const isSuperAdmin = user?.role === "super_admin";
+  const isOrganizationOwner = user?.role === "organization_owner";
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        isLoading,
+        isSuperAdmin,
+        isOrganizationOwner,
+        login,
+        register,
+        logout
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

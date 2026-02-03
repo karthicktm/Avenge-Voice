@@ -13,7 +13,10 @@ if TYPE_CHECKING:
     from app.models.appointment import Appointment
     from app.models.call_interaction import CallInteraction
     from app.models.contact import Contact
+    from app.models.organization import Organization
     from app.models.user import User
+    from app.models.workspace_invitation import WorkspaceInvitation
+    from app.models.workspace_member import WorkspaceMember
 
 
 class Workspace(Base, TimestampMixin):
@@ -36,6 +39,13 @@ class Workspace(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Organization this workspace belongs to",
     )
 
     # Basic info
@@ -61,6 +71,13 @@ class Workspace(Base, TimestampMixin):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="workspaces")
+    organization: Mapped["Organization"] = relationship("Organization", back_populates="workspaces")
+    members: Mapped[list["WorkspaceMember"]] = relationship(
+        "WorkspaceMember", back_populates="workspace", cascade="all, delete-orphan"
+    )
+    invitations: Mapped[list["WorkspaceInvitation"]] = relationship(
+        "WorkspaceInvitation", back_populates="workspace", cascade="all, delete-orphan"
+    )
     contacts: Mapped[list["Contact"]] = relationship(
         "Contact", back_populates="workspace", cascade="all, delete-orphan"
     )
