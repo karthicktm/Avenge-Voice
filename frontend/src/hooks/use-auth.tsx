@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isLoading) return;
 
     const isAuthPage = pathname === "/login" || pathname === "/register";
-    const isPublicPage = pathname.startsWith("/embed"); // Embed pages are public, no auth required
+    const isPublicPage = pathname === "/" || pathname.startsWith("/embed"); // Landing page and embed pages are public
 
     if (!token && !isAuthPage && !isPublicPage) {
       router.push("/login");
