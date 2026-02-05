@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 
+import "./marketing.css";
+
 export default function MarketingLayout({
     children,
 }: {

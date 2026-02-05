@@ -4,6 +4,13 @@ import { useEffect } from "react";
 import Link from "next/link";
 import Script from "next/script";
 
+// Type declaration for the WaveformAnimation class loaded from external script
+declare global {
+    interface Window {
+        WaveformAnimation?: new (canvasId: string) => void;
+    }
+}
+
 export default function LandingPage() {
     useEffect(() => {
         // Initialize Intersection Observer for scroll animations
@@ -37,8 +44,8 @@ export default function LandingPage() {
         const maxAttempts = 20;
         const initWaveform = () => {
             attempts++;
-            if (typeof (window as any).WaveformAnimation !== 'undefined') {
-                new (window as any).WaveformAnimation('waveform');
+            if (typeof window.WaveformAnimation !== 'undefined') {
+                new window.WaveformAnimation('waveform');
             } else if (attempts < maxAttempts) {
                 setTimeout(initWaveform, 200);
             }
@@ -53,8 +60,7 @@ export default function LandingPage() {
 
     return (
         <>
-            {/* Load landing page CSS */}
-            <link rel="stylesheet" href="/landing/landing.css" />
+
 
             {/* Hero Section */}
             <section className="hero section">
@@ -259,8 +265,8 @@ export default function LandingPage() {
                 strategy="afterInteractive"
                 onReady={() => {
                     // Initialize waveform animation after script loads
-                    if (typeof (window as any).WaveformAnimation !== 'undefined') {
-                        new (window as any).WaveformAnimation('waveform');
+                    if (typeof window.WaveformAnimation !== 'undefined') {
+                        new window.WaveformAnimation('waveform');
                     }
                 }}
             />
