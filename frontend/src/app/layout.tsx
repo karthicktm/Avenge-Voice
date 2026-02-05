@@ -30,7 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        <title>Avenge Voice</title>
+        <title>Avenge AI</title>
         <meta name="description" content="AI-powered voice agent platform" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
       </head>

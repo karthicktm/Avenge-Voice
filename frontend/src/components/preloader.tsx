@@ -55,7 +55,7 @@ export function Preloader() {
                 backgroundSize: "200% 100%",
               }}
             >
-              Avenge Voice
+              Avenge AI
             </span>
 
             {/* Loading dots */}

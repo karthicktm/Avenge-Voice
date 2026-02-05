@@ -134,7 +134,7 @@ export function AppSidebar() {
             animate={{ width: sidebarOpen ? 120 : 11 }}
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
           >
-            Avenge Voice
+            Avenge AI
           </motion.span>
         </Link>
       </div>

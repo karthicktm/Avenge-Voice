@@ -18,8 +18,8 @@ export interface Integration {
   icon: string;
   enabled: boolean;
   isPopular?: boolean;
-  isBuiltIn?: boolean; // Avenge Voice built-in integration
-  badge?: string; // Custom badge text (e.g., "Avenge Voice", "Popular")
+  isBuiltIn?: boolean; // Avenge AI built-in integration
+  badge?: string; // Custom badge text (e.g., "Avenge AI", "Popular")
   fields?: IntegrationField[];
   scopes?: string[];
   documentationUrl?: string;
@@ -47,7 +47,7 @@ export interface IntegrationTool {
 }
 
 export const AVAILABLE_INTEGRATIONS: Integration[] = [
-  // Built-in Avenge Voice Tools (No external API needed)
+  // Built-in Avenge AI Tools (No external API needed)
   {
     id: "call_control",
     name: "Call Control",
@@ -58,7 +58,7 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
     icon: "https://cdn.simpleicons.org/phone",
     enabled: true,
     isBuiltIn: true,
-    badge: "Avenge Voice",
+    badge: "Avenge AI",
     documentationUrl: "/docs/call-control-tools",
     tools: [
       {
@@ -94,7 +94,7 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
     icon: "https://cdn.simpleicons.org/contactlessPayment",
     enabled: true,
     isBuiltIn: true,
-    badge: "Avenge Voice",
+    badge: "Avenge AI",
     documentationUrl: "/docs/crm-tools",
     tools: [
       {
@@ -123,7 +123,7 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
     icon: "https://cdn.simpleicons.org/calendly",
     enabled: true,
     isBuiltIn: true,
-    badge: "Avenge Voice",
+    badge: "Avenge AI",
     documentationUrl: "/docs/booking-tools",
     tools: [
       {
@@ -173,7 +173,7 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
     icon: "https://cdn.simpleicons.org/googlechrome",
     enabled: true,
     isBuiltIn: true,
-    badge: "Avenge Voice",
+    badge: "Avenge AI",
     tools: [
       {
         id: "web_search",
@@ -194,7 +194,7 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
     icon: "https://cdn.simpleicons.org/readthedocs",
     enabled: true,
     isBuiltIn: true,
-    badge: "Avenge Voice",
+    badge: "Avenge AI",
     fields: [
       {
         name: "embedding_provider",

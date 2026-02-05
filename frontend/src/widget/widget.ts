@@ -1,5 +1,5 @@
 /**
- * Avenge Voice Widget - Standalone Web Component
+ * Avenge AI Widget - Standalone Web Component
  *
  * This script creates a floating voice chat widget that can be embedded on any website.
  * Usage:
@@ -387,7 +387,7 @@ class VoiceAgentElement extends HTMLElement {
             <span id="button-text">${this.buttonText}</span>
           </button>
           <div class="va-widget-branding">
-            Powered by <a href="https://avengevoice.com" target="_blank" rel="noopener noreferrer">Avenge Voice</a>
+            Powered by <a href="https://avengevoice.com" target="_blank" rel="noopener noreferrer">Avenge AI</a>
           </div>
         </div>
       </div>
