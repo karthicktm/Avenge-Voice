@@ -20,7 +20,7 @@ export default function LandingPage() {
         };
 
         const observer = new IntersectionObserver((entries) => {
-            entries.forEach((entry, index) => {
+            entries.forEach((entry: IntersectionObserverEntry, index: number) => {
                 if (entry.isIntersecting) {
                     setTimeout(() => {
                         entry.target.classList.add('visible');
@@ -37,7 +37,7 @@ export default function LandingPage() {
         pricingCards.forEach(card => observer.observe(card));
 
         const integrationItems = document.querySelectorAll('.integration-item');
-        integrationItems.forEach(item => observer.observe(item));
+        integrationItems.forEach((item: Element) => observer.observe(item));
 
         // Initialize hero waveform animation with retry logic
         let attempts = 0;
