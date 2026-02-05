@@ -257,7 +257,7 @@ export default function SettingsPage() {
           {/* Voice & AI Providers Section */}
           <div className="space-y-4">
             <div>
-              <h2 className="text-lg font-medium">Voice & AI Providers</h2>
+              <h2 className="text-lg font-medium text-foreground">Voice & AI Providers</h2>
               <p className="text-sm text-muted-foreground">
                 Configure speech recognition, text-to-speech, and language model providers
               </p>
@@ -279,7 +279,7 @@ export default function SettingsPage() {
           {/* Telephony Providers Section */}
           <div className="space-y-4">
             <div>
-              <h2 className="text-lg font-medium">Telephony Providers</h2>
+              <h2 className="text-lg font-medium text-foreground">Telephony Providers</h2>
               <p className="text-sm text-muted-foreground">
                 Configure phone number and call routing providers
               </p>
