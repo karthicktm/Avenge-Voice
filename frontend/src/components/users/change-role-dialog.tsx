@@ -31,6 +31,7 @@ interface ChangeRoleDialogProps {
 const roleLabels: Record<UserRole, string> = {
   super_admin: "Super Admin",
   admin: "Admin",
+  owner: "Owner",
   user: "Member",
 };
 

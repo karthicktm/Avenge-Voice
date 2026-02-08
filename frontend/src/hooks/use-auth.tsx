@@ -8,7 +8,7 @@ interface User {
   email: string;
   full_name: string | null;
   username?: string; // Legacy field
-  role: "super_admin" | "admin" | "user";
+  role: "super_admin" | "admin" | "owner" | "user";
   organization_id: string | null;
   email_verified: boolean;
   is_active: boolean;
@@ -158,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Computed properties for role checking
   const isSuperAdmin = user?.role === "super_admin";
-  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin" || user?.role === "owner";
 
   return (
     <AuthContext.Provider

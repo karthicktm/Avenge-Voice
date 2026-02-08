@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 import { useAuth } from "@/hooks/use-auth";
 
 interface RequireRoleProps {
-  role: "super_admin" | "admin" | "user";
+  role: "super_admin" | "admin" | "owner" | "user";
   children: ReactNode;
   fallback?: ReactNode;
 }
@@ -28,8 +28,9 @@ export function RequireRole({ role, children, fallback = null }: RequireRoleProp
 
   // Role hierarchy check
   const roleHierarchy = {
-    super_admin: 3,
-    admin: 2,
+    super_admin: 4,
+    admin: 3,
+    owner: 2,
     user: 1,
   };
 

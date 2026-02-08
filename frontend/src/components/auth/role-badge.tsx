@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Shield, Crown, User } from "lucide-react";
 
 interface RoleBadgeProps {
-  role: "super_admin" | "admin" | "user";
+  role: "super_admin" | "admin" | "owner" | "user";
   className?: string;
 }
 
@@ -24,6 +24,12 @@ export function RoleBadge({ role, className }: RoleBadgeProps) {
       icon: Shield,
       variant: "default" as const,
       className: "bg-blue-600 hover:bg-blue-700 text-white",
+    },
+    owner: {
+      label: "Owner",
+      icon: Crown,
+      variant: "default" as const,
+      className: "bg-amber-600 hover:bg-amber-700 text-white",
     },
     user: {
       label: "Member",

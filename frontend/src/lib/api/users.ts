@@ -47,7 +47,7 @@ async function fetchWithTimeout(
 // Types
 // =============================================================================
 
-export type UserRole = "super_admin" | "admin" | "user";
+export type UserRole = "super_admin" | "admin" | "owner" | "user";
 
 export interface UserResponse {
   id: number;
