@@ -68,7 +68,10 @@ class WorkspaceInvitation(Base, TimestampMixin):
 
     # Invitation metadata
     invited_by: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, comment="User who sent invitation"
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="User who sent invitation",
     )
     status: Mapped[InvitationStatus] = mapped_column(
         String(50),
@@ -91,7 +94,10 @@ class WorkspaceInvitation(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True, comment="When invitation was accepted"
     )
     accepted_by_user_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, comment="User who accepted"
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="User who accepted",
     )
 
     # Relationships

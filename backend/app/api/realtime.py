@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.integrations import get_workspace_integrations
 from app.api.settings import get_user_api_keys
-from app.core.auth import CurrentUser, user_id_to_uuid
+from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.agent import Agent
@@ -376,7 +376,7 @@ async def create_webrtc_session(
     agent_id: str,
     workspace_id: str,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Create a WebRTC session for GPT Realtime API.
@@ -538,7 +538,7 @@ async def create_webrtc_session(
 @webrtc_router.get("/token/{agent_id}")
 async def get_ephemeral_token(
     agent_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     workspace_id: str | None = None,
 ) -> dict[str, Any]:
@@ -727,7 +727,7 @@ class SaveTranscriptRequest(BaseModel):
 async def save_transcript(
     agent_id: str,
     request: SaveTranscriptRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     workspace_id: str | None = None,
 ) -> dict[str, Any]:

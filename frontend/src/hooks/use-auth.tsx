@@ -8,7 +8,7 @@ interface User {
   email: string;
   full_name: string | null;
   username?: string; // Legacy field
-  role: "super_admin" | "organization_owner" | "user";
+  role: "super_admin" | "admin" | "user";
   organization_id: string | null;
   email_verified: boolean;
   is_active: boolean;
@@ -20,10 +20,11 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isSuperAdmin: boolean;
-  isOrganizationOwner: boolean;
+  isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => void;
+  logoutAllDevices: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -126,8 +127,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(error.detail ?? "Registration failed");
     }
 
-    // Auto-login after registration
-    await login(email, password);
+    // Don't auto-login - user needs to verify email first
+    // The register page will show the verification dialog
   };
 
   const logout = () => {
@@ -137,9 +138,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push("/login");
   };
 
+  const logoutAllDevices = async () => {
+    try {
+      // Revoke all sessions on the server
+      await fetch(`${API_BASE}/api/v1/auth/logout-all`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch {
+      // Even if server call fails, proceed with local logout
+    }
+    localStorage.removeItem("access_token");
+    setToken(null);
+    setUser(null);
+    router.push("/login");
+  };
+
   // Computed properties for role checking
   const isSuperAdmin = user?.role === "super_admin";
-  const isOrganizationOwner = user?.role === "organization_owner";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   return (
     <AuthContext.Provider
@@ -148,10 +167,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         isLoading,
         isSuperAdmin,
-        isOrganizationOwner,
+        isAdmin,
         login,
         register,
-        logout
+        logout,
+        logoutAllDevices,
       }}
     >
       {children}

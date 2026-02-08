@@ -4,87 +4,87 @@ import { type ReactNode } from "react";
 import { useAuth } from "@/hooks/use-auth";
 
 interface RequireRoleProps {
-    role: "super_admin" | "organization_owner" | "user";
-    children: ReactNode;
-    fallback?: ReactNode;
+  role: "super_admin" | "admin" | "user";
+  children: ReactNode;
+  fallback?: ReactNode;
 }
 
 /**
  * Component that only renders children if user has the specified role or higher.
- * 
- * Role hierarchy: super_admin > organization_owner > user
- * 
+ *
+ * Role hierarchy: super_admin > admin > user
+ *
  * @example
- * <RequireRole role="organization_owner">
+ * <RequireRole role="admin">
  *   <AdminPanel />
  * </RequireRole>
  */
 export function RequireRole({ role, children, fallback = null }: RequireRoleProps) {
-    const { user } = useAuth();
+  const { user } = useAuth();
 
-    if (!user) {
-        return <>{fallback}</>;
-    }
-
-    // Role hierarchy check
-    const roleHierarchy = {
-        super_admin: 3,
-        organization_owner: 2,
-        user: 1,
-    };
-
-    const userLevel = roleHierarchy[user.role];
-    const requiredLevel = roleHierarchy[role];
-
-    if (userLevel >= requiredLevel) {
-        return <>{children}</>;
-    }
-
+  if (!user) {
     return <>{fallback}</>;
+  }
+
+  // Role hierarchy check
+  const roleHierarchy = {
+    super_admin: 3,
+    admin: 2,
+    user: 1,
+  };
+
+  const userLevel = roleHierarchy[user.role];
+  const requiredLevel = roleHierarchy[role];
+
+  if (userLevel >= requiredLevel) {
+    return <>{children}</>;
+  }
+
+  return <>{fallback}</>;
 }
 
 interface RequireSuperAdminProps {
-    children: ReactNode;
-    fallback?: ReactNode;
+  children: ReactNode;
+  fallback?: ReactNode;
 }
 
 /**
  * Component that only renders children if user is a super admin.
- * 
+ *
  * @example
  * <RequireSuperAdmin>
  *   <SuperAdminDashboard />
  * </RequireSuperAdmin>
  */
 export function RequireSuperAdmin({ children, fallback = null }: RequireSuperAdminProps) {
-    const { isSuperAdmin } = useAuth();
+  const { isSuperAdmin } = useAuth();
 
-    if (isSuperAdmin) {
-        return <>{children}</>;
-    }
+  if (isSuperAdmin) {
+    return <>{children}</>;
+  }
 
-    return <>{fallback}</>;
+  return <>{fallback}</>;
 }
 
-interface RequireOrganizationOwnerProps {
-    children: ReactNode;
-    fallback?: ReactNode;
+interface RequireAdminProps {
+  children: ReactNode;
+  fallback?: ReactNode;
 }
 
 /**
- * Component that only renders children if user is an organization owner or super admin.
- * 
+ * Component that only renders children if user is an admin or super admin.
+ *
  * @example
- * <RequireOrganizationOwner>
+ * <RequireAdmin>
  *   <BillingSettings />
- * </RequireOrganizationOwner>
+ * </RequireAdmin>
  */
-export function RequireOrganizationOwner({ children, fallback = null }: RequireOrganizationOwnerProps) {
-    const { isSuperAdmin, isOrganizationOwner } = useAuth();
+export function RequireAdmin({ children, fallback = null }: RequireAdminProps) {
+  const { isAdmin } = useAuth();
 
-    if (isSuperAdmin || isOrganizationOwner) {
-        return <>{children}</>;
-    }
+  if (isAdmin) {
+    return <>{children}</>;
+  }
 
-    return <>{fallback}</>;
+  return <>{fallback}</>;
 }

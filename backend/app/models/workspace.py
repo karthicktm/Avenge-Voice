@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.models.call_interaction import CallInteraction
     from app.models.contact import Contact
     from app.models.organization import Organization
+    from app.models.quota import WorkspaceQuota
     from app.models.user import User
     from app.models.workspace_invitation import WorkspaceInvitation
     from app.models.workspace_member import WorkspaceMember
@@ -89,6 +90,9 @@ class Workspace(Base, TimestampMixin):
     )
     agent_workspaces: Mapped[list["AgentWorkspace"]] = relationship(
         "AgentWorkspace", back_populates="workspace", cascade="all, delete-orphan"
+    )
+    quota: Mapped["WorkspaceQuota | None"] = relationship(
+        "WorkspaceQuota", back_populates="workspace", uselist=False, cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

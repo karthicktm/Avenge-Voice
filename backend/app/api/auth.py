@@ -139,7 +139,7 @@ async def register(
         Created user with organization details
     """
     from app.services.signup_service import create_user_with_organization
-    
+
     log = logger.bind(email=data.email, username=data.username)
     log.info("registering_user")
 
@@ -160,9 +160,31 @@ async def register(
         organization_name=data.organization_name,
     )
 
+    # Generate and send verification code
+    from app.services import email_service, email_verification_service
+
+    code = email_verification_service.generate_verification_code()
+    user.otp_secret = email_verification_service.hash_verification_code(code)
+    user.otp_expires_at = datetime.now(UTC) + timedelta(minutes=10)
+    user.last_otp_sent_at = datetime.now(UTC)
+    await db.commit()
+
+    # Send verification email (best effort - don't fail registration if email fails)
+    try:
+        html_content = email_service.generate_verification_code_email(code, user.full_name)
+        await email_service.send_email(
+            db=db,
+            to_email=user.email,
+            subject="Verify Your Email - Avenge AI",
+            html_content=html_content,
+        )
+        log.info("verification_code_sent_on_registration")
+    except Exception as e:
+        log.warning("verification_code_send_failed_on_registration", error=str(e))
+        # Don't fail registration if email fails
+
     log.info("user_registered", user_id=user.id, organization_id=str(user.organization_id))
     return UserResponse.from_user(user)
-
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -188,13 +210,29 @@ async def login(
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if (
+        not user
+        or not user.hashed_password
+        or not verify_password(form_data.password, user.hashed_password)
+    ):
         log.warning("login_failed")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Check if email is verified
+    if not user.email_verified:
+        log.warning("login_attempted_unverified_email")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please check your email for the verification code.",
+        )
+
+    # Update last login timestamp
+    user.last_login_at = datetime.now(UTC)
+    await db.commit()
 
     access_token = create_access_token(user.id)
     log.info("login_success", user_id=user.id)
@@ -213,3 +251,260 @@ async def get_current_user_info(current_user: CurrentUser) -> UserResponse:
         User information
     """
     return UserResponse.from_user(current_user)
+
+
+# =============================================================================
+# Email Verification Endpoints
+# =============================================================================
+
+
+class SendVerificationCodeRequest(BaseModel):
+    """Request to send verification code."""
+
+    email: EmailStr
+
+
+class VerifyEmailCodeRequest(BaseModel):
+    """Request to verify email code."""
+
+    email: EmailStr
+    code: str
+
+
+class VerificationCodeResponse(BaseModel):
+    """Response after sending verification code."""
+
+    message: str
+    expires_in_minutes: int = 10
+
+
+@router.post("/send-verification-code", response_model=VerificationCodeResponse)
+@limiter.limit("3/minute")  # Strict rate limit
+async def send_verification_code(
+    request: Request,
+    data: SendVerificationCodeRequest,
+    db: AsyncSession = Depends(get_db),
+) -> VerificationCodeResponse:
+    """Send verification code to email.
+
+    Args:
+        request: HTTP request (for rate limiter)
+        data: Email to send code to
+        db: Database session
+
+    Returns:
+        Success message with expiry time
+    """
+    from app.services import email_service, email_verification_service
+
+    log = logger.bind(email=data.email)
+    log.info("send_verification_code_requested")
+
+    # Find user by email
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Check if already verified
+    if user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already verified",
+        )
+
+    # Check rate limiting
+    can_request, seconds_remaining = await email_verification_service.can_request_verification_code(
+        db, user.id, user.last_otp_sent_at
+    )
+
+    if not can_request:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Please wait {seconds_remaining} seconds before requesting a new code",
+        )
+
+    # Generate verification code
+    code = email_verification_service.generate_verification_code()
+
+    # Update user with hashed code (HMAC-SHA256)
+    user.otp_secret = email_verification_service.hash_verification_code(code)
+    user.otp_expires_at = datetime.now(UTC) + timedelta(minutes=10)
+    user.last_otp_sent_at = datetime.now(UTC)
+    await db.commit()
+
+    # Send email
+    try:
+        html_content = email_service.generate_verification_code_email(code, user.full_name)
+        await email_service.send_email(
+            db=db,
+            to_email=user.email,
+            subject="Your Verification Code - Avenge AI",
+            html_content=html_content,
+        )
+        log.info("verification_code_sent")
+    except email_service.ResendNotConfiguredError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Email service not configured. Please contact support.",
+        ) from None
+    except Exception as e:
+        log.exception("verification_code_send_failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send verification code",
+        ) from e
+
+    return VerificationCodeResponse(
+        message="Verification code sent to your email",
+        expires_in_minutes=10,
+    )
+
+
+@router.post("/verify-email-code", response_model=TokenResponse)
+@limiter.limit("5/minute")  # Allow some retries for typos
+async def verify_email_code(
+    request: Request,
+    data: VerifyEmailCodeRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    """Verify email with code and activate account.
+
+    Args:
+        request: HTTP request (for rate limiter)
+        data: Email and verification code
+        db: Database session
+
+    Returns:
+        Access token for immediate login
+    """
+    from app.services import email_verification_service
+
+    log = logger.bind(email=data.email)
+    log.info("verify_email_code_requested")
+
+    # Find user by email
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Check if already verified
+    if user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already verified",
+        )
+
+    # Check if code exists
+    if not user.otp_secret or not user.otp_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No verification code found. Please request a new one.",
+        )
+
+    # Check if code is expired
+    if email_verification_service.is_code_expired(user.otp_expires_at):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification code expired. Please request a new one.",
+        )
+
+    # Verify code (timing-safe comparison)
+    if not email_verification_service.verify_code_timing_safe(user.otp_secret, data.code):
+        log.warning("invalid_verification_code")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code",
+        )
+
+    # Activate account
+    user.email_verified = True
+    user.otp_secret = None  # Clear the code
+    user.otp_expires_at = None
+    await db.commit()
+
+    log.info("email_verified", user_id=user.id)
+
+    # Create access token for immediate login
+    access_token = create_access_token(user.id)
+
+    return TokenResponse(access_token=access_token)
+
+
+# =============================================================================
+# Logout Endpoints
+# =============================================================================
+
+
+class LogoutResponse(BaseModel):
+    """Response after logout."""
+
+    message: str
+
+
+@router.post("/logout", response_model=LogoutResponse)
+async def logout(
+    current_user: CurrentUser,
+) -> LogoutResponse:
+    """Logout the current session.
+
+    Note: With stateless JWT tokens, this is primarily a signal to the client
+    to clear the token. The token remains valid until expiration.
+
+    For true session invalidation, use /logout-all which revokes all sessions
+    stored in Redis.
+
+    Args:
+        current_user: Authenticated user
+
+    Returns:
+        Logout success message
+    """
+    logger.info("user_logged_out", user_id=current_user.id)
+    return LogoutResponse(message="Successfully logged out")
+
+
+class LogoutAllResponse(BaseModel):
+    """Response after logging out all devices."""
+
+    message: str
+    sessions_revoked: int
+
+
+@router.post("/logout-all", response_model=LogoutAllResponse)
+async def logout_all(
+    current_user: CurrentUser,
+) -> LogoutAllResponse:
+    """Logout from all devices by revoking all sessions.
+
+    This revokes all active sessions for the user in Redis,
+    effectively logging them out of all devices.
+
+    Args:
+        current_user: Authenticated user
+
+    Returns:
+        Logout success message with count of revoked sessions
+    """
+    from app.services import session_service
+
+    log = logger.bind(user_id=current_user.id)
+    log.info("logout_all_requested")
+
+    # Revoke all sessions
+    revoked_count = await session_service.revoke_all_sessions(current_user.id)
+
+    log.info("logout_all_completed", sessions_revoked=revoked_count)
+    return LogoutAllResponse(
+        message="Successfully logged out of all devices",
+        sessions_revoked=revoked_count,
+    )

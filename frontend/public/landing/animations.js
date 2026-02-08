@@ -60,7 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Add scroll effect to navigation
-    let lastScroll = 0;
     const nav = document.querySelector('.nav');
 
     window.addEventListener('scroll', () => {
@@ -73,8 +72,6 @@ document.addEventListener('DOMContentLoaded', () => {
             nav.style.padding = '24px 0';
             nav.style.boxShadow = 'none';
         }
-
-        lastScroll = currentScroll;
     });
 
     // Add hover effect to buttons
@@ -153,16 +150,3 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.style.opacity = '1';
     }, 100);
 });
-
-// Performance optimization: Debounce scroll events
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}

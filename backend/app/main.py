@@ -19,11 +19,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import func, select
 
 from app.api import (
     agents,
     auth,
+    billing,
     calls,
     campaigns,
     compliance,
@@ -32,22 +32,27 @@ from app.api import (
     embed,
     health,
     integrations,
+    organizations,
+    password_reset,
     phone_numbers,
     realtime,
+    setup,
     telephony,
     telephony_ws,
     tools,
+    usage,
+    usage_ws,
+    users,
+    webhooks,
     workspaces,
 )
 from app.api import settings as settings_api
-from app.api.auth import get_password_hash
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.db.redis import close_redis, get_redis
-from app.db.session import AsyncSessionLocal, engine
+from app.db.session import engine
 from app.middleware.request_tracing import RequestTracingMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
-from app.models.user import User
 from app.services.campaign_worker import start_campaign_worker, stop_campaign_worker
 
 # Configure structured logging with async processors
@@ -72,7 +77,7 @@ logger = structlog.get_logger()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: PLR0915
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for startup and shutdown events."""
     # Startup
     logger.info("Starting application", app_name=settings.APP_NAME)
@@ -88,6 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: PLR0915
     # Create default super admin user if configured via environment variables
     try:
         from app.cli import create_superuser_from_env
+
         await create_superuser_from_env()
     except Exception:
         logger.exception("Failed to check/create super admin from environment - continuing anyway")
@@ -188,11 +194,19 @@ app.include_router(calls.router)  # Call history API
 app.include_router(campaigns.router, prefix=settings.API_V1_PREFIX)  # Campaigns API
 app.include_router(phone_numbers.router)  # Phone numbers API
 app.include_router(auth.router)  # Authentication API
+app.include_router(password_reset.router)  # Password reset API
 app.include_router(compliance.router)  # Compliance API (GDPR/CCPA)
 app.include_router(integrations.router)  # Integrations API (external tools)
 app.include_router(documents.router)  # Documents API (Knowledge Base/RAG)
 app.include_router(embed.router)  # Public embed API (unauthenticated)
 app.include_router(embed.ws_router)  # Public embed WebSocket
+app.include_router(setup.router)  # First-run setup API (unauthenticated)
+app.include_router(users.router)  # User management API (admin only)
+app.include_router(organizations.router)  # Organization management API
+app.include_router(billing.router)  # Billing & subscription API
+app.include_router(usage.router)  # Usage tracking API
+app.include_router(usage_ws.router)  # Usage WebSocket for real-time updates
+app.include_router(webhooks.router)  # External webhooks (Stripe)
 
 
 @app.get("/")

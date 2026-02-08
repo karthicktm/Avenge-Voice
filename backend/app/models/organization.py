@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.billing import BillingEvent, Invoice, PaymentMethod, UsageAlert
     from app.models.user import User
     from app.models.workspace import Workspace
 
@@ -55,7 +56,11 @@ class Organization(Base, TimestampMixin):
 
     # Owner relationship
     owner_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True, comment="Organization owner user ID"
+        Integer,
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+        comment="Organization owner user ID",
     )
 
     # Subscription & Billing
@@ -130,18 +135,35 @@ class Organization(Base, TimestampMixin):
         comment="List of enabled feature flags for this organization",
     )
 
-    # Payment Integration (for future Stripe integration)
+    # Payment Integration (Stripe)
     stripe_customer_id: Mapped[str | None] = mapped_column(
-        String(100), nullable=True, comment="Stripe customer ID"
+        String(100), nullable=True, index=True, comment="Stripe customer ID"
     )
     stripe_subscription_id: Mapped[str | None] = mapped_column(
-        String(100), nullable=True, comment="Stripe subscription ID"
+        String(100), nullable=True, index=True, comment="Stripe subscription ID"
+    )
+    stripe_price_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="Current Stripe price ID"
     )
     payment_method_last4: Mapped[str | None] = mapped_column(
         String(4), nullable=True, comment="Last 4 digits of payment method"
     )
     next_billing_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="Next billing date"
+    )
+    billing_email: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Billing contact email"
+    )
+
+    # Overage Configuration
+    overage_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, comment="Allow usage-based overages"
+    )
+    overage_rates: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+        comment="Per-resource overage pricing in cents (e.g. {'voice_minutes': 5, 'llm_tokens': 0.001})",
     )
 
     # Organization Status
@@ -166,6 +188,19 @@ class Organization(Base, TimestampMixin):
     )
     workspaces: Mapped[list["Workspace"]] = relationship(
         "Workspace", back_populates="organization", cascade="all, delete-orphan"
+    )
+    # Billing relationships
+    billing_events: Mapped[list["BillingEvent"]] = relationship(
+        "BillingEvent", back_populates="organization", cascade="all, delete-orphan"
+    )
+    invoices: Mapped[list["Invoice"]] = relationship(
+        "Invoice", back_populates="organization", cascade="all, delete-orphan"
+    )
+    payment_methods: Mapped[list["PaymentMethod"]] = relationship(
+        "PaymentMethod", back_populates="organization", cascade="all, delete-orphan"
+    )
+    usage_alerts: Mapped[list["UsageAlert"]] = relationship(
+        "UsageAlert", back_populates="organization", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

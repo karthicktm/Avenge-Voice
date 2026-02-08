@@ -542,7 +542,9 @@ const IntegrationConfigForm = memo(function IntegrationConfigForm({
               <div className="relative">
                 <Input
                   id={field.name}
-                  type={field.type === "password" && !showPasswords[field.name] ? "password" : "text"}
+                  type={
+                    field.type === "password" && !showPasswords[field.name] ? "password" : "text"
+                  }
                   placeholder={field.placeholder ?? `Enter ${field.label.toLowerCase()}`}
                   value={credentials[field.name] ?? ""}
                   onChange={(e) => handleFieldChange(field.name, e.target.value)}

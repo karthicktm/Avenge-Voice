@@ -92,3 +92,68 @@ export async function updateSettings(
 
   return response.json();
 }
+
+// =============================================================================
+// System Settings (Superadmin Only)
+// =============================================================================
+
+export interface SystemSettingsResponse {
+  // Resend (Email)
+  resend_api_key_set: boolean;
+  resend_from_email: string | null;
+  // Stripe (Billing)
+  stripe_secret_key_set: boolean;
+  stripe_publishable_key: string | null;
+  stripe_webhook_secret_set: boolean;
+  stripe_price_free: string | null;
+  stripe_price_starter: string | null;
+  stripe_price_professional: string | null;
+  stripe_price_enterprise: string | null;
+}
+
+export interface UpdateSystemSettingsRequest {
+  // Resend (Email)
+  resend_api_key?: string;
+  resend_from_email?: string;
+  // Stripe (Billing)
+  stripe_secret_key?: string;
+  stripe_publishable_key?: string;
+  stripe_webhook_secret?: string;
+  stripe_price_free?: string;
+  stripe_price_starter?: string;
+  stripe_price_professional?: string;
+  stripe_price_enterprise?: string;
+}
+
+export async function fetchSystemSettings(): Promise<SystemSettingsResponse> {
+  const response = await fetchWithTimeout(`${API_BASE}/api/v1/settings/system`);
+  if (!response.ok) {
+    if (response.status === 403) {
+      throw new Error("Access denied. Only superadmins can access system settings.");
+    }
+    throw new Error(`Failed to fetch system settings: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function updateSystemSettings(
+  request: UpdateSystemSettingsRequest
+): Promise<{ message: string }> {
+  const response = await fetchWithTimeout(`${API_BASE}/api/v1/settings/system`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    if (response.status === 403) {
+      throw new Error("Access denied. Only superadmins can update system settings.");
+    }
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail ?? "Failed to update system settings");
+  }
+
+  return response.json();
+}

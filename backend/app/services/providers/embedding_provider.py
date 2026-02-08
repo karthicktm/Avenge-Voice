@@ -81,11 +81,10 @@ class EmbeddingProvider:
         try:
             if self.provider == "openai":
                 return await self._generate_openai_embeddings(texts)
-            elif self.provider == "voyage":
+            if self.provider == "voyage":
                 return await self._generate_voyage_embeddings(texts)
-            else:
-                msg = f"Unknown provider: {self.provider}"
-                raise ValueError(msg)
+            msg = f"Unknown provider: {self.provider}"
+            raise ValueError(msg)
         except Exception:
             self.logger.exception(
                 "embedding_generation_failed",

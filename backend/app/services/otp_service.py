@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 
 import structlog
 from passlib.context import CryptContext
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User

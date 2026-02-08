@@ -1,484 +1,369 @@
-"""Email service for sending transactional emails."""
+"""Email service using Resend for transactional emails.
 
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from typing import Any
+This service reads Resend credentials from system settings (configured by superadmin).
+"""
 
+import resend
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.models.system_settings import SystemSettings
 
 logger = structlog.get_logger()
 
 
-class EmailService:
-    """Service for sending transactional emails.
+class EmailServiceError(Exception):
+    """Base exception for email service errors."""
 
-    Handles:
-    - Email verification
-    - OTP delivery
-    - Workspace invitations
-    - Welcome emails
-    - Usage warnings
+
+class ResendNotConfiguredError(EmailServiceError):
+    """Raised when Resend is not configured in system settings."""
+
+
+async def get_resend_config(db: AsyncSession) -> dict[str, str]:
+    """Get Resend configuration from system settings.
+
+    Args:
+        db: Database session
+
+    Returns:
+        Dictionary with api_key and from_email
+
+    Raises:
+        ResendNotConfiguredError: If Resend is not configured
+    """
+    # Get API key
+    result = await db.execute(select(SystemSettings).where(SystemSettings.key == "resend_api_key"))
+    api_key_setting = result.scalar_one_or_none()
+
+    # Get from email
+    result = await db.execute(
+        select(SystemSettings).where(SystemSettings.key == "resend_from_email")
+    )
+    from_email_setting = result.scalar_one_or_none()
+
+    api_key = api_key_setting.value if api_key_setting else None
+    from_email = from_email_setting.value if from_email_setting else None
+
+    if not api_key or not from_email:
+        msg = "Resend not configured. Superadmin must configure it in Settings > System."
+        raise ResendNotConfiguredError(msg)
+
+    return {
+        "api_key": api_key,
+        "from_email": from_email,
+    }
+
+
+async def send_email(
+    db: AsyncSession,
+    to_email: str,
+    subject: str,
+    html_content: str,
+    user_id: str | None = None,  # Kept for backwards compatibility but not used
+) -> dict[str, str]:
+    """Send an email using Resend.
+
+    Args:
+        db: Database session
+        to_email: Recipient email address
+        subject: Email subject
+        html_content: HTML email content
+        user_id: Deprecated, kept for backwards compatibility
+
+    Returns:
+        Resend API response with email ID
+
+    Raises:
+        ResendNotConfiguredError: If Resend is not configured
+        EmailServiceError: If email sending fails
+    """
+    log = logger.bind(to_email=to_email, subject=subject)
+
+    try:
+        # Get Resend configuration from system settings
+        config = await get_resend_config(db)
+        resend.api_key = config["api_key"]
+
+        # Send email
+        params = {
+            "from": config["from_email"],
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content,
+        }
+
+        log.info("sending_email")
+        response = resend.Emails.send(params)
+        log.info("email_sent", email_id=response.get("id"))
+
+        return response
+
+    except ResendNotConfiguredError:
+        log.error("resend_not_configured")
+        raise
+    except Exception as e:
+        log.error("email_send_failed", error=str(e))
+        raise EmailServiceError(f"Failed to send email: {e}") from e
+
+
+def generate_verification_code_email(code: str, user_name: str | None = None) -> str:
+    """Generate HTML email template for verification code.
+
+    Args:
+        code: 6-digit verification code
+        user_name: Optional user name for personalization
+
+    Returns:
+        HTML email content
+    """
+    greeting = f"Hi {user_name}," if user_name else "Hi there,"
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #f9fafb;
+            }}
+            .container {{
+                background: #ffffff;
+                border-radius: 12px;
+                padding: 40px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }}
+            .logo {{
+                text-align: center;
+                margin-bottom: 30px;
+            }}
+            .logo h1 {{
+                color: #6366f1;
+                margin: 0;
+                font-size: 32px;
+                font-weight: 700;
+            }}
+            .code-container {{
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 12px;
+                padding: 30px;
+                text-align: center;
+                margin: 30px 0;
+            }}
+            .code {{
+                font-size: 42px;
+                font-weight: bold;
+                color: #ffffff;
+                letter-spacing: 12px;
+                font-family: 'Courier New', monospace;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }}
+            .expiry {{
+                color: #ffffff;
+                margin-top: 15px;
+                font-size: 14px;
+                opacity: 0.9;
+            }}
+            .footer {{
+                margin-top: 30px;
+                padding-top: 20px;
+                border-top: 1px solid #e5e7eb;
+                font-size: 13px;
+                color: #6b7280;
+                text-align: center;
+            }}
+            .warning {{
+                background: #fef3c7;
+                border-left: 4px solid #f59e0b;
+                padding: 16px;
+                margin: 20px 0;
+                border-radius: 6px;
+                font-size: 14px;
+            }}
+            .warning strong {{
+                color: #92400e;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="logo">
+                <h1>Avenge AI</h1>
+            </div>
+
+            <p style="font-size: 16px;">{greeting}</p>
+
+            <p style="font-size: 16px;">Thanks for signing up! Please verify your email address by entering this code:</p>
+
+            <div class="code-container">
+                <div class="code">{code}</div>
+                <div class="expiry">Expires in 10 minutes</div>
+            </div>
+
+            <div class="warning">
+                <strong>Security Notice:</strong> If you didn't request this code, please ignore this email. Never share this code with anyone.
+            </div>
+
+            <div class="footer">
+                <p>This is an automated message from Avenge AI.</p>
+                <p style="margin-top: 10px;">&copy; 2026 Avenge AI. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
     """
 
-    def __init__(self) -> None:
-        """Initialize email service."""
-        self.smtp_host = getattr(settings, "SMTP_HOST", "localhost")
-        self.smtp_port = getattr(settings, "SMTP_PORT", 587)
-        self.smtp_user = getattr(settings, "SMTP_USER", "")
-        self.smtp_password = getattr(settings, "SMTP_PASSWORD", "")
-        self.from_email = getattr(settings, "FROM_EMAIL", "noreply@avenge-voice.com")
-        self.from_name = getattr(settings, "FROM_NAME", "Avenge Voice")
-        self.frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
 
-    async def send_email(
-        self,
-        to_email: str,
-        subject: str,
-        html_content: str,
-        text_content: str | None = None,
-    ) -> bool:
-        """Send an email.
+def generate_password_reset_email(code: str, expiry_minutes: int = 10) -> str:
+    """Generate HTML email template for password reset.
 
-        Args:
-            to_email: Recipient email address
-            subject: Email subject
-            html_content: HTML email content
-            text_content: Plain text email content (optional)
+    Args:
+        code: 6-digit reset code
+        expiry_minutes: Minutes until code expires
 
-        Returns:
-            True if email sent successfully, False otherwise
-        """
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = f"{self.from_name} <{self.from_email}>"
-            msg["To"] = to_email
-
-            # Add plain text version
-            if text_content:
-                part1 = MIMEText(text_content, "plain")
-                msg.attach(part1)
-
-            # Add HTML version
-            part2 = MIMEText(html_content, "html")
-            msg.attach(part2)
-
-            # Send email
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                if self.smtp_user and self.smtp_password:
-                    server.login(self.smtp_user, self.smtp_password)
-                server.send_message(msg)
-
-            logger.info("email_sent", to=to_email, subject=subject)
-            return True
-
-        except Exception as e:
-            logger.error("email_send_failed", to=to_email, subject=subject, error=str(e))
-            return False
-
-    async def send_verification_email(self, user_email: str, token: str, user_name: str | None = None) -> bool:
-        """Send email verification email.
-
-        Args:
-            user_email: User's email address
-            token: Verification token
-            user_name: User's name (optional)
-
-        Returns:
-            True if email sent successfully
-        """
-        verification_url = f"{self.frontend_url}/verify-email?token={token}"
-
-        subject = "Verify your email address"
-
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .button {{ 
-                    display: inline-block; 
-                    padding: 12px 24px; 
-                    background-color: #6366f1; 
-                    color: white; 
-                    text-decoration: none; 
-                    border-radius: 6px;
-                    margin: 20px 0;
-                }}
-                .footer {{ margin-top: 40px; font-size: 12px; color: #666; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>Welcome to Avenge Voice{f", {user_name}" if user_name else ""}!</h2>
-                <p>Thank you for signing up. Please verify your email address to get started.</p>
-                <p>Click the button below to verify your email:</p>
-                <a href="{verification_url}" class="button">Verify Email Address</a>
-                <p>Or copy and paste this link into your browser:</p>
-                <p style="word-break: break-all; color: #6366f1;">{verification_url}</p>
-                <p>This link will expire in 24 hours.</p>
-                <div class="footer">
-                    <p>If you didn't create an account, you can safely ignore this email.</p>
-                    <p>&copy; 2026 Avenge Voice. All rights reserved.</p>
-                </div>
+    Returns:
+        HTML email content
+    """
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #f9fafb;
+            }}
+            .container {{
+                background: #ffffff;
+                border-radius: 12px;
+                padding: 40px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }}
+            .logo {{
+                text-align: center;
+                margin-bottom: 30px;
+            }}
+            .logo h1 {{
+                color: #6366f1;
+                margin: 0;
+                font-size: 32px;
+                font-weight: 700;
+            }}
+            .code-container {{
+                background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                border-radius: 12px;
+                padding: 30px;
+                text-align: center;
+                margin: 30px 0;
+            }}
+            .code {{
+                font-size: 42px;
+                font-weight: bold;
+                color: #ffffff;
+                letter-spacing: 12px;
+                font-family: 'Courier New', monospace;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }}
+            .expiry {{
+                color: #ffffff;
+                margin-top: 15px;
+                font-size: 14px;
+                opacity: 0.9;
+            }}
+            .footer {{
+                margin-top: 30px;
+                padding-top: 20px;
+                border-top: 1px solid #e5e7eb;
+                font-size: 13px;
+                color: #6b7280;
+                text-align: center;
+            }}
+            .warning {{
+                background: #fef2f2;
+                border-left: 4px solid #ef4444;
+                padding: 16px;
+                margin: 20px 0;
+                border-radius: 6px;
+                font-size: 14px;
+            }}
+            .warning strong {{
+                color: #991b1b;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="logo">
+                <h1>Avenge AI</h1>
             </div>
-        </body>
-        </html>
-        """
 
-        text_content = f"""
-        Welcome to Avenge Voice{f", {user_name}" if user_name else ""}!
+            <p style="font-size: 16px;">Hi there,</p>
 
-        Thank you for signing up. Please verify your email address to get started.
+            <p style="font-size: 16px;">We received a request to reset your password. Enter this code to set a new password:</p>
 
-        Verify your email by visiting this link:
-        {verification_url}
-
-        This link will expire in 24 hours.
-
-        If you didn't create an account, you can safely ignore this email.
-        """
-
-        return await self.send_email(user_email, subject, html_content, text_content)
-
-    async def send_otp_email(self, user_email: str, otp_code: str, user_name: str | None = None) -> bool:
-        """Send OTP code email.
-
-        Args:
-            user_email: User's email address
-            otp_code: 6-digit OTP code
-            user_name: User's name (optional)
-
-        Returns:
-            True if email sent successfully
-        """
-        subject = "Your verification code"
-
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .otp-code {{ 
-                    font-size: 32px; 
-                    font-weight: bold; 
-                    letter-spacing: 8px; 
-                    color: #6366f1; 
-                    text-align: center;
-                    padding: 20px;
-                    background-color: #f3f4f6;
-                    border-radius: 8px;
-                    margin: 20px 0;
-                }}
-                .footer {{ margin-top: 40px; font-size: 12px; color: #666; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>Your Verification Code</h2>
-                <p>{"Hi " + user_name + "," if user_name else "Hi,"}</p>
-                <p>Use the following code to complete your verification:</p>
-                <div class="otp-code">{otp_code}</div>
-                <p>This code will expire in 10 minutes.</p>
-                <p>If you didn't request this code, please ignore this email or contact support if you have concerns.</p>
-                <div class="footer">
-                    <p>For security reasons, never share this code with anyone.</p>
-                    <p>&copy; 2026 Avenge Voice. All rights reserved.</p>
-                </div>
+            <div class="code-container">
+                <div class="code">{code}</div>
+                <div class="expiry">Expires in {expiry_minutes} minutes</div>
             </div>
-        </body>
-        </html>
-        """
 
-        text_content = f"""
-        Your Verification Code
-
-        {"Hi " + user_name + "," if user_name else "Hi,"}
-
-        Use the following code to complete your verification:
-
-        {otp_code}
-
-        This code will expire in 10 minutes.
-
-        If you didn't request this code, please ignore this email or contact support if you have concerns.
-
-        For security reasons, never share this code with anyone.
-        """
-
-        return await self.send_email(user_email, subject, html_content, text_content)
-
-    async def send_invitation_email(
-        self,
-        to_email: str,
-        workspace_name: str,
-        inviter_name: str,
-        invitation_token: str,
-        role: str,
-    ) -> bool:
-        """Send workspace invitation email.
-
-        Args:
-            to_email: Invitee's email address
-            workspace_name: Name of the workspace
-            inviter_name: Name of the person who sent the invitation
-            invitation_token: Invitation token
-            role: Role being assigned
-
-        Returns:
-            True if email sent successfully
-        """
-        invitation_url = f"{self.frontend_url}/accept-invitation?token={invitation_token}"
-
-        subject = f"{inviter_name} invited you to join {workspace_name}"
-
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .button {{ 
-                    display: inline-block; 
-                    padding: 12px 24px; 
-                    background-color: #6366f1; 
-                    color: white; 
-                    text-decoration: none; 
-                    border-radius: 6px;
-                    margin: 20px 0;
-                }}
-                .info-box {{ 
-                    background-color: #f3f4f6; 
-                    padding: 15px; 
-                    border-radius: 6px; 
-                    margin: 20px 0;
-                }}
-                .footer {{ margin-top: 40px; font-size: 12px; color: #666; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>You've been invited!</h2>
-                <p><strong>{inviter_name}</strong> has invited you to join the <strong>{workspace_name}</strong> workspace on Avenge Voice.</p>
-                <div class="info-box">
-                    <p><strong>Role:</strong> {role.title()}</p>
-                    <p><strong>Workspace:</strong> {workspace_name}</p>
-                </div>
-                <p>Click the button below to accept the invitation:</p>
-                <a href="{invitation_url}" class="button">Accept Invitation</a>
-                <p>Or copy and paste this link into your browser:</p>
-                <p style="word-break: break-all; color: #6366f1;">{invitation_url}</p>
-                <p>This invitation will expire in 7 days.</p>
-                <div class="footer">
-                    <p>If you don't want to join this workspace, you can safely ignore this email.</p>
-                    <p>&copy; 2026 Avenge Voice. All rights reserved.</p>
-                </div>
+            <div class="warning">
+                <strong>Security Notice:</strong> If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
             </div>
-        </body>
-        </html>
-        """
 
-        text_content = f"""
-        You've been invited!
-
-        {inviter_name} has invited you to join the {workspace_name} workspace on Avenge Voice.
-
-        Role: {role.title()}
-        Workspace: {workspace_name}
-
-        Accept the invitation by visiting this link:
-        {invitation_url}
-
-        This invitation will expire in 7 days.
-
-        If you don't want to join this workspace, you can safely ignore this email.
-        """
-
-        return await self.send_email(to_email, subject, html_content, text_content)
-
-    async def send_welcome_email(
-        self,
-        user_email: str,
-        user_name: str,
-        organization_name: str,
-    ) -> bool:
-        """Send welcome email after successful signup.
-
-        Args:
-            user_email: User's email address
-            user_name: User's name
-            organization_name: Organization name
-
-        Returns:
-            True if email sent successfully
-        """
-        dashboard_url = f"{self.frontend_url}/dashboard"
-
-        subject = f"Welcome to Avenge Voice, {user_name}!"
-
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .button {{ 
-                    display: inline-block; 
-                    padding: 12px 24px; 
-                    background-color: #6366f1; 
-                    color: white; 
-                    text-decoration: none; 
-                    border-radius: 6px;
-                    margin: 20px 0;
-                }}
-                .feature-list {{ list-style: none; padding: 0; }}
-                .feature-list li {{ padding: 8px 0; }}
-                .feature-list li:before {{ content: "✓ "; color: #10b981; font-weight: bold; }}
-                .footer {{ margin-top: 40px; font-size: 12px; color: #666; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>Welcome to Avenge Voice!</h2>
-                <p>Hi {user_name},</p>
-                <p>Your organization <strong>{organization_name}</strong> is all set up and ready to go!</p>
-                <h3>What's next?</h3>
-                <ul class="feature-list">
-                    <li>Create your first voice agent</li>
-                    <li>Invite team members to your workspace</li>
-                    <li>Configure integrations</li>
-                    <li>Start making calls</li>
-                </ul>
-                <a href="{dashboard_url}" class="button">Go to Dashboard</a>
-                <p>If you have any questions, our support team is here to help!</p>
-                <div class="footer">
-                    <p>Need help getting started? Check out our documentation or contact support.</p>
-                    <p>&copy; 2026 Avenge Voice. All rights reserved.</p>
-                </div>
+            <div class="footer">
+                <p>This is an automated message from Avenge AI.</p>
+                <p style="margin-top: 10px;">&copy; 2026 Avenge AI. All rights reserved.</p>
             </div>
-        </body>
-        </html>
-        """
-
-        text_content = f"""
-        Welcome to Avenge Voice!
-
-        Hi {user_name},
-
-        Your organization {organization_name} is all set up and ready to go!
-
-        What's next?
-        ✓ Create your first voice agent
-        ✓ Invite team members to your workspace
-        ✓ Configure integrations
-        ✓ Start making calls
-
-        Go to your dashboard: {dashboard_url}
-
-        If you have any questions, our support team is here to help!
-
-        Need help getting started? Check out our documentation or contact support.
-        """
-
-        return await self.send_email(user_email, subject, html_content, text_content)
-
-    async def send_usage_warning_email(
-        self,
-        user_email: str,
-        user_name: str,
-        organization_name: str,
-        resource_type: str,
-        usage_percentage: float,
-    ) -> bool:
-        """Send usage warning email when approaching limits.
-
-        Args:
-            user_email: User's email address
-            user_name: User's name
-            organization_name: Organization name
-            resource_type: Type of resource (users, agents, call_minutes, etc.)
-            usage_percentage: Current usage percentage
-
-        Returns:
-            True if email sent successfully
-        """
-        upgrade_url = f"{self.frontend_url}/settings/billing"
-
-        subject = f"Usage Alert: {resource_type.replace('_', ' ').title()} at {usage_percentage:.0f}%"
-
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .warning-box {{ 
-                    background-color: #fef3c7; 
-                    border-left: 4px solid #f59e0b;
-                    padding: 15px; 
-                    border-radius: 6px; 
-                    margin: 20px 0;
-                }}
-                .button {{ 
-                    display: inline-block; 
-                    padding: 12px 24px; 
-                    background-color: #6366f1; 
-                    color: white; 
-                    text-decoration: none; 
-                    border-radius: 6px;
-                    margin: 20px 0;
-                }}
-                .footer {{ margin-top: 40px; font-size: 12px; color: #666; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>Usage Alert for {organization_name}</h2>
-                <p>Hi {user_name},</p>
-                <div class="warning-box">
-                    <p><strong>Your {resource_type.replace('_', ' ')} usage is at {usage_percentage:.0f}%</strong></p>
-                    <p>You're approaching your plan limit. Consider upgrading to avoid service interruptions.</p>
-                </div>
-                <p>To continue using Avenge Voice without interruption, we recommend upgrading your plan.</p>
-                <a href="{upgrade_url}" class="button">Upgrade Plan</a>
-                <p>Questions? Our support team is here to help you choose the right plan for your needs.</p>
-                <div class="footer">
-                    <p>&copy; 2026 Avenge Voice. All rights reserved.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-
-        text_content = f"""
-        Usage Alert for {organization_name}
-
-        Hi {user_name},
-
-        Your {resource_type.replace('_', ' ')} usage is at {usage_percentage:.0f}%
-
-        You're approaching your plan limit. Consider upgrading to avoid service interruptions.
-
-        To continue using Avenge Voice without interruption, we recommend upgrading your plan.
-
-        Upgrade your plan: {upgrade_url}
-
-        Questions? Our support team is here to help you choose the right plan for your needs.
-        """
-
-        return await self.send_email(user_email, subject, html_content, text_content)
+        </div>
+    </body>
+    </html>
+    """
 
 
-# Singleton instance
-email_service = EmailService()
+async def send_password_reset_email(
+    to_email: str,
+    code: str,
+    expiry_minutes: int = 10,
+) -> dict[str, str]:
+    """Send a password reset email.
+
+    Note: This function needs a database session, so it uses the session factory.
+
+    Args:
+        to_email: Recipient email address
+        code: 6-digit reset code
+        expiry_minutes: Minutes until code expires
+
+    Returns:
+        Resend API response
+
+    Raises:
+        ResendNotConfiguredError: If Resend is not configured
+        EmailServiceError: If email sending fails
+    """
+    from app.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        html_content = generate_password_reset_email(code, expiry_minutes)
+        return await send_email(
+            db=db,
+            to_email=to_email,
+            subject="Reset Your Password - Avenge AI",
+            html_content=html_content,
+        )

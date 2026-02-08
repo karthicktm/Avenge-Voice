@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import CurrentUser, user_id_to_uuid
+from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.phone_number import PhoneNumber
@@ -121,7 +121,7 @@ class UpdatePhoneNumberRequest(BaseModel):
 
 @router.get("", response_model=PhoneNumberListResponse)
 async def list_phone_numbers(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -220,7 +220,7 @@ async def list_phone_numbers(
 @router.get("/{phone_number_id}", response_model=PhoneNumberResponse)
 async def get_phone_number(
     phone_number_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> PhoneNumberResponse:
     """Get a specific phone number.
@@ -282,7 +282,7 @@ async def get_phone_number(
 async def create_phone_number(
     create_request: CreatePhoneNumberRequest,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> PhoneNumberResponse:
     """Register a new phone number.
@@ -353,7 +353,7 @@ async def update_phone_number(
     phone_number_id: str,
     update_request: UpdatePhoneNumberRequest,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> PhoneNumberResponse:
     """Update a phone number.
@@ -445,7 +445,7 @@ async def update_phone_number(
 async def delete_phone_number(
     phone_number_id: str,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Delete a phone number.

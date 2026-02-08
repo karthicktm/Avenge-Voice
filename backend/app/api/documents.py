@@ -381,7 +381,9 @@ async def reindex_document(
     # Reprocess in background
     # Convert stored text content back to bytes for reprocessing
     content_bytes = document.content.encode("utf-8")
-    background_tasks.add_task(process_document_background, document.id, content_bytes, embedding_config)
+    background_tasks.add_task(
+        process_document_background, document.id, content_bytes, embedding_config
+    )
 
     return DocumentResponse(
         id=str(document.id),

@@ -24,6 +24,7 @@ import {
   Mic,
   Zap,
   Users,
+  UsersRound,
   Calendar,
   FolderOpen,
   PanelLeftClose,
@@ -34,7 +35,15 @@ import {
 import { useSidebarStore } from "@/lib/sidebar-store";
 import { useAuth } from "@/hooks/use-auth";
 
-const navigation = [
+interface NavItem {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  adminOnly?: boolean;
+}
+
+const baseNavigation: NavItem[] = [
   {
     name: "Dashboard",
     href: "/dashboard",
@@ -95,6 +104,13 @@ const navigation = [
     icon: Mic,
     color: "text-rose-400",
   },
+  {
+    name: "User Management",
+    href: "/dashboard/users",
+    icon: UsersRound,
+    color: "text-indigo-400",
+    adminOnly: true,
+  },
 ];
 
 export function AppSidebar() {
@@ -105,6 +121,10 @@ export function AppSidebar() {
   const displayName = user?.username ?? "User";
   const displayEmail = user?.email ?? "user@example.com";
   const initials = displayName.slice(0, 2).toUpperCase();
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+
+  // Filter navigation items based on user role
+  const navigation = baseNavigation.filter((item) => !item.adminOnly || isAdmin);
 
   const isActive = (href: string) => {
     if (href === "/dashboard") {

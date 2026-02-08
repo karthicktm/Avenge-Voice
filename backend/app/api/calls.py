@@ -10,7 +10,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.auth import CurrentUser, user_id_to_uuid
+from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.db.session import get_db
 from app.models.call_record import CallRecord
 
@@ -66,7 +66,7 @@ class CallRecordListResponse(BaseModel):
 
 @router.get("", response_model=CallRecordListResponse)
 async def list_calls(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -189,7 +189,7 @@ async def list_calls(
 @router.get("/{call_id}", response_model=CallRecordResponse)
 async def get_call(
     call_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> CallRecordResponse:
     """Get a specific call record.
@@ -254,7 +254,7 @@ async def get_call(
 @router.get("/agent/{agent_id}/stats")
 async def get_agent_call_stats(
     agent_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int | float]:
     """Get call statistics for an agent.

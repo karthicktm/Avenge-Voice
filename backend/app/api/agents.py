@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import CurrentUser
+from app.core.auth import VerifiedUser
 from app.core.limiter import limiter
 from app.core.public_id import generate_public_id
 from app.db.session import get_db
@@ -132,7 +132,7 @@ class AgentResponse(BaseModel):
 async def create_agent(
     agent_request: CreateAgentRequest,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> AgentResponse:
     """Create a new voice agent.
@@ -184,7 +184,7 @@ async def create_agent(
 
 @router.get("", response_model=list[AgentResponse])
 async def list_agents(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
@@ -226,7 +226,7 @@ async def list_agents(
 @router.get("/{agent_id}", response_model=AgentResponse)
 async def get_agent(
     agent_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> AgentResponse:
     """Get a specific agent.
@@ -264,7 +264,7 @@ async def get_agent(
 async def delete_agent(
     agent_id: str,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Delete an agent.
@@ -302,7 +302,7 @@ async def update_agent(
     agent_id: str,
     update_request: UpdateAgentRequest,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> AgentResponse:
     """Update an agent.
@@ -503,7 +503,7 @@ class UpdateEmbedSettingsRequest(BaseModel):
 @router.get("/{agent_id}/embed", response_model=EmbedSettingsResponse)
 async def get_embed_settings(
     agent_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> EmbedSettingsResponse:
     """Get embed settings for an agent.
@@ -573,7 +573,7 @@ async def update_embed_settings(
     agent_id: str,
     update_request: UpdateEmbedSettingsRequest,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> EmbedSettingsResponse:
     """Update embed settings for an agent.
@@ -643,7 +643,7 @@ async def update_embed_settings(
 async def regenerate_public_id(
     agent_id: str,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> EmbedSettingsResponse:
     """Regenerate the public ID for an agent.

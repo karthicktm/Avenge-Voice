@@ -34,10 +34,18 @@ class UserProfile(Base, TimestampMixin):
     )
 
     # Additional profile information
-    phone_number: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="User phone number")
-    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="User avatar URL")
-    job_title: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="User job title")
-    department: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="User department")
+    phone_number: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, comment="User phone number"
+    )
+    avatar_url: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, comment="User avatar URL"
+    )
+    job_title: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="User job title"
+    )
+    department: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="User department"
+    )
 
     # Signup metadata (collected during registration)
     signup_metadata: Mapped[dict[str, Any]] = mapped_column(

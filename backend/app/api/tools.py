@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.integrations import get_workspace_integrations
 from app.api.settings import get_user_api_keys
-from app.core.auth import CurrentUser, user_id_to_uuid
+from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.workspace import AgentWorkspace
@@ -32,7 +32,7 @@ class ToolExecuteRequest(BaseModel):
 @router.post("/execute")
 async def execute_tool(
     request: ToolExecuteRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Execute a tool and return the result.

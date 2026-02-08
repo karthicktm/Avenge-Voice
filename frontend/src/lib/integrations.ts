@@ -188,7 +188,8 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
     id: "knowledge_base",
     name: "Knowledge Base",
     slug: "knowledge-base",
-    description: "Upload documents to create a searchable knowledge base with AI-powered semantic search",
+    description:
+      "Upload documents to create a searchable knowledge base with AI-powered semantic search",
     category: "database",
     authType: "api_key",
     icon: "https://cdn.simpleicons.org/readthedocs",
@@ -214,8 +215,14 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
         required: true,
         description: "Select the embedding model to use",
         options: [
-          { value: "text-embedding-3-small", label: "text-embedding-3-small (OpenAI - Recommended)" },
-          { value: "text-embedding-3-large", label: "text-embedding-3-large (OpenAI - Higher quality)" },
+          {
+            value: "text-embedding-3-small",
+            label: "text-embedding-3-small (OpenAI - Recommended)",
+          },
+          {
+            value: "text-embedding-3-large",
+            label: "text-embedding-3-large (OpenAI - Higher quality)",
+          },
           { value: "text-embedding-ada-002", label: "text-embedding-ada-002 (OpenAI - Legacy)" },
           { value: "voyage-3", label: "voyage-3 (Voyage AI)" },
           { value: "voyage-3-lite", label: "voyage-3-lite (Voyage AI - Faster)" },
@@ -709,6 +716,37 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
     ],
     documentationUrl:
       "https://www.twilio.com/docs/sendgrid/api-reference/how-to-use-the-sendgrid-v3-api/authentication",
+  },
+  {
+    id: "resend",
+    name: "Resend",
+    slug: "resend",
+    description: "Modern email API for transactional emails (Free: 3,000 emails/month)",
+    category: "communication",
+    authType: "api_key",
+    icon: "https://cdn.simpleicons.org/minutemailer",
+    enabled: true,
+    isPopular: true,
+    badge: "Free Tier",
+    fields: [
+      {
+        name: "api_key",
+        label: "API Key",
+        type: "password",
+        required: true,
+        placeholder: "re_...",
+        description: "Get your API key from resend.com/api-keys",
+      },
+      {
+        name: "from_email",
+        label: "From Email",
+        type: "email",
+        required: true,
+        placeholder: "noreply@yourdomain.com",
+        description: "Use onboarding@resend.dev for testing without domain verification",
+      },
+    ],
+    documentationUrl: "https://resend.com/docs/introduction",
   },
 
   // Other Tools

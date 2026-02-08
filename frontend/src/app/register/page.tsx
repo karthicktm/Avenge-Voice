@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,15 +16,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
+import { EmailVerificationDialog } from "@/components/auth/email-verification-dialog";
 
 export default function RegisterPage() {
   const { register } = useAuth();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showVerificationDialog, setShowVerificationDialog] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,11 +47,19 @@ export default function RegisterPage() {
 
     try {
       await register(email, username, password);
+      // Show verification dialog after successful registration
+      setShowVerificationDialog(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleVerified = (accessToken: string) => {
+    // Save token and redirect to dashboard
+    localStorage.setItem("access_token", accessToken);
+    router.push("/dashboard");
   };
 
   return (
@@ -125,6 +137,14 @@ export default function RegisterPage() {
           </CardFooter>
         </form>
       </Card>
+
+      {/* Email Verification Dialog */}
+      <EmailVerificationDialog
+        open={showVerificationDialog}
+        onOpenChange={setShowVerificationDialog}
+        email={email}
+        onVerified={handleVerified}
+      />
     </div>
   );
 }

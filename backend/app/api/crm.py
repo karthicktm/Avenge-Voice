@@ -11,7 +11,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
-from app.core.auth import CurrentUser
+from app.core.auth import VerifiedUser
 from app.core.cache import cache_get, cache_invalidate, cache_set
 from app.core.limiter import limiter
 from app.db.session import get_db
@@ -299,7 +299,7 @@ async def _validate_workspace_ownership(
 @limiter.limit("100/minute")
 async def list_contacts(
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     skip: int = 0,
     limit: int = 100,
     workspace_id: str | None = None,
@@ -391,7 +391,7 @@ async def list_contacts(
 async def get_contact(
     request: Request,
     contact_id: int,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     """Get a single contact by ID (must belong to current user)."""
@@ -456,7 +456,7 @@ async def get_contact(
 async def create_contact(
     request: Request,
     contact_data: ContactCreate,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     """Create a new contact for the current user."""
@@ -675,7 +675,7 @@ async def update_contact(
     request: Request,
     contact_id: int,
     contact_data: ContactUpdate,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     """Update an existing contact (must belong to current user)."""
@@ -787,7 +787,7 @@ async def update_contact(
 async def delete_contact(
     request: Request,
     contact_id: int,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Delete a contact (must belong to current user)."""
@@ -848,7 +848,7 @@ async def delete_contact(
 @limiter.limit("100/minute")
 async def get_crm_stats(
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
     """Get CRM statistics with 60-second cache."""
@@ -1016,7 +1016,7 @@ class AppointmentUpdate(BaseModel):
 @limiter.limit("100/minute")
 async def list_appointments(
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     skip: int = 0,
     limit: int = 100,
     status: str | None = None,
@@ -1109,7 +1109,7 @@ async def list_appointments(
 async def get_appointment(
     request: Request,
     appointment_id: int,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     """Get a single appointment by ID."""
@@ -1165,7 +1165,7 @@ async def get_appointment(
 async def create_appointment(
     request: Request,
     appointment_data: AppointmentCreate,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     """Create a new appointment."""
@@ -1255,7 +1255,7 @@ async def update_appointment(
     request: Request,
     appointment_id: int,
     appointment_data: AppointmentUpdate,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     """Update an existing appointment."""
@@ -1340,7 +1340,7 @@ async def update_appointment(
 async def delete_appointment(
     request: Request,
     appointment_id: int,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Delete an appointment."""

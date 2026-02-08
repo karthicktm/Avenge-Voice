@@ -6,9 +6,18 @@ import { toast } from "sonner";
 import {
   fetchSettings,
   updateSettings,
+  fetchSystemSettings,
+  updateSystemSettings,
   type SettingsResponse,
   type UpdateSettingsRequest,
+  type UpdateSystemSettingsRequest,
 } from "@/lib/api/settings";
+import {
+  fetchCurrentOrganization,
+  fetchAvailablePlans,
+  changePlan,
+  PLAN_DISPLAY_INFO,
+} from "@/lib/api/organizations";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { RoleBadge } from "@/components/auth/role-badge";
@@ -61,6 +70,14 @@ import {
   Calendar,
   CheckCircle2,
   XCircle,
+  Shield,
+  Zap,
+  Users,
+  Bot,
+  Clock,
+  HardDrive,
+  Sparkles,
+  CreditCard,
 } from "lucide-react";
 
 interface Workspace {
@@ -178,6 +195,8 @@ const API_KEY_PROVIDERS: ApiKeyProvider[] = [
 
 export default function SettingsPage() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("all");
+  const { user } = useAuth();
+  const isSuperuser = user?.role === "super_admin";
 
   // Fetch workspaces
   const { data: workspaces = [] } = useQuery<Workspace[]>({
@@ -242,6 +261,7 @@ export default function SettingsPage() {
             <TabsTrigger value="api-keys">API Keys</TabsTrigger>
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="billing">Billing</TabsTrigger>
+            {isSuperuser && <TabsTrigger value="system">System</TabsTrigger>}
           </TabsList>
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="font-normal">
@@ -304,14 +324,14 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="billing" className="mt-6 space-y-4">
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <SettingsIcon className="mb-4 h-16 w-16 text-muted-foreground/50" />
-              <h3 className="mb-2 text-lg font-semibold">Billing & Usage</h3>
-              <p className="text-sm text-muted-foreground">Coming soon...</p>
-            </CardContent>
-          </Card>
+          <BillingTab />
         </TabsContent>
+
+        {isSuperuser && (
+          <TabsContent value="system" className="mt-6 space-y-4">
+            <SystemSettingsTab />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
@@ -622,7 +642,9 @@ const ProfileTab = memo(function ProfileTab() {
                   <UserIcon className="h-8 w-8 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold">{user.full_name ?? user.username ?? "User"}</h2>
+                  <h2 className="text-xl font-semibold">
+                    {user.full_name ?? user.username ?? "User"}
+                  </h2>
                   <p className="text-sm text-muted-foreground">{user.email}</p>
                 </div>
               </div>
@@ -649,7 +671,9 @@ const ProfileTab = memo(function ProfileTab() {
                   ) : (
                     <>
                       <XCircle className="h-4 w-4 text-orange-500" />
-                      <span className="text-sm text-orange-600 dark:text-orange-400">Not Verified</span>
+                      <span className="text-sm text-orange-600 dark:text-orange-400">
+                        Not Verified
+                      </span>
                     </>
                   )}
                 </div>
@@ -715,3 +739,679 @@ const ProfileTab = memo(function ProfileTab() {
     </div>
   );
 });
+
+const SystemSettingsTab = memo(function SystemSettingsTab() {
+  const queryClient = useQueryClient();
+  // Resend settings
+  const [resendApiKey, setResendApiKey] = useState("");
+  const [resendFromEmail, setResendFromEmail] = useState("");
+  const [showResendApiKey, setShowResendApiKey] = useState(false);
+  // Stripe settings
+  const [stripeSecretKey, setStripeSecretKey] = useState("");
+  const [stripePublishableKey, setStripePublishableKey] = useState("");
+  const [stripeWebhookSecret, setStripeWebhookSecret] = useState("");
+  const [stripePriceFree, setStripePriceFree] = useState("");
+  const [stripePriceStarter, setStripePriceStarter] = useState("");
+  const [stripePriceProfessional, setStripePriceProfessional] = useState("");
+  const [stripePriceEnterprise, setStripePriceEnterprise] = useState("");
+  const [showStripeSecretKey, setShowStripeSecretKey] = useState(false);
+  const [showStripeWebhookSecret, setShowStripeWebhookSecret] = useState(false);
+
+  const { data: systemSettings, isLoading } = useQuery({
+    queryKey: ["systemSettings"],
+    queryFn: fetchSystemSettings,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (request: UpdateSystemSettingsRequest) => updateSystemSettings(request),
+    onSuccess: () => {
+      toast.success("System settings updated successfully");
+      void queryClient.invalidateQueries({ queryKey: ["systemSettings"] });
+      // Clear sensitive fields
+      setResendApiKey("");
+      setStripeSecretKey("");
+      setStripeWebhookSecret("");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message ?? "Failed to update system settings");
+    },
+  });
+
+  const handleResendSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const request: UpdateSystemSettingsRequest = {};
+    if (resendApiKey.trim()) {
+      request.resend_api_key = resendApiKey;
+    }
+    if (resendFromEmail.trim()) {
+      request.resend_from_email = resendFromEmail;
+    }
+    if (Object.keys(request).length === 0) {
+      toast.error("Please enter at least one value to update");
+      return;
+    }
+    updateMutation.mutate(request);
+  };
+
+  const handleStripeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const request: UpdateSystemSettingsRequest = {};
+    if (stripeSecretKey.trim()) {
+      request.stripe_secret_key = stripeSecretKey;
+    }
+    if (stripePublishableKey.trim()) {
+      request.stripe_publishable_key = stripePublishableKey;
+    }
+    if (stripeWebhookSecret.trim()) {
+      request.stripe_webhook_secret = stripeWebhookSecret;
+    }
+    if (stripePriceFree.trim()) {
+      request.stripe_price_free = stripePriceFree;
+    }
+    if (stripePriceStarter.trim()) {
+      request.stripe_price_starter = stripePriceStarter;
+    }
+    if (stripePriceProfessional.trim()) {
+      request.stripe_price_professional = stripePriceProfessional;
+    }
+    if (stripePriceEnterprise.trim()) {
+      request.stripe_price_enterprise = stripePriceEnterprise;
+    }
+    if (Object.keys(request).length === 0) {
+      toast.error("Please enter at least one value to update");
+      return;
+    }
+    updateMutation.mutate(request);
+  };
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header Card */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+              <Shield className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">System Settings</h2>
+              <p className="text-sm text-muted-foreground">
+                Global configuration for the platform (Superadmin only)
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Email Service (Resend) */}
+      <Card>
+        <CardContent className="p-6">
+          <form onSubmit={handleResendSubmit} className="space-y-6">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <h3 className="font-medium">Email Service (Resend)</h3>
+                {systemSettings?.resend_api_key_set && (
+                  <Badge variant="secondary" className="ml-2">
+                    <Check className="mr-1 h-3 w-3" />
+                    Configured
+                  </Badge>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Configure Resend API for sending verification emails and notifications.
+              </p>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="resend_api_key">Resend API Key</Label>
+                  <div className="relative">
+                    <Input
+                      id="resend_api_key"
+                      type={showResendApiKey ? "text" : "password"}
+                      placeholder={systemSettings?.resend_api_key_set ? "••••••••" : "re_..."}
+                      value={resendApiKey}
+                      onChange={(e) => setResendApiKey(e.target.value)}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowResendApiKey(!showResendApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showResendApiKey ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="resend_from_email">From Email Address</Label>
+                  <Input
+                    id="resend_from_email"
+                    type="email"
+                    placeholder={systemSettings?.resend_from_email ?? "noreply@yourdomain.com"}
+                    value={resendFromEmail}
+                    onChange={(e) => setResendFromEmail(e.target.value)}
+                  />
+                  {systemSettings?.resend_from_email && (
+                    <p className="text-xs text-muted-foreground">
+                      Current: {systemSettings.resend_from_email}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-muted/50 p-3">
+                <p className="text-xs text-muted-foreground">
+                  Get your API key from{" "}
+                  <a
+                    href="https://resend.com/api-keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-primary hover:underline"
+                  >
+                    resend.com/api-keys
+                    <ExternalLink className="ml-1 inline h-3 w-3" />
+                  </a>
+                </p>
+              </div>
+            </div>
+
+            <Button type="submit" disabled={updateMutation.isPending}>
+              {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save Email Settings
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Stripe Billing Configuration */}
+      <Card>
+        <CardContent className="p-6">
+          <form onSubmit={handleStripeSubmit} className="space-y-6">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                <h3 className="font-medium">Billing (Stripe)</h3>
+                {systemSettings?.stripe_secret_key_set && (
+                  <Badge variant="secondary" className="ml-2">
+                    <Check className="mr-1 h-3 w-3" />
+                    Configured
+                  </Badge>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Configure Stripe for subscription billing and payment processing.
+              </p>
+
+              {/* API Keys */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="stripe_secret_key">Secret Key</Label>
+                  <div className="relative">
+                    <Input
+                      id="stripe_secret_key"
+                      type={showStripeSecretKey ? "text" : "password"}
+                      placeholder={
+                        systemSettings?.stripe_secret_key_set
+                          ? "••••••••"
+                          : "sk_live_... or sk_test_..."
+                      }
+                      value={stripeSecretKey}
+                      onChange={(e) => setStripeSecretKey(e.target.value)}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowStripeSecretKey(!showStripeSecretKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showStripeSecretKey ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="stripe_publishable_key">Publishable Key</Label>
+                  <Input
+                    id="stripe_publishable_key"
+                    type="text"
+                    placeholder={
+                      systemSettings?.stripe_publishable_key ?? "pk_live_... or pk_test_..."
+                    }
+                    value={stripePublishableKey}
+                    onChange={(e) => setStripePublishableKey(e.target.value)}
+                  />
+                  {systemSettings?.stripe_publishable_key && (
+                    <p className="text-xs text-muted-foreground">
+                      Current: {systemSettings.stripe_publishable_key.substring(0, 20)}...
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="stripe_webhook_secret">Webhook Secret</Label>
+                <div className="relative">
+                  <Input
+                    id="stripe_webhook_secret"
+                    type={showStripeWebhookSecret ? "text" : "password"}
+                    placeholder={
+                      systemSettings?.stripe_webhook_secret_set ? "••••••••" : "whsec_..."
+                    }
+                    value={stripeWebhookSecret}
+                    onChange={(e) => setStripeWebhookSecret(e.target.value)}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowStripeWebhookSecret(!showStripeWebhookSecret)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showStripeWebhookSecret ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Required for processing subscription events from Stripe
+                </p>
+              </div>
+
+              {/* Price IDs */}
+              <div className="space-y-3 border-t pt-4">
+                <h4 className="text-sm font-medium">Plan Price IDs</h4>
+                <p className="text-xs text-muted-foreground">
+                  Enter Stripe Price IDs for each subscription plan
+                </p>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="stripe_price_free">Free Plan</Label>
+                    <Input
+                      id="stripe_price_free"
+                      type="text"
+                      placeholder={systemSettings?.stripe_price_free ?? "price_..."}
+                      value={stripePriceFree}
+                      onChange={(e) => setStripePriceFree(e.target.value)}
+                    />
+                    {systemSettings?.stripe_price_free && (
+                      <p className="text-xs text-muted-foreground">
+                        Current: {systemSettings.stripe_price_free}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="stripe_price_starter">Starter Plan</Label>
+                    <Input
+                      id="stripe_price_starter"
+                      type="text"
+                      placeholder={systemSettings?.stripe_price_starter ?? "price_..."}
+                      value={stripePriceStarter}
+                      onChange={(e) => setStripePriceStarter(e.target.value)}
+                    />
+                    {systemSettings?.stripe_price_starter && (
+                      <p className="text-xs text-muted-foreground">
+                        Current: {systemSettings.stripe_price_starter}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="stripe_price_professional">Professional Plan</Label>
+                    <Input
+                      id="stripe_price_professional"
+                      type="text"
+                      placeholder={systemSettings?.stripe_price_professional ?? "price_..."}
+                      value={stripePriceProfessional}
+                      onChange={(e) => setStripePriceProfessional(e.target.value)}
+                    />
+                    {systemSettings?.stripe_price_professional && (
+                      <p className="text-xs text-muted-foreground">
+                        Current: {systemSettings.stripe_price_professional}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="stripe_price_enterprise">Enterprise Plan</Label>
+                    <Input
+                      id="stripe_price_enterprise"
+                      type="text"
+                      placeholder={systemSettings?.stripe_price_enterprise ?? "price_..."}
+                      value={stripePriceEnterprise}
+                      onChange={(e) => setStripePriceEnterprise(e.target.value)}
+                    />
+                    {systemSettings?.stripe_price_enterprise && (
+                      <p className="text-xs text-muted-foreground">
+                        Current: {systemSettings.stripe_price_enterprise}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-muted/50 p-3">
+                <p className="text-xs text-muted-foreground">
+                  Get your API keys from{" "}
+                  <a
+                    href="https://dashboard.stripe.com/apikeys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-primary hover:underline"
+                  >
+                    dashboard.stripe.com/apikeys
+                    <ExternalLink className="ml-1 inline h-3 w-3" />
+                  </a>
+                  . Create products and prices in{" "}
+                  <a
+                    href="https://dashboard.stripe.com/products"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-primary hover:underline"
+                  >
+                    Products
+                    <ExternalLink className="ml-1 inline h-3 w-3" />
+                  </a>
+                  .
+                </p>
+              </div>
+            </div>
+
+            <Button type="submit" disabled={updateMutation.isPending}>
+              {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save Billing Settings
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+});
+
+const BillingTab = memo(function BillingTab() {
+  const queryClient = useQueryClient();
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  const { data: organization, isLoading: orgLoading } = useQuery({
+    queryKey: ["organization"],
+    queryFn: fetchCurrentOrganization,
+  });
+
+  const { data: plans, isLoading: plansLoading } = useQuery({
+    queryKey: ["plans"],
+    queryFn: fetchAvailablePlans,
+  });
+
+  const changePlanMutation = useMutation({
+    mutationFn: (planType: string) => changePlan(planType),
+    onSuccess: (data) => {
+      toast.success(data.message);
+      void queryClient.invalidateQueries({ queryKey: ["organization"] });
+      setShowConfirmDialog(false);
+      setSelectedPlan(null);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message ?? "Failed to change plan");
+    },
+  });
+
+  const handleChangePlan = (planType: string) => {
+    if (planType === organization?.plan_type) return;
+    setSelectedPlan(planType);
+    setShowConfirmDialog(true);
+  };
+
+  const confirmPlanChange = () => {
+    if (selectedPlan) {
+      changePlanMutation.mutate(selectedPlan);
+    }
+  };
+
+  if (orgLoading || plansLoading) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Current Plan & Usage */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                <Zap className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold">Current Plan</h2>
+                <p className="text-sm text-muted-foreground">
+                  {organization?.name ?? "Your Organization"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-sm">
+                {PLAN_DISPLAY_INFO[organization?.plan_type ?? "free"]?.name ?? "Free"}
+              </Badge>
+              {organization?.subscription_status === "trial" && (
+                <Badge variant="outline" className="border-yellow-500 text-yellow-600">
+                  Trial
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {/* Usage Stats */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <UsageCard
+              icon={Users}
+              label="Users"
+              current={organization?.current_users_count ?? 0}
+              max={organization?.max_users ?? 0}
+            />
+            <UsageCard
+              icon={Bot}
+              label="Agents"
+              current={organization?.current_agents_count ?? 0}
+              max={organization?.max_agents ?? 0}
+            />
+            <UsageCard
+              icon={FolderOpen}
+              label="Workspaces"
+              current={organization?.current_workspaces_count ?? 0}
+              max={organization?.max_workspaces ?? 0}
+            />
+            <UsageCard
+              icon={Clock}
+              label="Call Minutes"
+              current={organization?.current_month_call_minutes ?? 0}
+              max={organization?.max_call_minutes_per_month ?? 0}
+              suffix="/mo"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Available Plans */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-medium">Available Plans</h2>
+          <p className="text-sm text-muted-foreground">Choose the plan that best fits your needs</p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {plans?.map((plan) => {
+            const displayInfo = PLAN_DISPLAY_INFO[plan.plan_type];
+            const isCurrentPlan = plan.plan_type === organization?.plan_type;
+
+            return (
+              <Card
+                key={plan.plan_type}
+                className={`relative transition-all ${
+                  isCurrentPlan ? "border-primary bg-primary/5" : "hover:border-primary/50"
+                } ${displayInfo?.popular ? "ring-2 ring-primary/20" : ""}`}
+              >
+                {displayInfo?.popular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <Badge className="bg-primary text-primary-foreground">
+                      <Sparkles className="mr-1 h-3 w-3" />
+                      Popular
+                    </Badge>
+                  </div>
+                )}
+                <CardContent className="p-4 pt-6">
+                  <div className="mb-4 text-center">
+                    <h3 className="text-lg font-semibold">{displayInfo?.name}</h3>
+                    <p className="text-2xl font-bold">{displayInfo?.price}</p>
+                    <p className="text-xs text-muted-foreground">{displayInfo?.description}</p>
+                  </div>
+
+                  <div className="mb-4 space-y-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-3 w-3 text-muted-foreground" />
+                      <span>{plan.max_users} users</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Bot className="h-3 w-3 text-muted-foreground" />
+                      <span>{plan.max_agents} agents</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="h-3 w-3 text-muted-foreground" />
+                      <span>{plan.max_workspaces} workspaces</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-3 w-3 text-muted-foreground" />
+                      <span>{plan.max_call_minutes_per_month} min/mo</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <HardDrive className="h-3 w-3 text-muted-foreground" />
+                      <span>{plan.max_storage_gb} GB storage</span>
+                    </div>
+                  </div>
+
+                  <Button
+                    variant={isCurrentPlan ? "secondary" : "default"}
+                    size="sm"
+                    className="w-full"
+                    disabled={isCurrentPlan || changePlanMutation.isPending}
+                    onClick={() => handleChangePlan(plan.plan_type)}
+                  >
+                    {isCurrentPlan ? (
+                      <>
+                        <Check className="mr-2 h-4 w-4" />
+                        Current Plan
+                      </>
+                    ) : (
+                      "Select Plan"
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Plan Change Confirmation Dialog */}
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change Plan</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to change to the{" "}
+              <strong>{PLAN_DISPLAY_INFO[selectedPlan ?? ""]?.name}</strong> plan?
+              {selectedPlan && organization?.plan_type && (
+                <>
+                  {" "}
+                  {["starter", "professional", "enterprise"].indexOf(selectedPlan) <
+                  ["starter", "professional", "enterprise"].indexOf(organization.plan_type)
+                    ? "Downgrading may affect your current usage if you exceed the new limits."
+                    : "Your new limits will be applied immediately."}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmPlanChange} disabled={changePlanMutation.isPending}>
+              {changePlanMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirm Change
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+});
+
+interface UsageCardProps {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  current: number;
+  max: number;
+  suffix?: string;
+}
+
+function UsageCard({ icon: Icon, label, current, max, suffix = "" }: UsageCardProps) {
+  const percentage = max > 0 ? Math.round((current / max) * 100) : 0;
+  const isNearLimit = percentage >= 80;
+  const isAtLimit = percentage >= 100;
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">{label}</span>
+        </div>
+        <span
+          className={`text-xs font-medium ${
+            isAtLimit ? "text-red-500" : isNearLimit ? "text-yellow-500" : "text-muted-foreground"
+          }`}
+        >
+          {percentage}%
+        </span>
+      </div>
+      <div className="mb-1 h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full transition-all ${
+            isAtLimit ? "bg-red-500" : isNearLimit ? "bg-yellow-500" : "bg-primary"
+          }`}
+          style={{ width: `${Math.min(percentage, 100)}%` }}
+        />
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {current} / {max}
+        {suffix}
+      </div>
+    </div>
+  );
+}

@@ -1158,9 +1158,8 @@ Guidelines:
                                               placeholder="Enter your API key"
                                               className="h-8"
                                               value={
-                                                form.watch(
-                                                  "toolConfigs.knowledge_base.api_key"
-                                                ) || ""
+                                                form.watch("toolConfigs.knowledge_base.api_key") ||
+                                                ""
                                               }
                                               onChange={(e) => {
                                                 const currentConfigs =

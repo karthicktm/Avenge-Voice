@@ -3,23 +3,24 @@
    Inspired by Wove Awwwards Aesthetic
    ============================================ */
 
-/* === RESET & BASE === */
-* {
-  margin: 0;
-  padding: 0;
+/* === RESET & BASE - scoped to landing page === */
+.landing-page *,
+.landing-page *::before,
+.landing-page *::after {
   box-sizing: border-box;
 }
 
-:root {
+/* Marketing-specific CSS variables - scoped to .landing-page */
+.landing-page {
   /* Color Palette - Strict Monochrome */
   --color-black: #000000;
-  --color-white: #FFFFFF;
-  --color-grey-light: #F2F2F2;
-  --color-grey-mid: #9C9C9C;
-  --color-grey-border: #E5E5E5;
+  --color-white: #ffffff;
+  --color-grey-light: #f2f2f2;
+  --color-grey-mid: #9c9c9c;
+  --color-grey-border: #e5e5e5;
 
   /* Typography Scale */
-  --font-primary: 'Inter', 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-primary: "Inter", "Outfit", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-size-hero: 96px;
   --font-size-section: 56px;
   --font-size-subsection: 32px;
@@ -48,14 +49,13 @@
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.16);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.2);
   --shadow-focus: 0 0 0 4px rgba(0, 0, 0, 0.1);
-}
 
-html {
+  /* Smooth scrolling within landing page */
   scroll-behavior: smooth;
-  font-size: 16px;
 }
 
-body {
+/* Scoped to landing page only - do not apply global body styles */
+.landing-page {
   font-family: var(--font-primary);
   font-size: var(--font-size-body);
   line-height: 1.6;
@@ -63,31 +63,32 @@ body {
   background-color: var(--color-white);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
 }
 
-/* === TYPOGRAPHY === */
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
+/* === TYPOGRAPHY - scoped to landing page === */
+.landing-page h1,
+.landing-page h2,
+.landing-page h3,
+.landing-page h4,
+.landing-page h5,
+.landing-page h6 {
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: -0.02em;
 }
 
-h1 {
+.landing-page h1 {
   font-size: var(--font-size-hero);
   font-weight: 700;
 }
 
-h2 {
+.landing-page h2 {
   font-size: var(--font-size-section);
   font-weight: 600;
 }
 
-h3 {
+.landing-page h3 {
   font-size: var(--font-size-subsection);
   font-weight: 500;
 }
@@ -198,7 +199,7 @@ h3 {
 }
 
 .btn::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 50%;
   left: 50%;
@@ -207,7 +208,9 @@ h3 {
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.3);
   transform: translate(-50%, -50%);
-  transition: width 0.6s, height 0.6s;
+  transition:
+    width 0.6s,
+    height 0.6s;
 }
 
 .btn:hover::before {
@@ -266,7 +269,6 @@ h3 {
   color: var(--color-black);
   border-color: var(--color-white);
 }
-
 
 /* === HERO SECTION === */
 .hero {
@@ -365,7 +367,7 @@ h3 {
 }
 
 .feature-card::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: -2px;
   background: linear-gradient(135deg, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.4));
@@ -449,7 +451,7 @@ h3 {
 }
 
 .pricing-card::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   background: linear-gradient(135deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0) 100%);
@@ -492,7 +494,7 @@ h3 {
 }
 
 .pricing-card.popular::before {
-  content: 'MOST POPULAR';
+  content: "MOST POPULAR";
   position: absolute;
   top: -12px;
   left: 50%;
@@ -567,7 +569,7 @@ h3 {
 }
 
 .integration-item::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: -2px;
   background: linear-gradient(135deg, var(--color-black), var(--color-grey-mid));
@@ -667,7 +669,7 @@ h3 {
 
 /* === RESPONSIVE === */
 @media (max-width: 768px) {
-  :root {
+  .landing-page {
     --font-size-hero: 48px;
     --font-size-section: 36px;
     --font-size-subsection: 24px;

@@ -170,4 +170,45 @@ export const integrationsApi = {
   },
 };
 
+// Email Verification API functions
+export interface SendVerificationCodeRequest {
+  email: string;
+}
+
+export interface VerifyEmailCodeRequest {
+  email: string;
+  code: string;
+}
+
+export interface VerificationCodeResponse {
+  message: string;
+  expires_in_minutes: number;
+}
+
+export interface TokenResponse {
+  access_token: string;
+}
+
+export const emailVerificationApi = {
+  // Send verification code to email
+  sendCode: async (email: string): Promise<VerificationCodeResponse> => {
+    const response = await api.post<VerificationCodeResponse>(
+      "/api/v1/auth/send-verification-code",
+      {
+        email,
+      }
+    );
+    return response.data;
+  },
+
+  // Verify email with code
+  verifyCode: async (email: string, code: string): Promise<TokenResponse> => {
+    const response = await api.post<TokenResponse>("/api/v1/auth/verify-email-code", {
+      email,
+      code,
+    });
+    return response.data;
+  },
+};
+
 export default api;

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,13 +16,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
+import { EmailVerificationDialog } from "@/components/auth/email-verification-dialog";
 
 export default function LoginPage() {
   const { login } = useAuth();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showVerificationDialog, setShowVerificationDialog] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,11 +34,28 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+    } catch (err: unknown) {
+      // Check if error is 403 (email not verified)
+      if (err && typeof err === "object" && "response" in err) {
+        const axiosError = err as { response?: { status?: number; data?: { detail?: string } } };
+        if (axiosError.response?.status === 403) {
+          // Email not verified - show verification dialog
+          setShowVerificationDialog(true);
+          return;
+        }
+        setError(axiosError.response?.data?.detail ?? "Login failed");
+      } else {
+        setError(err instanceof Error ? err.message : "Login failed");
+      }
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleVerified = (accessToken: string) => {
+    // Save token and redirect to dashboard
+    localStorage.setItem("access_token", accessToken);
+    router.push("/dashboard");
   };
 
   return (
@@ -101,6 +122,14 @@ export default function LoginPage() {
           </CardFooter>
         </form>
       </Card>
+
+      {/* Email Verification Dialog */}
+      <EmailVerificationDialog
+        open={showVerificationDialog}
+        onOpenChange={setShowVerificationDialog}
+        email={email}
+        onVerified={handleVerified}
+      />
     </div>
   );
 }

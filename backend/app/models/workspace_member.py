@@ -51,7 +51,10 @@ class WorkspaceMember(Base, TimestampMixin):
 
     # Invitation tracking
     invited_by: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, comment="User who invited"
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="User who invited",
     )
     joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -62,9 +65,13 @@ class WorkspaceMember(Base, TimestampMixin):
 
     # Relationships
     workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="members")
-    user: Mapped["User"] = relationship("User", foreign_keys=[user_id], back_populates="workspace_memberships")
+    user: Mapped["User"] = relationship(
+        "User", foreign_keys=[user_id], back_populates="workspace_memberships"
+    )
     inviter: Mapped["User | None"] = relationship("User", foreign_keys=[invited_by])
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"<WorkspaceMember workspace={self.workspace_id} user={self.user_id} role={self.role}>"
+        return (
+            f"<WorkspaceMember workspace={self.workspace_id} user={self.user_id} role={self.role}>"
+        )

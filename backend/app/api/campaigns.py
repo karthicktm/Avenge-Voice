@@ -9,7 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.auth import CurrentUser, user_id_to_uuid
+from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.campaign import (
@@ -381,7 +381,7 @@ async def get_campaign_or_404(campaign_id: str, user_id: int, db: AsyncSession) 
 
 @router.get("", response_model=list[CampaignResponse])
 async def list_campaigns(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     workspace_id: str | None = Query(None, description="Filter by workspace"),
     status: str | None = Query(None, description="Filter by status"),
@@ -413,7 +413,7 @@ async def list_campaigns(
 @router.get("/{campaign_id}", response_model=CampaignResponse)
 async def get_campaign(
     campaign_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> CampaignResponse:
     """Get a specific campaign."""
@@ -424,7 +424,7 @@ async def get_campaign(
 @router.post("", response_model=CampaignResponse)
 async def create_campaign(
     data: CampaignCreate,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> CampaignResponse:
     """Create a new campaign."""
@@ -497,7 +497,7 @@ async def create_campaign(
 async def update_campaign(
     campaign_id: str,
     data: CampaignUpdate,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> CampaignResponse:
     """Update a campaign."""
@@ -527,7 +527,7 @@ async def update_campaign(
 @router.delete("/{campaign_id}")
 async def delete_campaign(
     campaign_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Delete a campaign."""
@@ -553,7 +553,7 @@ async def delete_campaign(
 @router.get("/{campaign_id}/contacts", response_model=list[CampaignContactResponse])
 async def list_campaign_contacts(
     campaign_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     status: str | None = Query(None, description="Filter by status"),
     limit: int = Query(100, le=500),
@@ -604,7 +604,7 @@ async def list_campaign_contacts(
 async def add_contacts_to_campaign(
     campaign_id: str,
     data: AddContactsRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
     """Add contacts to a campaign."""
@@ -654,7 +654,7 @@ async def add_contacts_to_campaign(
 async def preview_contacts_by_filter(
     campaign_id: str,
     data: AddContactsByFilterRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> FilteredContactsResponse:
     """Preview how many contacts would be added by filter criteria."""
@@ -703,7 +703,7 @@ async def preview_contacts_by_filter(
 async def add_contacts_by_filter(
     campaign_id: str,
     data: AddContactsByFilterRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, int]:
     """Add contacts to campaign by filter criteria."""
@@ -766,7 +766,7 @@ async def add_contacts_by_filter(
 async def remove_contact_from_campaign(
     campaign_id: str,
     contact_id: int,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Remove a contact from a campaign."""
@@ -800,7 +800,7 @@ async def remove_contact_from_campaign(
 @router.post("/{campaign_id}/start", response_model=CampaignResponse)
 async def start_campaign(
     campaign_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> CampaignResponse:
     """Start a campaign."""
@@ -828,7 +828,7 @@ async def start_campaign(
 @router.post("/{campaign_id}/pause", response_model=CampaignResponse)
 async def pause_campaign(
     campaign_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> CampaignResponse:
     """Pause a running campaign."""
@@ -847,7 +847,7 @@ async def pause_campaign(
 @router.post("/{campaign_id}/stop", response_model=CampaignResponse)
 async def stop_campaign(
     campaign_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> CampaignResponse:
     """Stop a campaign (cannot be resumed)."""
@@ -867,7 +867,7 @@ async def stop_campaign(
 @router.post("/{campaign_id}/restart", response_model=CampaignResponse)
 async def restart_campaign(
     campaign_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> CampaignResponse:
     """Restart a completed or canceled campaign.
@@ -932,7 +932,7 @@ async def restart_campaign(
 @router.get("/{campaign_id}/stats", response_model=CampaignStatsResponse)
 async def get_campaign_stats(
     campaign_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> CampaignStatsResponse:
     """Get detailed statistics for a campaign."""
@@ -973,7 +973,7 @@ async def get_campaign_stats(
 @router.get("/{campaign_id}/dispositions", response_model=DispositionStatsResponse)
 async def get_disposition_stats(
     campaign_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> DispositionStatsResponse:
     """Get disposition breakdown statistics for a campaign."""
@@ -1012,7 +1012,7 @@ async def update_contact_disposition(
     campaign_id: str,
     contact_id: int,
     data: UpdateDispositionRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> CampaignContactResponse:
     """Update the disposition for a contact in a campaign."""

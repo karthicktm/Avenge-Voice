@@ -33,6 +33,12 @@ export default function RootLayout({
         <title>Avenge AI</title>
         <meta name="description" content="AI-powered voice agent platform" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        {/* Apply dark mode immediately to prevent flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `document.documentElement.classList.add('dark');`,
+          }}
+        />
       </head>
       <body className="antialiased">
         <Preloader />

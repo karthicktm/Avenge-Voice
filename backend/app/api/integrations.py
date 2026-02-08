@@ -10,7 +10,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.auth import CurrentUser, user_id_to_uuid
+from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.db.session import get_db
 from app.models.user_integration import UserIntegration
 from app.models.workspace import Workspace
@@ -86,7 +86,7 @@ def mask_credentials(credentials: dict[str, Any]) -> list[str]:
 
 @router.get("", response_model=IntegrationListResponse)
 async def list_integrations(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     workspace_id: str | None = None,
 ) -> IntegrationListResponse:
@@ -141,7 +141,7 @@ async def list_integrations(
 @router.get("/{integration_id}", response_model=IntegrationResponse)
 async def get_integration(
     integration_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     workspace_id: str | None = None,
 ) -> IntegrationResponse:
@@ -202,7 +202,7 @@ async def get_integration(
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=IntegrationResponse)
 async def connect_integration(
     request: ConnectIntegrationRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> IntegrationResponse:
     """Connect a new integration.
@@ -291,7 +291,7 @@ async def connect_integration(
 async def update_integration(
     integration_id: str,
     request: UpdateIntegrationRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     workspace_id: str | None = None,
 ) -> IntegrationResponse:
@@ -378,7 +378,7 @@ async def update_integration(
 @router.delete("/{integration_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def disconnect_integration(
     integration_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     workspace_id: str | None = None,
 ) -> None:

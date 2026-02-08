@@ -11,12 +11,14 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.auth import CurrentUser
+from app.core.auth import SuperAdminUser, VerifiedUser
 from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.contact import Contact
+from app.models.user import User
 from app.models.workspace import AgentWorkspace, Workspace
+from app.models.workspace_member import WorkspaceMember
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +152,7 @@ class SetAgentWorkspacesRequest(BaseModel):
 @limiter.limit("100/minute")
 async def list_workspaces(
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """List all workspaces for the current user."""
@@ -206,7 +208,7 @@ async def list_workspaces(
 async def get_workspace(
     request: Request,
     workspace_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Get a single workspace by ID."""
@@ -251,7 +253,7 @@ async def get_workspace(
 async def create_workspace(
     request: Request,
     workspace_data: WorkspaceCreate,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Create a new workspace."""
@@ -305,7 +307,7 @@ async def update_workspace(
     request: Request,
     workspace_id: str,
     workspace_data: WorkspaceUpdate,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Update an existing workspace."""
@@ -383,12 +385,14 @@ async def update_workspace(
 async def delete_workspace(
     request: Request,
     workspace_id: str,
-    current_user: CurrentUser,
+    super_admin: SuperAdminUser,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Delete a workspace (cannot delete default workspace)."""
-    user_id = current_user.id
+    """Delete a workspace (super admin only).
 
+    This will also delete all users who are members of this workspace.
+    Cannot delete the default workspace.
+    """
     try:
         workspace_uuid = uuid.UUID(workspace_id)
     except ValueError as e:
@@ -396,7 +400,7 @@ async def delete_workspace(
 
     try:
         result = await db.execute(
-            select(Workspace).where(Workspace.id == workspace_uuid, Workspace.user_id == user_id),
+            select(Workspace).where(Workspace.id == workspace_uuid),
         )
         workspace = result.scalar_one_or_none()
     except DBAPIError as e:
@@ -416,9 +420,46 @@ async def delete_workspace(
         )
 
     try:
-        await db.delete(workspace)
-        await db.commit()
-        logger.info("Deleted workspace: id=%s", workspace_id)
+        # Get all workspace members (users in this workspace)
+        members_result = await db.execute(
+            select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace_uuid)
+        )
+        members = members_result.scalars().all()
+
+        # Collect user IDs to delete (excluding super admin themselves)
+        user_ids_to_delete = [m.user_id for m in members if m.user_id != super_admin.id]
+
+        # Delete the users (this will cascade delete their workspace memberships)
+        if user_ids_to_delete:
+            users_result = await db.execute(select(User).where(User.id.in_(user_ids_to_delete)))
+            users_to_delete = users_result.scalars().all()
+
+            for user in users_to_delete:
+                logger.info(
+                    "Deleting user as part of workspace deletion: user_id=%s, email=%s, workspace_id=%s",
+                    user.id,
+                    user.email,
+                    workspace_id,
+                )
+                await db.delete(user)
+
+            await db.commit()
+            logger.info("Deleted %d users from workspace: %s", len(users_to_delete), workspace_id)
+
+        # Re-fetch workspace after user deletions
+        result = await db.execute(
+            select(Workspace).where(Workspace.id == workspace_uuid),
+        )
+        workspace = result.scalar_one_or_none()
+
+        if workspace:
+            await db.delete(workspace)
+            await db.commit()
+            logger.info(
+                "Deleted workspace: id=%s by super_admin=%s",
+                workspace_id,
+                super_admin.id,
+            )
     except DBAPIError as e:
         await db.rollback()
         logger.exception("Database error deleting workspace: %s", workspace_id)
@@ -436,7 +477,7 @@ async def delete_workspace(
 async def list_workspace_agents(
     request: Request,
     workspace_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """List all agents assigned to a workspace."""
@@ -479,7 +520,7 @@ async def add_agent_to_workspace(
     request: Request,
     workspace_id: str,
     data: AddAgentToWorkspaceRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Add an agent to a workspace."""
@@ -552,7 +593,7 @@ async def remove_agent_from_workspace(
     request: Request,
     workspace_id: str,
     agent_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Remove an agent from a workspace."""
@@ -601,7 +642,7 @@ async def remove_agent_from_workspace(
 async def get_agent_workspaces(
     request: Request,
     agent_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, str]]:
     """Get all workspaces for an agent."""
@@ -644,7 +685,7 @@ async def set_agent_workspaces(
     request: Request,
     agent_id: str,
     data: SetAgentWorkspacesRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Set all workspaces for an agent (bulk operation)."""

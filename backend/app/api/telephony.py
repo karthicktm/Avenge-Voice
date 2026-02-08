@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.settings import get_user_api_keys
-from app.core.auth import CurrentUser, user_id_to_uuid
+from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.webhook_security import verify_telnyx_webhook, verify_twilio_webhook
@@ -293,7 +293,7 @@ async def update_campaign_contact_from_call(
 
 @router.get("/phone-numbers", response_model=list[PhoneNumberResponse])
 async def list_phone_numbers(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     provider: str = Query("twilio", description="Provider: twilio or telnyx"),
     workspace_id: str = Query(..., description="Workspace ID for API key isolation"),
@@ -354,7 +354,7 @@ async def list_phone_numbers(
 @router.post("/phone-numbers/search", response_model=list[PhoneNumberResponse])
 async def search_phone_numbers(
     request: SearchPhoneNumbersRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     workspace_id: str = Query(..., description="Workspace ID for API key isolation"),
 ) -> list[PhoneNumberResponse]:
@@ -450,7 +450,7 @@ async def _configure_webhook_for_provider(
 async def purchase_phone_number(
     purchase_request: PurchasePhoneNumberRequest,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     workspace_id: str = Query(..., description="Workspace ID for API key isolation"),
 ) -> PhoneNumberResponse:
@@ -518,7 +518,7 @@ async def purchase_phone_number(
 @router.delete("/phone-numbers/{phone_number_id}")
 async def release_phone_number(
     phone_number_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     provider: str = Query(..., description="Provider: twilio or telnyx"),
     workspace_id: str = Query(..., description="Workspace ID for API key isolation"),
@@ -583,7 +583,7 @@ async def release_phone_number(
 async def initiate_call(
     call_request: InitiateCallRequest,
     request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     workspace_id: str = Query(..., description="Workspace ID for API key isolation"),
 ) -> CallResponse:
@@ -692,7 +692,7 @@ async def initiate_call(
 @router.post("/calls/{call_id}/hangup")
 async def hangup_call(
     call_id: str,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
     provider: str = Query(..., description="Provider: twilio or telnyx"),
     workspace_id: str = Query(..., description="Workspace ID for API key isolation"),

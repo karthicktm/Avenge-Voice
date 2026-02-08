@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://localhost:3001",
+        "http://localhost:3002",
         "http://localhost:8000",
         "https://avenge-voice-production.up.railway.app",
         "https://avenge-voice-backend-production.up.railway.app",
@@ -99,7 +100,7 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
 
-    # Email Service (SMTP)
+    # Email Service (SMTP - Legacy)
     SMTP_HOST: str = "localhost"
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
@@ -107,6 +108,12 @@ class Settings(BaseSettings):
     FROM_EMAIL: str = "noreply@avenge-voice.com"
     FROM_NAME: str = "Avenge Voice"
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # Resend Email Service (Primary)
+    RESEND_API_KEY: str | None = None
+    RESEND_FROM_EMAIL: str = "noreply@avengeai.com"
+    VERIFICATION_CODE_EXPIRY_MINUTES: int = 10
+    EMAIL_VERIFICATION_REQUIRED: bool = True
 
     # Super Admin (created on startup if environment variables are set)
     SUPER_ADMIN_EMAIL: str | None = None

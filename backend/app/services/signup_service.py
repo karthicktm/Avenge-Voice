@@ -18,17 +18,17 @@ logger = structlog.get_logger()
 
 def generate_slug(name: str) -> str:
     """Generate a URL-friendly slug from a name.
-    
+
     Args:
         name: Organization or workspace name
-        
+
     Returns:
         URL-friendly slug
     """
     # Convert to lowercase and replace spaces/special chars with hyphens
-    slug = re.sub(r'[^\w\s-]', '', name.lower())
-    slug = re.sub(r'[-\s]+', '-', slug)
-    return slug.strip('-')
+    slug = re.sub(r"[^\w\s-]", "", name.lower())
+    slug = re.sub(r"[-\s]+", "-", slug)
+    return slug.strip("-")
 
 
 async def create_user_with_organization(
@@ -39,41 +39,39 @@ async def create_user_with_organization(
     organization_name: str | None = None,
 ) -> User:
     """Create a new user with automatic organization and workspace setup.
-    
+
     This function creates:
     1. User account (as organization owner)
     2. Organization (with user as owner)
     3. Default workspace
     4. Workspace membership (user as admin)
-    
+
     Args:
         db: Database session
         email: User email
         full_name: User's full name
         hashed_password: Pre-hashed password
         organization_name: Optional organization name (defaults to "{full_name}'s Organization")
-        
+
     Returns:
         Created user with organization and workspace
     """
     log = logger.bind(email=email, full_name=full_name)
-    
+
     # Determine organization name
     org_name = organization_name or f"{full_name}'s Organization"
     org_slug = generate_slug(org_name)
-    
+
     # Check if slug already exists, append number if needed
     base_slug = org_slug
     counter = 1
     while True:
-        result = await db.execute(
-            select(Organization).where(Organization.slug == org_slug)
-        )
+        result = await db.execute(select(Organization).where(Organization.slug == org_slug))
         if not result.scalar_one_or_none():
             break
         org_slug = f"{base_slug}-{counter}"
         counter += 1
-    
+
     log.info("creating_user_with_organization", org_name=org_name, org_slug=org_slug)
 
     # Create user first (without organization)
@@ -81,7 +79,7 @@ async def create_user_with_organization(
         email=email,
         full_name=full_name,
         hashed_password=hashed_password,
-        role=UserRole.ORGANIZATION_OWNER,  # User becomes organization owner
+        role=UserRole.ADMIN,  # User becomes organization admin
         email_verified=False,  # Will need to verify email
         is_active=True,
     )
@@ -130,7 +128,7 @@ async def create_user_with_organization(
         workspace_id=workspace.id,
         user_id=user.id,
         role=WorkspaceRole.ADMIN,
-        invited_by_id=user.id,  # Self-invited
+        invited_by=user.id,  # Self-invited
     )
     db.add(workspace_member)
 
@@ -147,5 +145,5 @@ async def create_user_with_organization(
         workspace_id=str(workspace.id),
         org_slug=org_slug,
     )
-    
+
     return user

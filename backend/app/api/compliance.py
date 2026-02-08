@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import CurrentUser, user_id_to_uuid
+from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.appointment import Appointment
@@ -171,7 +171,7 @@ async def get_user_settings(user_id: int, db: AsyncSession) -> UserSettings | No
 
 @router.get("/status", response_model=ComplianceOverviewResponse)
 async def get_compliance_status(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> ComplianceOverviewResponse:
     """Get overall compliance status for GDPR and CCPA."""
@@ -411,7 +411,7 @@ async def get_compliance_status(
 
 @router.get("/privacy-settings", response_model=PrivacySettingsResponse)
 async def get_privacy_settings(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> PrivacySettingsResponse:
     """Get user's privacy settings."""
@@ -438,7 +438,7 @@ async def get_privacy_settings(
 @router.patch("/privacy-settings", response_model=PrivacySettingsResponse)
 async def update_privacy_settings(
     request: UpdatePrivacySettingsRequest,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> PrivacySettingsResponse:
     """Update user's privacy settings."""
@@ -505,7 +505,7 @@ async def update_privacy_settings(
 async def record_consent(
     request: ConsentRequest,
     http_request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Record user consent for GDPR compliance."""
@@ -536,7 +536,7 @@ async def record_consent(
 
 @router.get("/export", response_model=DataExportResponse)
 async def export_user_data(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> DataExportResponse:
     """Export all user data for GDPR/CCPA compliance."""
@@ -733,7 +733,7 @@ async def export_user_data(
 
 @router.post("/ccpa/opt-out")
 async def ccpa_opt_out(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Opt out of data sale/sharing under CCPA."""
@@ -749,7 +749,7 @@ async def ccpa_opt_out(
 
 @router.post("/ccpa/opt-in")
 async def ccpa_opt_in(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Opt back in to data sharing under CCPA."""
@@ -772,7 +772,7 @@ async def ccpa_opt_in(
 async def withdraw_consent(
     request: ConsentRequest,
     http_request: Request,
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Withdraw previously given consent (GDPR Article 7(3))."""
@@ -803,7 +803,7 @@ async def withdraw_consent(
 
 @router.delete("/data", response_model=DataDeletionResponse)
 async def delete_user_data(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> DataDeletionResponse:
     """
@@ -979,7 +979,7 @@ async def cleanup_expired_data(db: AsyncSession) -> dict[str, int]:
 
 @router.post("/retention/cleanup")
 async def trigger_retention_cleanup(
-    current_user: CurrentUser,
+    current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     """

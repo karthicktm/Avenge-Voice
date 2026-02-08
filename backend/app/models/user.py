@@ -1,5 +1,6 @@
 """User model for authentication and authorization."""
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -12,6 +13,7 @@ from app.db.base import Base, TimestampMixin
 if TYPE_CHECKING:
     from app.models.agent_assignment import AgentAssignment
     from app.models.organization import Organization
+    from app.models.quota import UserQuota
     from app.models.user_profile import UserProfile
     from app.models.workspace import Workspace
     from app.models.workspace_member import WorkspaceMember
@@ -27,10 +29,16 @@ class AuthProvider(str, Enum):
 
 
 class UserRole(str, Enum):
-    """User roles for system-level permissions."""
+    """User roles for system-level permissions.
+
+    Hierarchy: SUPER_ADMIN > ADMIN > USER
+    - SUPER_ADMIN: Platform-level administrator
+    - ADMIN: Organization administrator (billing, user management, workspaces)
+    - USER: Regular user with access to assigned resources
+    """
 
     SUPER_ADMIN = "super_admin"  # Platform administrator
-    ORGANIZATION_OWNER = "organization_owner"  # Organization owner (billing, workspaces)
+    ADMIN = "admin"  # Organization administrator (billing, workspaces)
     USER = "user"  # Regular user
 
 
@@ -67,7 +75,7 @@ class User(Base, TimestampMixin):
     )
 
     # Organization & Role
-    organization_id: Mapped[int | None] = mapped_column(
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=True,
@@ -128,15 +136,24 @@ class User(Base, TimestampMixin):
         "UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     workspace_memberships: Mapped[list["WorkspaceMember"]] = relationship(
-        "WorkspaceMember", foreign_keys="WorkspaceMember.user_id", back_populates="user", cascade="all, delete-orphan"
+        "WorkspaceMember",
+        foreign_keys="WorkspaceMember.user_id",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
     agent_assignments: Mapped[list["AgentAssignment"]] = relationship(
-        "AgentAssignment", foreign_keys="AgentAssignment.user_id", back_populates="user", cascade="all, delete-orphan"
+        "AgentAssignment",
+        foreign_keys="AgentAssignment.user_id",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     # Legacy relationship (for backward compatibility)
     workspaces: Mapped[list["Workspace"]] = relationship(
         "Workspace", back_populates="user", cascade="all, delete-orphan"
+    )
+    quotas: Mapped[list["UserQuota"]] = relationship(
+        "UserQuota", back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
@@ -161,4 +178,3 @@ class User(Base, TimestampMixin):
         if self.otp_expires_at is None or self.otp_secret is None:
             return False
         return datetime.now(UTC) < self.otp_expires_at.replace(tzinfo=UTC)
-

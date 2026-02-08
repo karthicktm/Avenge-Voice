@@ -47,7 +47,10 @@ class AgentAssignment(Base, TimestampMixin):
 
     # Assignment metadata
     assigned_by: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, comment="User who made assignment"
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="User who made assignment",
     )
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -58,7 +61,9 @@ class AgentAssignment(Base, TimestampMixin):
 
     # Relationships
     agent: Mapped["Agent"] = relationship("Agent", back_populates="user_assignments")
-    user: Mapped["User"] = relationship("User", foreign_keys=[user_id], back_populates="agent_assignments")
+    user: Mapped["User"] = relationship(
+        "User", foreign_keys=[user_id], back_populates="agent_assignments"
+    )
     workspace: Mapped["Workspace"] = relationship("Workspace")
     assigner: Mapped["User"] = relationship("User", foreign_keys=[assigned_by])
 

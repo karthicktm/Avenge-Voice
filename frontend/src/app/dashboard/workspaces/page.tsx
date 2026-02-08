@@ -36,6 +36,7 @@ import { Plus, Loader2, AlertCircle, FolderOpen, Users, Bot, Settings, Trash2 } 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 
@@ -106,6 +107,8 @@ const emptyFormData: WorkspaceFormData = {
 
 export default function WorkspacesPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAgentsModalOpen, setIsAgentsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -194,11 +197,27 @@ export default function WorkspacesPage() {
   // Delete workspace mutation
   const deleteWorkspaceMutation = useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/api/v1/workspaces/${id}`);
+      try {
+        await api.delete(`/api/v1/workspaces/${id}`);
+      } catch (error) {
+        // Extract error message from response
+        if (error && typeof error === "object" && "response" in error) {
+          const axiosError = error as {
+            response?: { data?: { detail?: string }; status?: number };
+          };
+          if (axiosError.response?.status === 403) {
+            throw new Error("Only super admins can delete workspaces");
+          }
+          if (axiosError.response?.data?.detail) {
+            throw new Error(axiosError.response.data.detail);
+          }
+        }
+        throw error;
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
-      toast.success("Workspace deleted successfully");
+      toast.success("Workspace and associated users deleted successfully");
       closeModal();
     },
     onError: (error: Error) => {
@@ -603,7 +622,7 @@ export default function WorkspacesPage() {
             <DialogFooter className="gap-2">
               {modalMode === "view" && (
                 <>
-                  {!selectedWorkspace?.is_default && (
+                  {isSuperAdmin && !selectedWorkspace?.is_default && (
                     <Button
                       type="button"
                       variant="destructive"
@@ -709,9 +728,15 @@ export default function WorkspacesPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Workspace</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete {selectedWorkspace?.name}? All associated data will be
-              moved to your default workspace. This action cannot be undone.
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Are you sure you want to delete <strong>{selectedWorkspace?.name}</strong>?
+              </p>
+              <p className="font-semibold text-destructive">
+                Warning: All users who are members of this workspace will also be permanently
+                deleted.
+              </p>
+              <p>This action cannot be undone.</p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -720,7 +745,7 @@ export default function WorkspacesPage() {
               onClick={confirmDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              Delete Workspace and Users
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
