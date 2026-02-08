@@ -1,11 +1,11 @@
-"""Verify existing admin email addresses.
+"""Verify all admin-level users email addresses.
 
-This migration ensures that all existing admin-level users have their
-email_verified flag set to True, as they were created before the email
-verification feature was implemented.
+This migration ensures that all existing admin-level users (owner, admin)
+have their email_verified flag set to True, as they were created before
+the email verification feature was implemented.
 
-Revision ID: 023_verify_existing_superadmins
-Revises: 022_add_billing_tables
+Revision ID: 024_verify_all_admin_users
+Revises: 023_verify_existing_superadmins
 Create Date: 2024-02-08
 """
 
@@ -13,8 +13,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = "023_verify_existing_superadmins"
-down_revision = "022_add_billing_tables"
+revision = "024_verify_all_admin_users"
+down_revision = "023_verify_existing_superadmins"
 branch_labels = None
 depends_on = None
 
