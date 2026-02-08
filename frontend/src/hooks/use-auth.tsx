@@ -22,7 +22,7 @@ interface AuthContextType {
   isSuperAdmin: boolean;
   isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, username: string, password: string) => Promise<void>;
+  register: (email: string, username: string, password: string, plan?: string) => Promise<void>;
   logout: () => void;
   logoutAllDevices: () => Promise<void>;
 }
@@ -113,13 +113,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push("/dashboard");
   };
 
-  const register = async (email: string, username: string, password: string) => {
+  const register = async (email: string, username: string, password: string, plan?: string) => {
     const response = await fetch(`${API_BASE}/api/v1/auth/register`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ email, username, password }),
+      body: JSON.stringify({ email, username, password, plan_type: plan ?? "free" }),
     });
 
     if (!response.ok) {

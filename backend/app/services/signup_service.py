@@ -31,12 +31,67 @@ def generate_slug(name: str) -> str:
     return slug.strip("-")
 
 
+# Plan limits configuration
+PLAN_LIMITS = {
+    "free": {
+        "max_users": 5,
+        "max_agents": 1,
+        "max_workspaces": 1,
+        "max_call_minutes_per_month": 10,
+        "max_storage_gb": 1,
+        "features_enabled": ["basic_agents"],
+    },
+    "starter": {
+        "max_users": 10,
+        "max_agents": 5,
+        "max_workspaces": 3,
+        "max_call_minutes_per_month": 500,
+        "max_storage_gb": 10,
+        "features_enabled": ["basic_agents", "basic_telephony", "email_support"],
+    },
+    "professional": {
+        "max_users": 50,
+        "max_agents": 20,
+        "max_workspaces": 10,
+        "max_call_minutes_per_month": 2000,
+        "max_storage_gb": 50,
+        "features_enabled": [
+            "basic_agents",
+            "advanced_agents",
+            "basic_telephony",
+            "advanced_telephony",
+            "priority_support",
+            "analytics",
+        ],
+    },
+    "enterprise": {
+        "max_users": 9999,
+        "max_agents": 9999,
+        "max_workspaces": 9999,
+        "max_call_minutes_per_month": 999999,
+        "max_storage_gb": 1000,
+        "features_enabled": [
+            "basic_agents",
+            "advanced_agents",
+            "basic_telephony",
+            "advanced_telephony",
+            "priority_support",
+            "analytics",
+            "custom_integrations",
+            "sla_guarantee",
+            "dedicated_support",
+        ],
+    },
+}
+
+
 async def create_user_with_organization(
     db: AsyncSession,
     email: str,
     full_name: str,
     hashed_password: str,
     organization_name: str | None = None,
+    plan_type: str = "free",
 ) -> User:
     """Create a new user with automatic organization and workspace setup.
 
@@ -52,6 +107,7 @@ async def create_user_with_organization(
         full_name: User's full name
         hashed_password: Pre-hashed password
         organization_name: Optional organization name (defaults to "{full_name}'s Organization")
+        plan_type: Subscription plan type (free, starter, professional, enterprise)
 
     Returns:
         Created user with organization and workspace
@@ -86,24 +142,38 @@ async def create_user_with_organization(
     db.add(user)
     await db.flush()  # Get user ID without committing
 
+    # Get plan limits
+    plan_key = plan_type.lower() if plan_type else "free"
+    if plan_key not in PLAN_LIMITS:
+        plan_key = "free"
+    limits = PLAN_LIMITS[plan_key]
+
+    # Map plan_type string to PlanType enum
+    plan_type_enum = {
+        "free": PlanType.FREE,
+        "starter": PlanType.STARTER,
+        "professional": PlanType.PROFESSIONAL,
+        "enterprise": PlanType.ENTERPRISE,
+    }.get(plan_key, PlanType.FREE)
+
     # Create organization
     organization = Organization(
         id=uuid.uuid4(),
         name=org_name,
         slug=org_slug,
         owner_id=user.id,
-        plan_type=PlanType.FREE,
-        subscription_status=SubscriptionStatus.TRIAL,
-        trial_ends_at=datetime.now(UTC) + timedelta(days=14),  # 14-day trial
-        max_users=5,  # Free plan limits
-        max_agents=2,
-        max_workspaces=1,
-        max_call_minutes_per_month=100,
-        max_storage_gb=1,
+        plan_type=plan_type_enum,
+        subscription_status=SubscriptionStatus.TRIAL if plan_key != "free" else SubscriptionStatus.ACTIVE,
+        trial_ends_at=datetime.now(UTC) + timedelta(days=14) if plan_key != "free" else None,
+        max_users=limits["max_users"],
+        max_agents=limits["max_agents"],
+        max_workspaces=limits["max_workspaces"],
+        max_call_minutes_per_month=limits["max_call_minutes_per_month"],
+        max_storage_gb=limits["max_storage_gb"],
         current_users_count=1,  # The owner
         current_agents_count=0,
         current_workspaces_count=1,  # Default workspace
-        features_enabled=["basic_agents", "basic_telephony"],
+        features_enabled=limits["features_enabled"],
     )
     db.add(organization)
     await db.flush()  # Get organization ID

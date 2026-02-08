@@ -35,6 +35,7 @@ class RegisterRequest(BaseModel):
     username: str  # Will be used as full_name
     password: str
     organization_name: str | None = None  # Optional: defaults to "{username}'s Organization"
+    plan_type: str = "free"  # Subscription plan: free, starter, professional
 
 
 class TokenResponse(BaseModel):
@@ -158,6 +159,7 @@ async def register(
         full_name=data.username,
         hashed_password=get_password_hash(data.password),
         organization_name=data.organization_name,
+        plan_type=data.plan_type,
     )
 
     # Generate and send verification code
