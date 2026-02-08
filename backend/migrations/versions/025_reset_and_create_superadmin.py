@@ -23,46 +23,56 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def upgrade() -> None:
     """Clear all data and create fresh super admin."""
+    from sqlalchemy import text
+
+    conn = op.get_bind()
+
+    # Helper to safely delete from table if it exists
+    def safe_delete(table_name: str) -> None:
+        try:
+            conn.execute(text(f"DELETE FROM {table_name}"))
+        except Exception:
+            pass  # Table doesn't exist, skip
 
     # Delete in order respecting foreign key constraints
     # 1. Delete agent assignments first (references agents and workspaces)
-    op.execute("DELETE FROM agent_workspace")
+    safe_delete("agent_workspace")
 
     # 2. Delete workspace members (references users and workspaces)
-    op.execute("DELETE FROM workspace_members")
+    safe_delete("workspace_members")
 
     # 3. Delete workspace invitations (references workspaces)
-    op.execute("DELETE FROM workspace_invitations")
+    safe_delete("workspace_invitations")
 
     # 4. Delete agents (references workspaces)
-    op.execute("DELETE FROM agents")
+    safe_delete("agents")
 
     # 5. Delete workspaces (references organizations)
-    op.execute("DELETE FROM workspaces")
+    safe_delete("workspaces")
 
     # 6. Delete user profiles (references users)
-    op.execute("DELETE FROM user_profiles")
+    safe_delete("user_profiles")
 
-    # 7. Delete quota-related tables
-    op.execute("DELETE FROM usage_records")
-    op.execute("DELETE FROM agent_quotas")
-    op.execute("DELETE FROM user_quotas")
-    op.execute("DELETE FROM workspace_quotas")
+    # 7. Delete quota-related tables (may not exist)
+    safe_delete("usage_records")
+    safe_delete("agent_quotas")
+    safe_delete("user_quotas")
+    safe_delete("workspace_quotas")
 
-    # 8. Delete billing-related tables
-    op.execute("DELETE FROM usage_alerts")
-    op.execute("DELETE FROM invoices")
-    op.execute("DELETE FROM payment_methods")
-    op.execute("DELETE FROM billing_events")
+    # 8. Delete billing-related tables (may not exist)
+    safe_delete("usage_alerts")
+    safe_delete("invoices")
+    safe_delete("payment_methods")
+    safe_delete("billing_events")
 
-    # 9. Delete audit logs
-    op.execute("DELETE FROM audit_logs")
+    # 9. Delete audit logs (may not exist)
+    safe_delete("audit_logs")
 
     # 10. Delete users (references organizations)
-    op.execute("DELETE FROM users")
+    safe_delete("users")
 
     # 11. Delete organizations
-    op.execute("DELETE FROM organizations")
+    safe_delete("organizations")
 
     # Create super admin user
     # Password: Admin@123456 (hashed)
