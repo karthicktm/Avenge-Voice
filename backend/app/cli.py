@@ -216,6 +216,64 @@ async def delete_superuser() -> None:
         print(f"\n✓ Super admin {email} deleted successfully")
 
 
+async def verify_user_email() -> None:
+    """Verify a user's email address manually."""
+    print("\n" + "=" * 50)
+    print("Verify User Email")
+    print("=" * 50 + "\n")
+
+    email = input("Email to verify: ").strip()
+    if not email:
+        print("❌ Email is required")
+        return
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+
+        if not user:
+            print(f"\n❌ User with email {email} not found")
+            return
+
+        if user.email_verified:
+            print(f"\n✓ User {email} is already verified")
+            return
+
+        user.email_verified = True
+        await db.commit()
+
+        print(f"\n✓ Email verified for user: {email}")
+        print(f"  Role: {user.role}")
+        print(f"  Name: {user.full_name or 'N/A'}")
+
+
+async def verify_all_superadmins() -> None:
+    """Verify email for all super admin users."""
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(User).where(User.role == UserRole.SUPER_ADMIN)
+        )
+        superusers = result.scalars().all()
+
+        if not superusers:
+            print("\nNo super admin users found.")
+            return
+
+        verified_count = 0
+        for user in superusers:
+            if not user.email_verified:
+                user.email_verified = True
+                verified_count += 1
+                print(f"✓ Verified: {user.email}")
+
+        await db.commit()
+
+        if verified_count == 0:
+            print("\nAll super admins are already verified.")
+        else:
+            print(f"\n✓ Verified {verified_count} super admin(s)")
+
+
 async def create_superuser_from_env() -> None:
     """Create super admin from environment variables (for production deployment).
 
@@ -269,9 +327,11 @@ def main() -> NoReturn:
         print("\nAvenge Voice CLI")
         print("=" * 50)
         print("\nAvailable commands:")
-        print("  create-superuser    Create a new super admin user")
-        print("  list-superusers     List all super admin users")
-        print("  delete-superuser    Delete a super admin user")
+        print("  create-superuser       Create a new super admin user")
+        print("  list-superusers        List all super admin users")
+        print("  delete-superuser       Delete a super admin user")
+        print("  verify-email           Verify a user's email manually")
+        print("  verify-all-superadmins Verify email for all super admins")
         print("\nUsage: python -m app.cli <command>")
         print()
         sys.exit(1)
@@ -284,6 +344,10 @@ def main() -> NoReturn:
         asyncio.run(list_superusers())
     elif command == "delete-superuser":
         asyncio.run(delete_superuser())
+    elif command == "verify-email":
+        asyncio.run(verify_user_email())
+    elif command == "verify-all-superadmins":
+        asyncio.run(verify_all_superadmins())
     else:
         print(f"\n❌ Unknown command: {command}")
         print("\nRun 'python -m app.cli' to see available commands")
