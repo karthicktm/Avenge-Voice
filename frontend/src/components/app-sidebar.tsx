@@ -121,7 +121,7 @@ export function AppSidebar() {
   const displayName = user?.username ?? "User";
   const displayEmail = user?.email ?? "user@example.com";
   const initials = displayName.slice(0, 2).toUpperCase();
-  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin" || user?.role === "owner";
 
   // Filter navigation items based on user role
   const navigation = baseNavigation.filter((item) => !item.adminOnly || isAdmin);
