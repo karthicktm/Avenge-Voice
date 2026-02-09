@@ -290,7 +290,8 @@ class GPTRealtimeSession:
 
         # Get tool definitions from registry
         enabled_tools = self.agent_config.get("enabled_tools", [])
-        tools = self.tool_registry.get_all_tool_definitions(enabled_tools)
+        enabled_tool_ids = self.agent_config.get("enabled_tool_ids", {})
+        tools = self.tool_registry.get_all_tool_definitions(enabled_tools, enabled_tool_ids)
 
         # Get workspace timezone if available
         workspace_timezone = "UTC"
