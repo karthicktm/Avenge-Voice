@@ -59,10 +59,11 @@ class WebBrowseTools:
                 "type": "function",
                 "name": "browse_website",
                 "description": (
-                    "Browse a website to get detailed information. Use this tool to fetch and read "
-                    "the content of web pages. You can navigate to specific pages, read articles, "
-                    "find product listings, check availability, and gather detailed information. "
-                    "ALWAYS use this when the user asks about specific content from a website."
+                    "REQUIRED: You MUST call this tool to fetch real information from websites. "
+                    "When users ask about apartments, availability, products, services, prices, or ANY factual information, "
+                    "you MUST use this tool to get the actual current data. "
+                    "DO NOT answer from memory - ALWAYS browse first to get accurate information. "
+                    "Call this tool BEFORE responding to the user."
                 ),
                 "parameters": {
                     "type": "object",
