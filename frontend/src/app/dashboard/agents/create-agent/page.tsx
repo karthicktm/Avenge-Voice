@@ -1181,6 +1181,48 @@ Guidelines:
                                         </div>
                                       </div>
                                     )}
+
+                                    {/* Web Search Configuration */}
+                                    {integration.id === "web_search" && (
+                                      <div className="mt-4 space-y-3 rounded-lg border bg-background p-4">
+                                        <h4 className="text-sm font-medium">
+                                          Search Configuration
+                                        </h4>
+                                        <p className="text-xs text-muted-foreground">
+                                          Optionally restrict searches to a specific website.
+                                        </p>
+
+                                        <div className="space-y-1.5">
+                                          <label className="text-xs font-medium">
+                                            Restrict to Domain (Optional)
+                                          </label>
+                                          <Input
+                                            type="text"
+                                            placeholder="example.com"
+                                            className="h-8"
+                                            value={
+                                              form.watch("toolConfigs.web_search.search_domain") ||
+                                              ""
+                                            }
+                                            onChange={(e) => {
+                                              const currentConfigs =
+                                                form.getValues("toolConfigs") || {};
+                                              form.setValue("toolConfigs", {
+                                                ...currentConfigs,
+                                                web_search: {
+                                                  ...currentConfigs.web_search,
+                                                  search_domain: e.target.value,
+                                                },
+                                              });
+                                            }}
+                                          />
+                                          <p className="text-xs text-muted-foreground">
+                                            Only search within this website. Leave empty to search
+                                            the entire web.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </CollapsibleContent>
                               )}

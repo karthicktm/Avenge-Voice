@@ -174,6 +174,16 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
     enabled: true,
     isBuiltIn: true,
     badge: "Avenge AI",
+    fields: [
+      {
+        name: "search_domain",
+        label: "Restrict to Domain (Optional)",
+        type: "url",
+        required: false,
+        placeholder: "example.com",
+        description: "Only search within this website. Leave empty to search the entire web.",
+      },
+    ],
     tools: [
       {
         id: "web_search",

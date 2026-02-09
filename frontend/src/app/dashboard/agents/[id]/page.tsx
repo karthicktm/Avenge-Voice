@@ -188,6 +188,7 @@ const agentFormSchema = z.object({
   // Tools & Integrations
   enabledTools: z.array(z.string()).default([]),
   enabledToolIds: z.record(z.string(), z.array(z.string())).default({}),
+  toolConfigs: z.record(z.string(), z.record(z.string(), z.string())).default({}),
 
   // Workspaces
   selectedWorkspaces: z.array(z.string()).default([]),
@@ -380,6 +381,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
         isActive: agent.is_active,
         enabledTools: agent.enabled_tools ?? [],
         enabledToolIds: agent.enabled_tool_ids ?? {},
+        toolConfigs: agent.tool_configs ?? {},
         selectedWorkspaces: [],
       });
     }
@@ -583,6 +585,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
       voice: data.voice,
       enabled_tools: enabledIntegrations,
       enabled_tool_ids: data.enabledToolIds,
+      tool_configs: data.toolConfigs,
       phone_number_id: data.phoneNumberId,
       enable_recording: data.enableRecording,
       enable_transcript: data.enableTranscript,
@@ -1560,6 +1563,52 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                                         );
                                       })}
                                     </div>
+
+                                    {/* Web Search Configuration */}
+                                    {integration.id === "web_search" && (
+                                      <div className="mt-4 space-y-3 rounded-lg border bg-background p-4">
+                                        <h4 className="text-sm font-medium">
+                                          Search Configuration
+                                        </h4>
+                                        <p className="text-xs text-muted-foreground">
+                                          Optionally restrict searches to a specific website.
+                                        </p>
+
+                                        <div className="space-y-1.5">
+                                          <label className="text-xs font-medium">
+                                            Restrict to Domain (Optional)
+                                          </label>
+                                          <Input
+                                            type="text"
+                                            placeholder="example.com"
+                                            className="h-8"
+                                            value={
+                                              form.watch("toolConfigs.web_search.search_domain") ||
+                                              ""
+                                            }
+                                            onChange={(e) => {
+                                              const currentConfigs =
+                                                form.getValues("toolConfigs") || {};
+                                              form.setValue(
+                                                "toolConfigs",
+                                                {
+                                                  ...currentConfigs,
+                                                  web_search: {
+                                                    ...currentConfigs.web_search,
+                                                    search_domain: e.target.value,
+                                                  },
+                                                },
+                                                { shouldDirty: true }
+                                              );
+                                            }}
+                                          />
+                                          <p className="text-xs text-muted-foreground">
+                                            Only search within this website. Leave empty to search
+                                            the entire web.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </CollapsibleContent>
                               )}
