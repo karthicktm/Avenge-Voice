@@ -74,9 +74,17 @@ class WebSearchTools:
         """
         # Customize description based on whether domain restriction is configured
         if self.search_domain:
-            description = f"Search {self.search_domain} for information. Use this to find content, FAQs, product details, or any information from this website."
+            description = (
+                f"IMPORTANT: You MUST use this tool to search {self.search_domain} whenever the user asks about "
+                f"products, services, availability, pricing, locations, or ANY information that would be on this website. "
+                f"Do NOT try to answer from memory - always search first to get accurate, up-to-date information from {self.search_domain}."
+            )
         else:
-            description = "Search the web for real-time information. Use this to find current news, facts, product info, or any information not in your training data."
+            description = (
+                "Search the web for real-time information. Use this tool whenever the user asks about "
+                "current events, specific products, services, availability, prices, or any factual information "
+                "that may have changed since your training. Always search to provide accurate, current information."
+            )
 
         return [
             {
@@ -88,7 +96,7 @@ class WebSearchTools:
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query to look up",
+                            "description": "The search query - be specific and include relevant keywords",
                         },
                         "max_results": {
                             "type": "integer",
