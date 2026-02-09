@@ -1,5 +1,6 @@
 """Web browsing tools for voice agents - fetch and extract content from URLs."""
 
+import asyncio
 import re
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -62,9 +63,9 @@ class WebBrowseTools:
                     "REQUIRED: Fetch real information from websites. "
                     "When users ask about apartments, availability, products, services, prices, or ANY factual information, "
                     "you MUST call this tool FIRST to get the actual current data. "
+                    "Use fetch_all_pages=true when looking for specific items that might be on different pages. "
                     "CRITICAL: After receiving the tool response, you MUST share the fetched information directly with the user. "
-                    "NEVER tell users to 'check the website themselves' - YOU have the data, so YOU must share it. "
-                    "Read the 'instruction' field in the response and follow it exactly."
+                    "NEVER tell users to 'check the website themselves' - YOU have the data, so YOU must share it."
                 ),
                 "parameters": {
                     "type": "object",
@@ -72,6 +73,10 @@ class WebBrowseTools:
                         "url": {
                             "type": "string",
                             "description": "The full URL to browse (e.g., 'https://example.com/page')",
+                        },
+                        "fetch_all_pages": {
+                            "type": "boolean",
+                            "description": "Set to true to automatically fetch paginated content (multiple pages). Use this when searching for specific listings or items.",
                         },
                         "extract_links": {
                             "type": "boolean",
@@ -135,12 +140,31 @@ class WebBrowseTools:
             response.raise_for_status()
             return response.text, str(response.url)
 
-    def _extract_text_content(self, html: str) -> str:
-        """Extract readable text from HTML."""
+    def _extract_text_content(self, html: str, main_only: bool = False) -> str:
+        """Extract readable text from HTML.
+
+        Args:
+            html: The HTML content
+            main_only: If True, try to extract only main content area (skip nav/footer)
+        """
+        text = html
+
         # Remove script and style elements
-        text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r"<noscript[^>]*>.*?</noscript>", "", text, flags=re.DOTALL | re.IGNORECASE)
+
+        # Remove navigation, header, footer elements when extracting main content only
+        if main_only:
+            text = re.sub(r"<header[^>]*>.*?</header>", "", text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r"<footer[^>]*>.*?</footer>", "", text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r"<nav[^>]*>.*?</nav>", "", text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(
+                r'<[^>]*class="[^"]*(?:menu|nav|header|footer|sidebar)[^"]*"[^>]*>.*?</\w+>',
+                "",
+                text,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
 
         # Remove HTML comments
         text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
@@ -205,6 +229,92 @@ class WebBrowseTools:
 
         return links[:20]  # Limit to 20 links
 
+    def _extract_pagination_urls(self, html: str, base_url: str, max_pages: int = 5) -> list[str]:
+        """Extract pagination URLs from HTML (generic for any website)."""
+        pagination_urls: list[str] = []
+        seen_urls: set[str] = {base_url}
+
+        # Common pagination URL patterns (covers most sites)
+        url_patterns = [
+            # WordPress/CMS style: /page/2/, /page/3/
+            r'href=["\']([^"\']*?/page/(\d+)/?[^"\']*)["\']',
+            # Query param style: ?page=2, ?p=2, ?paged=2, ?pg=2
+            r'href=["\']([^"\']*[?&](?:page|p|paged|pg)=(\d+)[^"\']*)["\']',
+            # Offset/start style: ?offset=10, ?start=10, ?from=10
+            r'href=["\']([^"\']*[?&](?:offset|start|from|skip)=(\d+)[^"\']*)["\']',
+            # E-commerce style: ?pageNumber=2, ?pageNum=2
+            r'href=["\']([^"\']*[?&](?:pageNumber|pageNum|pagenumber)=(\d+)[^"\']*)["\']',
+            # Simple numbered URLs: /2, /3 at the end
+            r'href=["\']([^"\']*?/(\d+)/?)["\']',
+        ]
+
+        # Look for pagination container patterns (class-based)
+        container_patterns = [
+            r'<[^>]*class="[^"]*(?:pagination|paging|page-numbers|paginator)[^"]*"[^>]*>(.*?)</(?:div|nav|ul)>',
+        ]
+
+        # First try to find pagination container
+        pagination_html = html
+        for pattern in container_patterns:
+            match = re.search(pattern, html, re.DOTALL | re.IGNORECASE)
+            if match:
+                pagination_html = match.group(1)
+                break
+
+        # Extract URLs from pagination area (or full HTML if no container found)
+        for pattern in url_patterns:
+            for match in re.finditer(pattern, pagination_html, re.IGNORECASE):
+                href = match.group(1)
+                # Skip if it looks like a non-page link (images, assets, etc.)
+                if re.search(r"\.(jpg|jpeg|png|gif|css|js|ico)(\?|$)", href, re.IGNORECASE):
+                    continue
+
+                full_url = urljoin(base_url, href)
+
+                # Only include same-domain URLs
+                if self.allowed_domain and not self._is_url_allowed(full_url):
+                    continue
+
+                # Skip if URL is same as base (just different fragment)
+                if full_url.split("#")[0] == base_url.split("#")[0]:
+                    continue
+
+                if full_url not in seen_urls:
+                    seen_urls.add(full_url)
+                    pagination_urls.append(full_url)
+
+        # Also look for "next" links by text content
+        next_patterns = [
+            r'<a[^>]*href=["\']([^"\']+)["\'][^>]*>(?:[^<]*(?:next|nästa|siguiente|suivant|weiter|次)[^<]*)</a>',
+            r'<a[^>]*href=["\']([^"\']+)["\'][^>]*class="[^"]*next[^"]*"[^>]*>',
+        ]
+        for pattern in next_patterns:
+            for match in re.finditer(pattern, html, re.IGNORECASE):
+                href = match.group(1)
+                full_url = urljoin(base_url, href)
+                if self.allowed_domain and not self._is_url_allowed(full_url):
+                    continue
+                if full_url not in seen_urls:
+                    seen_urls.add(full_url)
+                    pagination_urls.append(full_url)
+
+        # Sort by page number if possible, limit to max_pages
+        def extract_page_num(url: str) -> int:
+            # Try various patterns to extract page number
+            patterns = [
+                r"/page/(\d+)",
+                r"[?&](?:page|p|paged|pg|pageNumber)=(\d+)",
+                r"/(\d+)/?$",
+            ]
+            for p in patterns:
+                match = re.search(p, url, re.IGNORECASE)
+                if match:
+                    return int(match.group(1))
+            return 999
+
+        pagination_urls.sort(key=extract_page_num)
+        return pagination_urls[: max_pages - 1]  # -1 because we already have page 1
+
     def _extract_listings(self, html: str, base_url: str) -> list[dict[str, Any]]:
         """Extract listing-like content (apartments, products, etc.)."""
         listings = []
@@ -268,12 +378,14 @@ class WebBrowseTools:
     async def browse_website(
         self,
         url: str,
+        fetch_all_pages: bool = False,
         extract_links: bool = False,
     ) -> dict[str, Any]:
         """Browse a website and extract its content.
 
         Args:
             url: URL to browse
+            fetch_all_pages: Whether to automatically fetch paginated content
             extract_links: Whether to extract links from the page
 
         Returns:
@@ -290,40 +402,84 @@ class WebBrowseTools:
                     "error": f"URL not allowed. Can only browse {self.allowed_domain}",
                 }
 
-            self.logger.info("browsing_website", url=url)
+            self.logger.info("browsing_website", url=url, fetch_all_pages=fetch_all_pages)
 
+            # Fetch first page
             html, final_url = await self._fetch_page(url)
             title = self._extract_title(html)
-            content = self._extract_text_content(html)
+            all_links: list[dict[str, str]] = []
+            pages_fetched = 1
 
-            # Truncate content for voice agent consumption
-            max_content_length = 3000
-            if len(content) > max_content_length:
-                content = content[:max_content_length] + "..."
+            if extract_links:
+                all_links.extend(self._extract_links(html, final_url))
+
+            # Limit per-page content to fit more pages while keeping key info
+            per_page_limit = 2000
+
+            first_page_content = self._extract_text_content(html, main_only=True)
+            if len(first_page_content) > per_page_limit:
+                first_page_content = first_page_content[:per_page_limit] + "..."
+            all_content = [first_page_content]
+
+            # Fetch additional pages if requested
+            if fetch_all_pages:
+                pagination_urls = self._extract_pagination_urls(html, final_url, max_pages=5)
+                if pagination_urls:
+                    self.logger.info(
+                        "fetching_additional_pages",
+                        count=len(pagination_urls),
+                        urls=pagination_urls[:3],
+                    )
+
+                    # Fetch pages in parallel - extract only main content to avoid duplicates
+                    async def fetch_page_content(page_url: str) -> str | None:
+                        try:
+                            page_html, _ = await self._fetch_page(page_url)
+                            # Use main_only=True to skip nav/header/footer duplicates
+                            content = self._extract_text_content(page_html, main_only=True)
+                            # Limit each page to fit more pages in total
+                            if len(content) > per_page_limit:
+                                content = content[:per_page_limit] + "..."
+                            return content
+                        except Exception as e:
+                            self.logger.warning("page_fetch_failed", url=page_url, error=str(e))
+                            return None
+
+                    tasks = [fetch_page_content(page_url) for page_url in pagination_urls]
+                    results = await asyncio.gather(*tasks)
+
+                    for page_content in results:
+                        if page_content:
+                            all_content.append(page_content)
+                            pages_fetched += 1
+
+            # Combine all content - each page's content limited
+            combined_content = "\n\n".join(all_content)
 
             result: dict[str, Any] = {
                 "success": True,
                 "url": final_url,
                 "title": title,
-                "content": content,
+                "pages_fetched": pages_fetched,
+                "content": combined_content,
                 # Critical instruction for the AI to follow
                 "instruction": (
-                    "IMPORTANT: You have successfully fetched this page's content. "
+                    f"IMPORTANT: You have fetched {pages_fetched} page(s) of content. "
                     "Now you MUST share the relevant information with the user. "
-                    "Read the 'content' field above and summarize the key information. "
+                    "Search through ALL the content to find what the user asked about. "
                     "NEVER say 'check the website yourself' - YOU have the data, so share it directly. "
-                    "If the user asked about specific topics (apartments, prices, availability, etc.), "
-                    "find and share that information from the content."
+                    "If asked about specific items (apartments, products, locations), find and list them."
                 ),
             }
 
             if extract_links:
-                result["links"] = self._extract_links(html, final_url)
+                result["links"] = all_links[:20]
 
             self.logger.info(
                 "browse_completed",
                 url=final_url,
-                content_length=len(content),
+                pages_fetched=pages_fetched,
+                content_length=len(combined_content),
             )
             return result
 
