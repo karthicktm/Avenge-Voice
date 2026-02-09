@@ -145,7 +145,10 @@ class ToolRegistry:
         return None
 
     def _get_web_search_tools(self) -> WebSearchTools:
-        """Get Web Search tools (always available, no API key needed).
+        """Get Web Search tools with OpenAI web search support.
+
+        Uses OpenAI's built-in web_search via Responses API (preferred),
+        falls back to Tavily, then to direct URL fetching for domain-restricted searches.
 
         Supports optional domain restriction via tool_configs:
             {"web_search": {"search_domain": "example.com"}}
@@ -157,7 +160,10 @@ class ToolRegistry:
         web_search_config = self.tool_configs.get("web_search", {})
         search_domain = web_search_config.get("search_domain")
 
-        self._web_search_tools = WebSearchTools(search_domain=search_domain)
+        self._web_search_tools = WebSearchTools(
+            search_domain=search_domain,
+            openai_api_key=self.openai_api_key,
+        )
         return self._web_search_tools
 
     def _get_rag_tools(self) -> RAGTools | None:
