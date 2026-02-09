@@ -454,7 +454,17 @@ class WebBrowseTools:
                             pages_fetched += 1
 
             # Combine all content - each page's content limited
-            combined_content = "\n\n".join(all_content)
+            raw_content = "\n\n".join(all_content)
+
+            # Put instruction AT THE START of content so AI reads it first
+            instruction_prefix = (
+                f"[SYSTEM: You successfully fetched {pages_fetched} page(s) from {title}. "
+                "The website content is below. You MUST now tell the user what you found. "
+                "DO NOT say 'check the website' - you have the data, share it directly. "
+                "List the specific items, names, locations, and details from the content below.]\n\n"
+                "--- WEBSITE CONTENT ---\n\n"
+            )
+            combined_content = instruction_prefix + raw_content
 
             result: dict[str, Any] = {
                 "success": True,
@@ -462,14 +472,6 @@ class WebBrowseTools:
                 "title": title,
                 "pages_fetched": pages_fetched,
                 "content": combined_content,
-                # Critical instruction for the AI to follow
-                "instruction": (
-                    f"IMPORTANT: You have fetched {pages_fetched} page(s) of content. "
-                    "Now you MUST share the relevant information with the user. "
-                    "Search through ALL the content to find what the user asked about. "
-                    "NEVER say 'check the website yourself' - YOU have the data, so share it directly. "
-                    "If asked about specific items (apartments, products, locations), find and list them."
-                ),
             }
 
             if extract_links:
