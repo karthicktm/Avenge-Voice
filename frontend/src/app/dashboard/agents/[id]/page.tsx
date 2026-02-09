@@ -343,6 +343,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
       isActive: true,
       enabledTools: [],
       enabledToolIds: {},
+      toolConfigs: {},
       selectedWorkspaces: [],
       widgetButtonText: "Talk to us",
     },
@@ -350,9 +351,16 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
 
   // Track if form has been initialized with agent data
   const formInitialized = useRef(false);
+  const lastAgentId = useRef<string | null>(null);
 
   // Reset form when agent data loads (only once per agent load)
   useEffect(() => {
+    // Reset initialization flag if agent ID changes (navigating between agents)
+    if (agent?.id !== lastAgentId.current) {
+      formInitialized.current = false;
+      lastAgentId.current = agent?.id ?? null;
+    }
+
     // Only initialize once we have the agent data
     if (agent && !formInitialized.current) {
       formInitialized.current = true;
