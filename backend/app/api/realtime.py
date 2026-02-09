@@ -445,10 +445,6 @@ async def create_webrtc_session(
     # Get integration credentials for the workspace
     integrations = await get_workspace_integrations(user_uuid, workspace_uuid, db)
 
-    # Merge agent's tool_configs into integrations (agent-specific settings override workspace)
-    if agent.tool_configs:
-        integrations.update(agent.tool_configs)
-
     # Build tool definitions (user_id int for Contact queries, workspace_uuid for scoping)
     tool_registry = ToolRegistry(
         db,
@@ -457,6 +453,7 @@ async def create_webrtc_session(
         workspace_id=workspace_uuid,
         agent_id=agent.id,
         openai_api_key=api_key,
+        tool_configs=agent.tool_configs or {},
     )
     tools = tool_registry.get_all_tool_definitions(
         agent.enabled_tools or [], agent.enabled_tool_ids
@@ -635,10 +632,6 @@ async def get_ephemeral_token(
             if workspace_uuid:
                 integrations = await get_workspace_integrations(user_uuid, workspace_uuid, db)
 
-            # Merge agent's tool_configs into integrations
-            if agent.tool_configs:
-                integrations.update(agent.tool_configs)
-
             # Build tool definitions for the agent
             tool_registry = ToolRegistry(
                 db,
@@ -647,6 +640,7 @@ async def get_ephemeral_token(
                 workspace_id=workspace_uuid,
                 agent_id=agent.id,
                 openai_api_key=api_key,
+                tool_configs=agent.tool_configs or {},
             )
             tools = tool_registry.get_all_tool_definitions(
                 agent.enabled_tools or [], agent.enabled_tool_ids

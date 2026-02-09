@@ -89,15 +89,14 @@ async def execute_tool(
         if workspace_id:
             integrations = await get_workspace_integrations(user_uuid, workspace_id, db)
 
-        # Merge agent's tool_configs into integrations
-        if agent and agent.tool_configs:
-            integrations.update(agent.tool_configs)
-
         # Get OpenAI API key for RAG embeddings fallback
         openai_api_key: str | None = None
         user_settings = await get_user_api_keys(user_uuid, db, workspace_id=workspace_id)
         if user_settings and user_settings.openai_api_key:
             openai_api_key = user_settings.openai_api_key
+
+        # Get tool_configs from agent if available
+        tool_configs = agent.tool_configs if agent else {}
 
         # Create tool registry and execute tool
         tool_registry = ToolRegistry(
@@ -107,6 +106,7 @@ async def execute_tool(
             workspace_id=workspace_id,
             agent_id=agent_uuid,
             openai_api_key=openai_api_key,
+            tool_configs=tool_configs or {},
         )
         result = await tool_registry.execute_tool(request.tool_name, request.arguments)
 

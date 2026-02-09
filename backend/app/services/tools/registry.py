@@ -32,6 +32,7 @@ class ToolRegistry:
         workspace_id: Any | None = None,
         agent_id: uuid.UUID | None = None,
         openai_api_key: str | None = None,
+        tool_configs: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Initialize tool registry.
 
@@ -43,6 +44,8 @@ class ToolRegistry:
             workspace_id: Workspace UUID for scoping CRM operations
             agent_id: Agent UUID for RAG/Knowledge Base operations
             openai_api_key: OpenAI API key (fallback for RAG embeddings if not in integrations)
+            tool_configs: Per-tool configuration from agent settings
+                         e.g., {"web_search": {"search_domain": "example.com"}}
         """
         self.db = db
         self.user_id = user_id
@@ -50,6 +53,7 @@ class ToolRegistry:
         self.workspace_id = workspace_id
         self.agent_id = agent_id
         self.openai_api_key = openai_api_key
+        self.tool_configs = tool_configs or {}
         self.crm_tools = CRMTools(db, user_id, workspace_id=workspace_id)
         self._ghl_tools: GoHighLevelTools | None = None
         self._calendly_tools: CalendlyTools | None = None
@@ -141,11 +145,19 @@ class ToolRegistry:
         return None
 
     def _get_web_search_tools(self) -> WebSearchTools:
-        """Get Web Search tools (always available, no API key needed)."""
+        """Get Web Search tools (always available, no API key needed).
+
+        Supports optional domain restriction via tool_configs:
+            {"web_search": {"search_domain": "example.com"}}
+        """
         if self._web_search_tools:
             return self._web_search_tools
 
-        self._web_search_tools = WebSearchTools()
+        # Get web search config (supports domain restriction)
+        web_search_config = self.tool_configs.get("web_search", {})
+        search_domain = web_search_config.get("search_domain")
+
+        self._web_search_tools = WebSearchTools(search_domain=search_domain)
         return self._web_search_tools
 
     def _get_rag_tools(self) -> RAGTools | None:
@@ -276,7 +288,8 @@ class ToolRegistry:
 
         # Web Search tools (always available, no API key needed)
         if "web_search" in enabled_tools:
-            web_search_tools = WebSearchTools.get_tool_definitions()
+            web_search_instance = self._get_web_search_tools()
+            web_search_tools = web_search_instance.get_tool_definitions()
             tools.extend(filter_tools("web_search", web_search_tools))
 
         # Knowledge Base / RAG tools (requires agent_id)

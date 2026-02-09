@@ -615,10 +615,6 @@ async def get_embed_ephemeral_token(  # noqa: PLR0915
                 user_id_to_uuid(agent.user_id), workspace_id, db
             )
 
-            # Merge agent's tool_configs into integrations
-            if agent.tool_configs:
-                integrations.update(agent.tool_configs)
-
             tool_registry = ToolRegistry(
                 db=db,
                 user_id=user_id_int,
@@ -626,6 +622,7 @@ async def get_embed_ephemeral_token(  # noqa: PLR0915
                 workspace_id=workspace_id,
                 agent_id=agent.id,
                 openai_api_key=api_key,
+                tool_configs=agent.tool_configs or {},
             )
             tools = tool_registry.get_all_tool_definitions(
                 agent.enabled_tools or [], agent.enabled_tool_ids
@@ -755,6 +752,7 @@ async def execute_embed_tool_call(
         workspace_id=workspace_id,
         agent_id=agent.id,
         openai_api_key=openai_api_key,
+        tool_configs=agent.tool_configs or {},
     )
 
     # Get the enabled tools for this agent (same method as token endpoint)

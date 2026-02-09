@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import structlog
+from charset_normalizer import from_bytes
 
 from app.core.config import settings
 
@@ -63,6 +64,39 @@ class DocumentProcessor:
         text = "".join(char for char in text if char in allowed_whitespace or char.isprintable())
         return text
 
+    def _detect_encoding(self, content: bytes) -> str:
+        """Detect the encoding of text content.
+
+        Uses charset-normalizer for robust encoding detection,
+        supporting international characters (Swedish å, ä, ö, etc.).
+
+        Args:
+            content: Raw file bytes
+
+        Returns:
+            Detected encoding name (defaults to utf-8)
+        """
+        # First try UTF-8 with BOM detection
+        if content.startswith(b"\xef\xbb\xbf"):
+            self.logger.debug("encoding_detected", encoding="utf-8-sig", method="bom")
+            return "utf-8-sig"
+
+        # Use charset-normalizer for detection
+        result = from_bytes(content)
+        best_match = result.best()
+
+        if best_match is not None:
+            encoding = best_match.encoding
+            self.logger.info(
+                "encoding_detected",
+                encoding=encoding,
+            )
+            return encoding
+
+        # Default to UTF-8 if detection fails
+        self.logger.warning("encoding_detection_failed", fallback="utf-8")
+        return "utf-8"
+
     async def extract_text(self, content: bytes, file_type: str) -> str:
         """Extract text from document content.
 
@@ -78,13 +112,44 @@ class DocumentProcessor:
         elif file_type == "docx":
             text = await self._extract_docx(content)
         elif file_type in ("txt", "md"):
-            text = content.decode("utf-8", errors="ignore")
+            text = await self._extract_text_file(content)
         else:
             msg = f"Unsupported file type: {file_type}"
             raise ValueError(msg)
 
         # Sanitize text to remove null bytes and other problematic characters
         return self._sanitize_text(text)
+
+    async def _extract_text_file(self, content: bytes) -> str:
+        """Extract text from TXT/MD files with encoding detection.
+
+        Supports multiple encodings including UTF-8, ISO-8859-1,
+        Windows-1252, and other common encodings for international text.
+
+        Args:
+            content: Raw file bytes
+
+        Returns:
+            Extracted text
+        """
+        encoding = self._detect_encoding(content)
+
+        try:
+            text = content.decode(encoding)
+            self.logger.info(
+                "text_file_decoded",
+                encoding=encoding,
+                text_length=len(text),
+            )
+            return text
+        except (UnicodeDecodeError, LookupError) as e:
+            # Fallback: try UTF-8 with error replacement
+            self.logger.warning(
+                "encoding_fallback",
+                original_encoding=encoding,
+                error=str(e),
+            )
+            return content.decode("utf-8", errors="replace")
 
     async def _extract_pdf(self, content: bytes) -> str:
         """Extract text from PDF.
