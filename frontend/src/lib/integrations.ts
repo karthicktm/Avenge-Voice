@@ -192,6 +192,20 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
         riskLevel: "safe",
         defaultEnabled: true,
       },
+      {
+        id: "browse_website",
+        name: "Browse Website",
+        description: "Navigate to and read content from web pages",
+        riskLevel: "safe",
+        defaultEnabled: true,
+      },
+      {
+        id: "extract_page_data",
+        name: "Extract Page Data",
+        description: "Extract structured data like listings or contact info from pages",
+        riskLevel: "safe",
+        defaultEnabled: true,
+      },
     ],
   },
   {
