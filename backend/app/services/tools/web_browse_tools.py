@@ -59,11 +59,12 @@ class WebBrowseTools:
                 "type": "function",
                 "name": "browse_website",
                 "description": (
-                    "REQUIRED: You MUST call this tool to fetch real information from websites. "
+                    "REQUIRED: Fetch real information from websites. "
                     "When users ask about apartments, availability, products, services, prices, or ANY factual information, "
-                    "you MUST use this tool to get the actual current data. "
-                    "DO NOT answer from memory - ALWAYS browse first to get accurate information. "
-                    "Call this tool BEFORE responding to the user."
+                    "you MUST call this tool FIRST to get the actual current data. "
+                    "CRITICAL: After receiving the tool response, you MUST share the fetched information directly with the user. "
+                    "NEVER tell users to 'check the website themselves' - YOU have the data, so YOU must share it. "
+                    "Read the 'instruction' field in the response and follow it exactly."
                 ),
                 "parameters": {
                     "type": "object",
@@ -85,7 +86,8 @@ class WebBrowseTools:
                 "name": "extract_page_data",
                 "description": (
                     "Extract structured data from a webpage like listings, products, or articles. "
-                    "Use this to find specific items like apartment listings, product catalogs, etc."
+                    "Use this to find specific items like apartment listings, product catalogs, etc. "
+                    "CRITICAL: Share the extracted data with the user - never tell them to check the website."
                 ),
                 "parameters": {
                     "type": "object",
@@ -304,12 +306,25 @@ class WebBrowseTools:
                 "url": final_url,
                 "title": title,
                 "content": content,
+                # Critical instruction for the AI to follow
+                "instruction": (
+                    "IMPORTANT: You have successfully fetched this page's content. "
+                    "Now you MUST share the relevant information with the user. "
+                    "Read the 'content' field above and summarize the key information. "
+                    "NEVER say 'check the website yourself' - YOU have the data, so share it directly. "
+                    "If the user asked about specific topics (apartments, prices, availability, etc.), "
+                    "find and share that information from the content."
+                ),
             }
 
             if extract_links:
                 result["links"] = self._extract_links(html, final_url)
 
-            self.logger.info("browse_completed", url=final_url, content_length=len(content))
+            self.logger.info(
+                "browse_completed",
+                url=final_url,
+                content_length=len(content),
+            )
             return result
 
         except httpx.HTTPStatusError as e:
@@ -363,6 +378,11 @@ class WebBrowseTools:
                 result["listings"] = listings
                 result["count"] = len(listings)
                 result["summary"] = f"Found {len(listings)} listings on the page"
+                result["instruction"] = (
+                    f"Share these {len(listings)} listings with the user. "
+                    "Describe what you found - names, locations, prices, sizes if available. "
+                    "Do NOT tell the user to check the website - you have the data."
+                )
             elif data_type == "contact":
                 content = self._extract_text_content(html)
                 # Extract contact info patterns
@@ -370,11 +390,20 @@ class WebBrowseTools:
                 phones = re.findall(r"(?:\+46|0)[\d\s-]{8,12}", content)
                 result["emails"] = list(set(emails))[:5]
                 result["phones"] = list(set(phones))[:5]
+                result["instruction"] = (
+                    "Share the contact information with the user: "
+                    f"emails: {result['emails']}, phones: {result['phones']}. "
+                    "Do NOT tell them to find it themselves."
+                )
             else:
                 content = self._extract_text_content(html)
                 max_length = 4000
                 result["content"] = content[:max_length] + (
                     "..." if len(content) > max_length else ""
+                )
+                result["instruction"] = (
+                    "Summarize the key information from this page for the user. "
+                    "Share specific details and facts. Do NOT tell them to check it themselves."
                 )
 
             self.logger.info("extraction_completed", url=final_url, data_type=data_type)
