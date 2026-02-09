@@ -53,7 +53,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { getLanguagesForTier } from "@/lib/languages";
+import { getLanguagesForTier, getFallbackLanguage } from "@/lib/languages";
 import { AVAILABLE_INTEGRATIONS } from "@/lib/integrations";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { KnowledgeBaseTab } from "./knowledge-base-tab";
@@ -364,10 +364,17 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
     // Only initialize once we have the agent data
     if (agent && !formInitialized.current) {
       formInitialized.current = true;
+      // Ensure language is valid for the agent's pricing tier
+      const tier = (agent.pricing_tier ?? "balanced") as
+        | "budget"
+        | "balanced"
+        | "premium-mini"
+        | "premium";
+      const validLanguage = getFallbackLanguage(agent.language || "en-US", tier);
       form.reset({
         name: agent.name,
         description: agent.description ?? "",
-        language: agent.language,
+        language: validLanguage,
         ttsProvider: "elevenlabs",
         elevenLabsModel: "turbo-v2.5",
         elevenLabsVoiceId: undefined,

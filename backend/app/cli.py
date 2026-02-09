@@ -274,6 +274,74 @@ async def verify_all_superadmins() -> None:
             print(f"\n✓ Verified {verified_count} super admin(s)")
 
 
+async def seed_admin_users() -> None:
+    """Seed predefined admin users for initial setup.
+
+    Creates two admin users:
+    - johan@avenge.com
+    - max@avenge.com
+
+    Both users are created with:
+    - Verified email (no OTP required)
+    - Organization and workspace auto-created
+    - ADMIN role
+    """
+    from app.services.signup_service import create_user_with_organization
+
+    users_to_create = [
+        {"email": "johan@avenge.com", "full_name": "Johan", "password": "Hollyw00d"},
+        {"email": "max@avenge.com", "full_name": "Max", "password": "Hollyw00d"},
+    ]
+
+    print("\n" + "=" * 50)
+    print("Seeding Admin Users")
+    print("=" * 50 + "\n")
+
+    async with AsyncSessionLocal() as db:
+        for user_data in users_to_create:
+            # Check if user already exists
+            result = await db.execute(select(User).where(User.email == user_data["email"]))
+            existing_user = result.scalar_one_or_none()
+
+            if existing_user:
+                print(f"⚠️  User {user_data['email']} already exists")
+                if not existing_user.email_verified:
+                    existing_user.email_verified = True
+                    await db.commit()
+                    print(f"   ✓ Email verified for {user_data['email']}")
+                continue
+
+            # Create user with organization
+            hashed_password = pwd_context.hash(user_data["password"])
+
+            user = await create_user_with_organization(
+                db=db,
+                email=user_data["email"],
+                full_name=user_data["full_name"],
+                hashed_password=hashed_password,
+                organization_name=f"{user_data['full_name']}'s Organization",
+                plan_type="professional",
+            )
+
+            # Mark email as verified (skip OTP)
+            user.email_verified = True
+            await db.commit()
+
+            print(f"✓ Created admin user: {user_data['email']}")
+            print(f"  - Full name: {user_data['full_name']}")
+            print(f"  - Role: {user.role}")
+            print(f"  - Organization: {user.organization_id}")
+            print("  - Email verified: Yes")
+            print()
+
+    print("=" * 50)
+    print("✓ Admin users seeded successfully!")
+    print("=" * 50)
+    print("\nDefault password: Hollyw00d")
+    print("⚠️  Please change passwords after first login!")
+    print()
+
+
 async def create_superuser_from_env() -> None:
     """Create super admin from environment variables (for production deployment).
 
@@ -332,6 +400,7 @@ def main() -> NoReturn:
         print("  delete-superuser       Delete a super admin user")
         print("  verify-email           Verify a user's email manually")
         print("  verify-all-superadmins Verify email for all super admins")
+        print("  seed-admin-users       Seed predefined admin users (johan@, max@)")
         print("\nUsage: python -m app.cli <command>")
         print()
         sys.exit(1)
@@ -348,6 +417,8 @@ def main() -> NoReturn:
         asyncio.run(verify_user_email())
     elif command == "verify-all-superadmins":
         asyncio.run(verify_all_superadmins())
+    elif command == "seed-admin-users":
+        asyncio.run(seed_admin_users())
     else:
         print(f"\n❌ Unknown command: {command}")
         print("\nRun 'python -m app.cli' to see available commands")
