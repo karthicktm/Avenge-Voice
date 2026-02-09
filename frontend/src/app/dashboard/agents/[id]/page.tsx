@@ -457,7 +457,11 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
 
   // Get available languages based on agent's pricing tier
   const availableLanguages = useMemo(() => {
-    const tier = (agent?.pricing_tier ?? "balanced") as "budget" | "balanced" | "premium";
+    const tier = (agent?.pricing_tier ?? "balanced") as
+      | "budget"
+      | "balanced"
+      | "premium-mini"
+      | "premium";
     return getLanguagesForTier(tier);
   }, [agent?.pricing_tier]);
 
@@ -793,7 +797,11 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Language ({availableLanguages.length} available)</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
+                          <Select
+                            key={`language-${agent?.id ?? "new"}`}
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select a language" />
