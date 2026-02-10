@@ -179,7 +179,7 @@ def build_instructions_with_language(
     # Build information retrieval section with priority ordering
     info_retrieval_section = ""
     has_knowledge_base = knowledge_base_info and knowledge_base_info.get("document_count", 0) > 0
-    has_site_search = "search_site" in enabled_tools
+    has_site_search = "site_search" in enabled_tools
 
     if has_knowledge_base or has_site_search:
         info_retrieval_section = "\n[INFORMATION RETRIEVAL - PRIORITY ORDER]\n"

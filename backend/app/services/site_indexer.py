@@ -244,8 +244,8 @@ class SiteIndexer:
         # Create document record
         document = Document(
             agent_id=self.agent_id,
-            filename=f"{title}.html",
-            file_type="html",
+            filename=f"{title}.txt",
+            file_type="txt",
             file_size=len(content_bytes),
             source_type="web_crawl",
             source_url=url,
