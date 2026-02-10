@@ -1686,6 +1686,52 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                                             more effectively.
                                           </p>
                                         </div>
+
+                                        <div className="space-y-1.5">
+                                          <label className="text-xs font-medium">
+                                            Crawl Schedule
+                                          </label>
+                                          <Select
+                                            value={
+                                              form
+                                                .watch(
+                                                  "toolConfigs.site_search.crawl_schedule_hours"
+                                                )
+                                                ?.toString() || "0"
+                                            }
+                                            onValueChange={(val) => {
+                                              const currentConfigs =
+                                                form.getValues("toolConfigs") || {};
+                                              form.setValue(
+                                                "toolConfigs",
+                                                {
+                                                  ...currentConfigs,
+                                                  site_search: {
+                                                    ...currentConfigs.site_search,
+                                                    crawl_schedule_hours: val,
+                                                  },
+                                                },
+                                                { shouldDirty: true }
+                                              );
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-8">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="0">Manual only</SelectItem>
+                                              <SelectItem value="6">Every 6 hours</SelectItem>
+                                              <SelectItem value="12">Every 12 hours</SelectItem>
+                                              <SelectItem value="24">Every 24 hours</SelectItem>
+                                              <SelectItem value="48">Every 2 days</SelectItem>
+                                              <SelectItem value="168">Weekly</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                          <p className="text-xs text-muted-foreground">
+                                            Automatically re-crawl the site on a schedule to keep
+                                            the knowledge base up-to-date.
+                                          </p>
+                                        </div>
                                       </div>
                                     )}
                                   </div>
@@ -1962,6 +2008,10 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                 <KnowledgeBaseTab
                   agentId={agentId}
                   siteUrl={form.watch("toolConfigs.site_search.site_url") || ""}
+                  lastCrawlAt={form.watch("toolConfigs.site_search.last_crawl_at") || ""}
+                  crawlScheduleHours={
+                    Number(form.watch("toolConfigs.site_search.crawl_schedule_hours")) || 0
+                  }
                 />
               </TabsContent>
             )}

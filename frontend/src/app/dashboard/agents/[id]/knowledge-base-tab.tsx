@@ -51,12 +51,27 @@ import {
 interface KnowledgeBaseTabProps {
   agentId: string;
   siteUrl?: string;
+  lastCrawlAt?: string;
+  crawlScheduleHours?: number;
 }
 
 const SUPPORTED_TYPES = ["pdf", "docx", "txt", "md"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
-export function KnowledgeBaseTab({ agentId, siteUrl }: KnowledgeBaseTabProps) {
+const SCHEDULE_LABELS: Record<number, string> = {
+  6: "Every 6 hours",
+  12: "Every 12 hours",
+  24: "Every 24 hours",
+  48: "Every 2 days",
+  168: "Weekly",
+};
+
+export function KnowledgeBaseTab({
+  agentId,
+  siteUrl,
+  lastCrawlAt,
+  crawlScheduleHours,
+}: KnowledgeBaseTabProps) {
   const queryClient = useQueryClient();
   const [isDragging, setIsDragging] = useState(false);
   const [crawlUrl, setCrawlUrl] = useState(siteUrl ?? "");
@@ -292,6 +307,22 @@ export function KnowledgeBaseTab({ agentId, siteUrl }: KnowledgeBaseTabProps) {
           <p className="text-xs text-muted-foreground">
             Automatically crawl a website and index its pages into the knowledge base.
           </p>
+          {(!!crawlScheduleHours || lastCrawlAt) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {!!crawlScheduleHours && SCHEDULE_LABELS[crawlScheduleHours] && (
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  Auto-crawl: {SCHEDULE_LABELS[crawlScheduleHours]}
+                </span>
+              )}
+              {lastCrawlAt && (
+                <span className="flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Last crawl: {new Date(lastCrawlAt).toLocaleString()}
+                </span>
+              )}
+            </div>
+          )}
           <div className="flex gap-2">
             <Input
               type="url"

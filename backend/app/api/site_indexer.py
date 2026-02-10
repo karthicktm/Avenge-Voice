@@ -49,6 +49,7 @@ async def _run_crawl_background(
         try:
             indexer = SiteIndexer(db, agent_id, embedding_config=embedding_config)
             result = await indexer.crawl_and_index(site_url, max_pages=max_pages)
+            await indexer.update_last_crawl_at()
             logger.info("site_crawl_background_complete", agent_id=str(agent_id), **result)
         except Exception:
             logger.exception("site_crawl_background_failed", agent_id=str(agent_id))

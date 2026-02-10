@@ -2,6 +2,7 @@
 
 import uuid
 from collections import deque
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -123,6 +124,19 @@ class SiteIndexer:
             component="site_indexer",
             agent_id=str(agent_id),
         )
+
+    async def update_last_crawl_at(self) -> None:
+        """Update agent's tool_configs with current timestamp after crawl."""
+        from app.models.agent import Agent
+
+        result = await self.db.execute(select(Agent).where(Agent.id == self.agent_id))
+        agent = result.scalar_one()
+        configs = dict(agent.tool_configs or {})
+        site_config = dict(configs.get("site_search", {}))
+        site_config["last_crawl_at"] = datetime.now(UTC).isoformat()
+        configs["site_search"] = site_config
+        agent.tool_configs = configs
+        await self.db.commit()
 
     async def crawl_and_index(
         self,

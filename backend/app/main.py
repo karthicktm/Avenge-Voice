@@ -55,6 +55,7 @@ from app.db.session import engine
 from app.middleware.request_tracing import RequestTracingMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
 from app.services.campaign_worker import start_campaign_worker, stop_campaign_worker
+from app.services.site_crawl_worker import start_site_crawl_worker, stop_site_crawl_worker
 
 # Configure structured logging with async processors
 structlog.configure(
@@ -78,7 +79,7 @@ logger = structlog.get_logger()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: PLR0915
     """Lifespan context manager for startup and shutdown events."""
     # Startup
     logger.info("Starting application", app_name=settings.APP_NAME)
@@ -122,6 +123,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.exception("Failed to start campaign worker - campaigns will not process")
 
+    # Start site crawl worker (non-fatal)
+    try:
+        await start_site_crawl_worker()
+        logger.info("Site crawl worker started")
+    except Exception:
+        logger.exception("Failed to start site crawl worker - scheduled crawls will not run")
+
     yield
 
     # Shutdown
@@ -133,6 +141,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Campaign worker stopped")
     except Exception:
         logger.exception("Error stopping campaign worker")
+
+    # Stop site crawl worker
+    try:
+        await stop_site_crawl_worker()
+        logger.info("Site crawl worker stopped")
+    except Exception:
+        logger.exception("Error stopping site crawl worker")
 
     # Close Redis connection
     try:
