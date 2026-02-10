@@ -552,7 +552,7 @@ export default function EmbedPage() {
             JSON.stringify({
               type: "response.create",
               response: {
-                instructions: `Start the conversation by saying exactly this (do not add anything else): "${tokenData.agent.initial_greeting}"`,
+                instructions: `You MUST respond in the same language as your session instructions. Start the conversation by saying exactly this (do not add anything else): "${tokenData.agent.initial_greeting}"`,
               },
             })
           );

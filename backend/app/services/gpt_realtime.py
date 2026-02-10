@@ -782,7 +782,7 @@ class GPTRealtimeSession:
                     "content": [
                         {
                             "type": "input_text",
-                            "text": f"[Call connected. Say this greeting now: {greeting}]",
+                            "text": f"[Call connected. Respond in the same language as your system instructions. Say this greeting now: {greeting}]",
                         }
                     ],
                 }
