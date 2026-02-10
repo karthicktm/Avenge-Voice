@@ -17,6 +17,7 @@ _MAX_CONTENT_PER_PAGE = 3000
 _MAX_TOTAL_CONTENT = 12000
 _MAX_LINKS = 50
 _MAX_SELECTED_PAGES = 5
+_MAX_DEPTH = 2  # How many hops deep to crawl from entry page
 
 _USER_AGENT = "Mozilla/5.0 (compatible; AvengeVoiceAgent/1.0; +https://avenge.ai)"
 
@@ -118,6 +119,8 @@ async def _llm_select_links(
         "You are a web navigation assistant. Given a user query and a list of links from a website, "
         "pick the 3-5 links most likely to contain information relevant to the query.\n"
         "The link text may be in any language — understand it regardless.\n"
+        "IMPORTANT: Include pagination links (page 2, page 3, next, etc.) if the query might need "
+        "results beyond the first page. Also include category/filter pages that could narrow results.\n"
         "Return ONLY a JSON array of the selected URLs, nothing else.\n\n"
         f"Query: {query}\n\nLinks:\n{links_text}"
     )
@@ -276,14 +279,15 @@ class SiteSearchTools:
         ]
 
     async def search_site(self, query: str) -> dict[str, Any]:
-        """Search the configured website using LLM-powered crawling.
+        """Search the configured website using multi-hop LLM-powered crawling.
 
-        Pipeline:
+        Pipeline (repeated up to _MAX_DEPTH hops):
         1. Fetch entry page
         2. Extract internal links
         3. LLM selects most relevant links
         4. Fetch selected pages in parallel
-        5. LLM analyzes content and returns answer
+        5. Extract links from newly fetched pages → repeat from step 3
+        6. LLM analyzes all collected content and returns answer
         """
         self.logger.info("site_search_started", query=query)
 
@@ -301,33 +305,56 @@ class SiteSearchTools:
                 "error": f"Could not fetch {self.site_url}",
             }
 
-        # 2. Extract internal links
-        links = _extract_internal_links(entry_html, self.site_url)
-        self.logger.info("site_search_links_found", count=len(links))
-
-        # Also extract entry page content as fallback
+        # Track all fetched URLs and collected pages
+        fetched_urls: set[str] = {self.site_url}
         entry_content = _extract_clean_text(entry_html)[:_MAX_CONTENT_PER_PAGE]
-
         pages: list[dict[str, str]] = [{"url": self.site_url, "content": entry_content}]
 
-        if links:
-            # 3. LLM link selection
-            selected_urls = await _llm_select_links(query, links, self.openai_api_key)
-            self.logger.info("site_search_links_selected", urls=selected_urls)
+        # Collect links from entry page
+        all_new_links = _extract_internal_links(entry_html, self.site_url)
+        self.logger.info("site_search_links_found", depth=0, count=len(all_new_links))
 
-            # 4. Parallel page fetch
+        # Multi-hop crawl: fetch pages, then discover deeper links
+        for depth in range(_MAX_DEPTH):
+            if not all_new_links:
+                break
+
+            # Filter out already-fetched URLs
+            candidate_links = [link for link in all_new_links if link["url"] not in fetched_urls]
+            if not candidate_links:
+                break
+
+            # LLM selects relevant links from candidates
+            selected_urls = await _llm_select_links(query, candidate_links, self.openai_api_key)
+            # Remove already-fetched (safety check)
+            selected_urls = [u for u in selected_urls if u not in fetched_urls]
+            if not selected_urls:
+                break
+
+            self.logger.info("site_search_links_selected", depth=depth + 1, urls=selected_urls)
+
+            # Parallel page fetch
             fetch_tasks = [_fetch_page(url) for url in selected_urls]
             results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
 
+            # Collect content and discover new links from fetched pages
+            all_new_links = []
             for url, result in zip(selected_urls, results, strict=True):
-                if isinstance(result, str) and result:
-                    content = _extract_clean_text(result)[:_MAX_CONTENT_PER_PAGE]
-                    if content:
-                        pages.append({"url": url, "content": content})
+                fetched_urls.add(url)
+                if not isinstance(result, str) or not result:
+                    continue
+
+                content = _extract_clean_text(result)[:_MAX_CONTENT_PER_PAGE]
+                if content:
+                    pages.append({"url": url, "content": content})
+
+                # Extract links from this page for the next hop
+                page_links = _extract_internal_links(result, url)
+                all_new_links.extend(page_links)
 
         self.logger.info("site_search_pages_fetched", count=len(pages))
 
-        # 5. LLM content analysis
+        # Final step: LLM content analysis
         answer = await _llm_analyze_content(
             query=query,
             pages=pages,
