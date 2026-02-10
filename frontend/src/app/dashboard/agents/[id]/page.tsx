@@ -236,6 +236,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
   const [activeTab, setActiveTab] = useState("basic");
   const [isDeleting, setIsDeleting] = useState(false);
   const isDeletingRef = useRef(false); // Ref for synchronous check
+  const [formResetKey, setFormResetKey] = useState(0); // Increment after form.reset() to force Select remount
 
   const {
     data: agent,
@@ -399,6 +400,8 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
         toolConfigs: agent.tool_configs ?? {},
         selectedWorkspaces: [],
       });
+      // Increment key AFTER form.reset() to force Select components to remount with correct values
+      setFormResetKey((prev) => prev + 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent]);
@@ -798,7 +801,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                         <FormItem>
                           <FormLabel>Language ({availableLanguages.length} available)</FormLabel>
                           <Select
-                            key={`language-${agent?.id ?? "new"}`}
+                            key={`language-${formResetKey}`}
                             onValueChange={field.onChange}
                             value={field.value}
                           >
