@@ -155,6 +155,7 @@ const agentFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   description: z.string().optional(),
   language: z.string().min(1, "Please select a language"),
+  useBestPractices: z.boolean().default(true),
 
   // Voice Settings
   ttsProvider: z.enum(["elevenlabs", "openai", "google"]),
@@ -204,7 +205,7 @@ type AgentFormValues = z.infer<typeof agentFormSchema>;
 
 // Map fields to their respective tabs for error tracking
 const TAB_FIELDS: Record<string, (keyof AgentFormValues)[]> = {
-  basic: ["name", "description", "language", "selectedWorkspaces", "isActive"],
+  basic: ["name", "description", "language", "useBestPractices", "selectedWorkspaces", "isActive"],
   voice: [
     "ttsProvider",
     "elevenLabsModel",
@@ -376,6 +377,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
         name: agent.name,
         description: agent.description ?? "",
         language: validLanguage,
+        useBestPractices: agent.use_best_practices ?? true,
         ttsProvider: "elevenlabs",
         elevenLabsModel: "turbo-v2.5",
         elevenLabsVoiceId: undefined,
@@ -604,6 +606,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
       system_prompt: data.systemPrompt,
       initial_greeting: data.initialGreeting?.trim() ? data.initialGreeting.trim() : null,
       language: data.language,
+      use_best_practices: data.useBestPractices,
       voice: data.voice,
       enabled_tools: enabledIntegrations,
       enabled_tool_ids: data.enabledToolIds,
@@ -819,6 +822,25 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                             </SelectContent>
                           </Select>
                           <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="useBestPractices"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Use Best Practices</FormLabel>
+                            <FormDescription>
+                              Include language-specific conversation guidelines in the system prompt
+                              (e.g., be concise, confirm understanding, ask clarifying questions)
+                            </FormDescription>
+                          </div>
                         </FormItem>
                       )}
                     />

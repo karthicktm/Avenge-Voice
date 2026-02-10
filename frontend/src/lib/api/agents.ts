@@ -51,6 +51,7 @@ export interface Agent {
   pricing_tier: string;
   system_prompt: string;
   language: string;
+  use_best_practices: boolean;
   voice: string;
   enabled_tools: string[];
   enabled_tool_ids: Record<string, string[]>; // {integration_id: [tool_id1, tool_id2]}
@@ -141,6 +142,7 @@ export interface UpdateAgentRequest {
   pricing_tier?: "budget" | "balanced" | "premium-mini" | "premium";
   system_prompt?: string;
   language?: string;
+  use_best_practices?: boolean;
   voice?: string;
   enabled_tools?: string[];
   enabled_tool_ids?: Record<string, string[]>; // {integration_id: [tool_id1, tool_id2]}

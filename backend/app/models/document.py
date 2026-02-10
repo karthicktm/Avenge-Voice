@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -58,6 +58,17 @@ class Document(Base):
         Integer, nullable=False, default=0, comment="Number of chunks created"
     )
 
+    # Cross-lingual support
+    source_language: Mapped[str | None] = mapped_column(
+        String(10), nullable=True, comment="Detected source language code (e.g., sv, de, en)"
+    )
+    translation_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, comment="Whether translation was applied"
+    )
+    embedding_dimensions: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1536, comment="Embedding vector dimensions (1536 or 3072)"
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
@@ -105,9 +116,24 @@ class DocumentChunk(Base):
     )
     content_text: Mapped[str] = mapped_column(Text, nullable=False, comment="Chunk text content")
 
-    # Embedding vector (1536 dimensions for text-embedding-3-small)
-    embedding: Mapped[list[float]] = mapped_column(
-        Vector(1536), nullable=False, comment="Embedding vector from OpenAI"
+    # Translation support
+    translated_text: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="English translation of chunk content"
+    )
+    source_language: Mapped[str | None] = mapped_column(
+        String(10), nullable=True, comment="Source language code for this chunk"
+    )
+    translation_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="not_needed",
+        comment="Translation status: not_needed, completed, failed, skipped",
+    )
+
+    # Embedding vectors
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(1536), nullable=True, comment="Embedding vector for text-embedding-3-small"
+    )
+    embedding_large: Mapped[list[float] | None] = mapped_column(
+        Vector(3072), nullable=True, comment="Embedding vector for text-embedding-3-large"
     )
 
     # Timestamps
@@ -119,6 +145,7 @@ class DocumentChunk(Base):
     document: Mapped["Document"] = relationship("Document", back_populates="chunks")
 
     # Indexes for vector similarity search
+    # Note: embedding_large index is created in migration 028
     __table_args__ = (
         Index(
             "ix_document_chunks_embedding_ivfflat",

@@ -319,8 +319,8 @@ const IntegrationCard = memo(function IntegrationCard({
                 )}
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
+            <DialogContent className="flex max-h-[85vh] max-w-md flex-col">
+              <DialogHeader className="flex-shrink-0">
                 <DialogTitle className="flex items-center gap-2">
                   <Icon className="h-5 w-5" />
                   {isConnected ? `Configure ${integration.name}` : `Connect ${integration.name}`}
@@ -333,13 +333,15 @@ const IntegrationCard = memo(function IntegrationCard({
                       : "Enter your API credentials below"}
                 </DialogDescription>
               </DialogHeader>
-              <IntegrationConfigForm
-                integration={integration}
-                isConnected={isConnected}
-                connectionData={connectionData}
-                selectedWorkspaceId={selectedWorkspaceId}
-                onClose={() => setIsConfigDialogOpen(false)}
-              />
+              <div className="flex-1 overflow-y-auto">
+                <IntegrationConfigForm
+                  integration={integration}
+                  isConnected={isConnected}
+                  connectionData={connectionData}
+                  selectedWorkspaceId={selectedWorkspaceId}
+                  onClose={() => setIsConfigDialogOpen(false)}
+                />
+              </div>
             </DialogContent>
           </Dialog>
           {integration.documentationUrl && (
@@ -490,6 +492,23 @@ const IntegrationConfigForm = memo(function IntegrationConfigForm({
     );
   }
 
+  // Require workspace selection for updating connected integrations
+  if (isConnected && !selectedWorkspaceId) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-4">
+          <p className="text-sm text-muted-foreground">
+            Please select a specific workspace from the dropdown above to configure this
+            integration. Credentials are stored per-workspace.
+          </p>
+        </div>
+        <Button onClick={onClose} className="w-full">
+          Close
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <>
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -516,60 +535,62 @@ const IntegrationConfigForm = memo(function IntegrationConfigForm({
         )}
 
         {/* Credential fields */}
-        {integration.fields.map((field) => (
-          <div key={field.name} className="space-y-2">
-            <Label htmlFor={field.name} className="text-sm">
-              {field.label}
-              {field.required && <span className="ml-1 text-destructive">*</span>}
-            </Label>
-            {field.type === "select" && field.options ? (
-              <Select
-                value={credentials[field.name] ?? ""}
-                onValueChange={(value) => handleFieldChange(field.name, value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
-                </SelectTrigger>
-                <SelectContent>
-                  {field.options.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className="relative">
-                <Input
-                  id={field.name}
-                  type={
-                    field.type === "password" && !showPasswords[field.name] ? "password" : "text"
-                  }
-                  placeholder={field.placeholder ?? `Enter ${field.label.toLowerCase()}`}
+        <div className="space-y-5">
+          {integration.fields.map((field) => (
+            <div key={field.name} className="space-y-2">
+              <Label htmlFor={field.name} className="text-sm font-medium">
+                {field.label}
+                {field.required && <span className="ml-1 text-destructive">*</span>}
+              </Label>
+              {field.type === "select" && field.options ? (
+                <Select
                   value={credentials[field.name] ?? ""}
-                  onChange={(e) => handleFieldChange(field.name, e.target.value)}
-                  className={field.type === "password" ? "pr-10" : ""}
-                />
-                {field.type === "password" && (
-                  <button
-                    type="button"
-                    onClick={() => togglePasswordVisibility(field.name)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPasswords[field.name] ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                )}
-              </div>
-            )}
-            {field.description && (
-              <p className="text-xs text-muted-foreground">{field.description}</p>
-            )}
-          </div>
-        ))}
+                  onValueChange={(value) => handleFieldChange(field.name, value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {field.options.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="relative">
+                  <Input
+                    id={field.name}
+                    type={
+                      field.type === "password" && !showPasswords[field.name] ? "password" : "text"
+                    }
+                    placeholder={field.placeholder ?? `Enter ${field.label.toLowerCase()}`}
+                    value={credentials[field.name] ?? ""}
+                    onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                    className={field.type === "password" ? "pr-10" : ""}
+                  />
+                  {field.type === "password" && (
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility(field.name)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPasswords[field.name] ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  )}
+                </div>
+              )}
+              {field.description && (
+                <p className="text-xs text-muted-foreground">{field.description}</p>
+              )}
+            </div>
+          ))}
+        </div>
 
         {/* Action buttons */}
         <div className="flex gap-2 pt-2">

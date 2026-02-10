@@ -13,6 +13,7 @@ from app.models.document import Document
 from app.services.document_processor import DocumentProcessor
 from app.services.providers.embedding_provider import EmbeddingProvider
 from app.services.providers.pgvector_provider import PgVectorProvider
+from app.services.translation_service import TranslationService
 
 logger = structlog.get_logger()
 
@@ -135,7 +136,13 @@ class RAGService:
         document_id: uuid.UUID,
         content: bytes,
     ) -> Document:
-        """Process a document: extract text, chunk, and generate embeddings.
+        """Process a document: extract text, chunk, translate, and generate embeddings.
+
+        Supports cross-lingual search by:
+        1. Detecting document language
+        2. Translating non-English content to English (if enabled)
+        3. Embedding the translated content for search
+        4. Preserving original content for display
 
         Args:
             document_id: Document UUID
@@ -156,25 +163,65 @@ class RAGService:
         await self.db.commit()
 
         try:
-            # Extract text and create chunks
-            full_text, chunks = await self.document_processor.process(content, document.filename)
+            # Check if translation is enabled
+            config = self._embedding_config or {}
+            enable_translation_config = config.get("enable_translation", "false")
+            translation_enabled = enable_translation_config in (True, "true", "True", "1")
+            translation_model = config.get("translation_model", "gpt-4o-mini")
 
-            # Generate embeddings for all chunks
-            embeddings = await self.embedding_provider.generate_embeddings(chunks)
+            # Initialize translation service if enabled
+            translation_service: TranslationService | None = None
+            api_key = config.get("api_key")
+            if translation_enabled and api_key:
+                translation_service = TranslationService(
+                    api_key=api_key,
+                    model=translation_model,
+                )
 
-            # Store chunks with embeddings
+            # Process with translation
+            (
+                full_text,
+                original_chunks,
+                translated_chunks,
+                source_language,
+                translation_status,
+            ) = await self.document_processor.process_with_translation(
+                content, document.filename, translation_service
+            )
+
+            # Generate embeddings for translated chunks (for cross-lingual search)
+            # The translated chunks are used for embedding so English queries match
+            embeddings = await self.embedding_provider.generate_embeddings(translated_chunks)
+
+            # Determine which embedding column to use
+            use_large = self.embedding_provider.is_large_model
+
+            # Store chunks with embeddings and translation data
             chunk_data = [
-                (i, chunk_text, embedding)
-                for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings, strict=True))
+                {
+                    "index": i,
+                    "original_text": orig,
+                    "translated_text": trans if trans != orig else None,
+                    "embedding": emb,
+                    "source_language": source_language,
+                    "translation_status": translation_status,
+                    "use_large": use_large,
+                }
+                for i, (orig, trans, emb) in enumerate(
+                    zip(original_chunks, translated_chunks, embeddings, strict=True)
+                )
             ]
-            await self.vector_provider.store_chunks(document_id, chunk_data)
+            await self.vector_provider.store_chunks_v2(document_id, chunk_data)
 
             # Update document status
             document.content = full_text
-            document.chunk_count = len(chunks)
+            document.chunk_count = len(original_chunks)
             document.status = "ready"
             document.processed_at = datetime.now(UTC)
             document.error_message = None
+            document.source_language = source_language
+            document.translation_enabled = translation_enabled
+            document.embedding_dimensions = self.embedding_provider.dimensions
 
             await self.db.commit()
             await self.db.refresh(document)
@@ -183,7 +230,10 @@ class RAGService:
                 "document_processed",
                 document_id=str(document_id),
                 text_length=len(full_text),
-                chunk_count=len(chunks),
+                chunk_count=len(original_chunks),
+                source_language=source_language,
+                translation_status=translation_status,
+                embedding_dimensions=self.embedding_provider.dimensions,
             )
 
             return document

@@ -187,8 +187,9 @@ class ToolRegistry:
     def _get_rag_tools(self) -> RAGTools | None:
         """Get RAG tools if agent_id and embedding credentials are available.
 
-        Uses knowledge_base integration credentials if available, otherwise
-        falls back to the OpenAI API key used for the voice agent.
+        Credentials come from workspace integrations (shared across agents).
+        Translation settings come from agent's tool_configs (agent-specific).
+        Falls back to OpenAI API key if no explicit knowledge_base config.
         """
         import structlog
 
@@ -201,7 +202,7 @@ class ToolRegistry:
             logger.warning("rag_tools_skipped_no_agent_id")
             return None
 
-        # Get knowledge_base credentials for embedding (explicit config takes priority)
+        # Get knowledge_base credentials from workspace integrations
         kb_creds = self.integrations.get("knowledge_base", {})
         api_key = kb_creds.get("api_key")
 
@@ -221,10 +222,17 @@ class ToolRegistry:
             logger.warning("rag_tools_skipped_no_api_key")
             return None
 
+        # Get agent-specific translation settings from tool_configs
+        agent_kb_config = self.tool_configs.get("knowledge_base", {})
+
         embedding_config = {
+            # Credentials from workspace integrations
             "api_key": api_key,
             "embedding_model": kb_creds.get("embedding_model", "text-embedding-3-small"),
             "embedding_provider": kb_creds.get("embedding_provider", "openai"),
+            # Translation settings from agent's tool_configs
+            "enable_translation": agent_kb_config.get("enable_translation", "false"),
+            "translation_model": agent_kb_config.get("translation_model", "gpt-4o-mini"),
         }
 
         logger.info(
@@ -232,6 +240,7 @@ class ToolRegistry:
             agent_id=str(self.agent_id),
             embedding_model=embedding_config["embedding_model"],
             embedding_provider=embedding_config["embedding_provider"],
+            enable_translation=embedding_config["enable_translation"],
         )
 
         self._rag_tools = RAGTools(self.db, self.agent_id, embedding_config=embedding_config)

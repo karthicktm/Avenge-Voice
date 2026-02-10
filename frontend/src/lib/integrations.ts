@@ -241,11 +241,11 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
         options: [
           {
             value: "text-embedding-3-small",
-            label: "text-embedding-3-small (OpenAI - Recommended)",
+            label: "text-embedding-3-small (OpenAI - Fast)",
           },
           {
             value: "text-embedding-3-large",
-            label: "text-embedding-3-large (OpenAI - Higher quality)",
+            label: "text-embedding-3-large (OpenAI - Better multilingual, Recommended)",
           },
           { value: "text-embedding-ada-002", label: "text-embedding-ada-002 (OpenAI - Legacy)" },
           { value: "voyage-3", label: "voyage-3 (Voyage AI)" },
@@ -259,6 +259,29 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
         required: true,
         placeholder: "sk-...",
         description: "Your API key for the selected embedding provider",
+      },
+      {
+        name: "enable_translation",
+        label: "Enable Cross-Lingual Search",
+        type: "select",
+        required: false,
+        description:
+          "Translate non-English documents to English for cross-lingual search (query in English, find content in any language)",
+        options: [
+          { value: "false", label: "Disabled" },
+          { value: "true", label: "Enabled (Recommended for non-English documents)" },
+        ],
+      },
+      {
+        name: "translation_model",
+        label: "Translation Model",
+        type: "select",
+        required: false,
+        description: "Model to use for translation (only if cross-lingual search is enabled)",
+        options: [
+          { value: "gpt-4o-mini", label: "GPT-4o Mini (Fast & Cost-effective)" },
+          { value: "gpt-4o", label: "GPT-4o (Higher quality)" },
+        ],
       },
     ],
     tools: [

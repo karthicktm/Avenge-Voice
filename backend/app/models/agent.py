@@ -55,6 +55,10 @@ class Agent(Base):
     language: Mapped[str] = mapped_column(
         String(10), nullable=False, default="en-US", comment="Agent language (e.g., en-US, es-ES)"
     )
+    use_best_practices: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True,
+        comment="Include language-specific best practices in system prompt",
+    )
     voice: Mapped[str] = mapped_column(
         String(50),
         nullable=False,

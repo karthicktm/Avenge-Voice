@@ -1,13 +1,18 @@
 """Document processing service for text extraction and chunking."""
 
+from __future__ import annotations
+
 import io
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import structlog
 from charset_normalizer import from_bytes
 
 from app.core.config import settings
+
+if TYPE_CHECKING:
+    from app.services.translation_service import TranslationService
 
 logger = structlog.get_logger()
 
@@ -297,3 +302,63 @@ class DocumentProcessor:
         )
 
         return full_text, chunks
+
+    async def process_with_translation(
+        self,
+        content: bytes,
+        filename: str,
+        translation_service: TranslationService | None = None,
+    ) -> tuple[str, list[str], list[str], str, str]:
+        """Process document with optional translation for cross-lingual support.
+
+        Extracts text, chunks it, detects language, and optionally translates
+        to English for embedding. Original content is preserved for display.
+
+        Args:
+            content: Raw file bytes
+            filename: Original filename
+            translation_service: Optional translation service for cross-lingual support
+
+        Returns:
+            Tuple of:
+                - full_text: Complete extracted text
+                - original_chunks: List of chunks in original language
+                - translated_chunks: List of chunks translated to English (or original if no translation)
+                - source_language: Detected language code (e.g., "sv", "en")
+                - translation_status: "not_needed", "completed", "partial", "failed", or "skipped"
+        """
+        # First, process normally to get text and chunks
+        full_text, original_chunks = await self.process(content, filename)
+
+        # If no translation service, skip translation
+        if translation_service is None:
+            return full_text, original_chunks, original_chunks, "en", "skipped"
+
+        # Detect language
+        source_language = await translation_service.detect_language(full_text)
+
+        self.logger.info(
+            "language_detected",
+            filename=filename,
+            source_language=source_language,
+        )
+
+        # If already English, no translation needed
+        if source_language == "en":
+            return full_text, original_chunks, original_chunks, "en", "not_needed"
+
+        # Translate chunks
+        translated_chunks, status = await translation_service.translate_chunks(
+            original_chunks, source_language
+        )
+
+        self.logger.info(
+            "document_translated",
+            filename=filename,
+            source_language=source_language,
+            status=status,
+            original_chunk_count=len(original_chunks),
+            translated_chunk_count=len(translated_chunks),
+        )
+
+        return full_text, original_chunks, translated_chunks, source_language, status

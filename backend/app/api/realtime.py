@@ -455,13 +455,47 @@ async def create_webrtc_session(
         openai_api_key=api_key,
         tool_configs=agent.tool_configs or {},
     )
+    enabled_tools = agent.enabled_tools or []
     tools = tool_registry.get_all_tool_definitions(
-        agent.enabled_tools or [], agent.enabled_tool_ids
+        enabled_tools, agent.enabled_tool_ids
     )
+
+    # Get workspace timezone
+    from app.models.workspace import Workspace
+
+    ws_result = await db.execute(select(Workspace).where(Workspace.id == workspace_uuid))
+    workspace = ws_result.scalar_one_or_none()
+    workspace_timezone = (
+        workspace.settings.get("timezone", "UTC") if workspace and workspace.settings else "UTC"
+    )
+
+    # Get knowledge base info if agent has documents
+    knowledge_base_info: dict[str, Any] | None = None
+    if "knowledge_base" in enabled_tools:
+        from app.models.document import Document
+
+        doc_result = await db.execute(
+            select(Document.filename)
+            .where(Document.agent_id == agent.id)
+            .where(Document.status == "ready")
+        )
+        doc_names = [row[0] for row in doc_result.fetchall()]
+        if doc_names:
+            knowledge_base_info = {
+                "document_count": len(doc_names),
+                "document_names": doc_names,
+            }
 
     # Build instructions with language directive
     system_prompt = agent.system_prompt or "You are a helpful voice assistant."
-    instructions = build_instructions_with_language(system_prompt, agent.language)
+    instructions = build_instructions_with_language(
+        system_prompt,
+        agent.language,
+        enabled_tools=enabled_tools,
+        timezone=workspace_timezone,
+        knowledge_base_info=knowledge_base_info,
+        use_best_practices=agent.use_best_practices,
+    )
 
     # Build session configuration for OpenAI Realtime
     # Use agent's configured voice (default to marin for natural conversational tone)
@@ -654,9 +688,22 @@ async def get_ephemeral_token(
                 tool_names=[t.get("name") for t in tools],
             )
 
+            # Get workspace timezone
+            workspace_timezone = "UTC"
+            if workspace_uuid:
+                from app.models.workspace import Workspace
+
+                ws_result = await db.execute(
+                    select(Workspace).where(Workspace.id == workspace_uuid)
+                )
+                ws_obj = ws_result.scalar_one_or_none()
+                if ws_obj and ws_obj.settings:
+                    workspace_timezone = ws_obj.settings.get("timezone", "UTC")
+
             # Get knowledge base info if agent has documents
+            enabled_tools = agent.enabled_tools or []
             knowledge_base_info: dict[str, Any] | None = None
-            if "knowledge_base" in (agent.enabled_tools or []):
+            if "knowledge_base" in enabled_tools:
                 from app.models.document import Document
 
                 doc_result = await db.execute(
@@ -678,7 +725,12 @@ async def get_ephemeral_token(
             # Build instructions with language for the frontend to use
             system_prompt = agent.system_prompt or "You are a helpful voice assistant."
             instructions_with_language = build_instructions_with_language(
-                system_prompt, agent.language, knowledge_base_info=knowledge_base_info
+                system_prompt,
+                agent.language,
+                enabled_tools=enabled_tools,
+                timezone=workspace_timezone,
+                knowledge_base_info=knowledge_base_info,
+                use_best_practices=agent.use_best_practices,
             )
 
             # Return token data with agent info and tools

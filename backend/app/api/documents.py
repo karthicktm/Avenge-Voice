@@ -41,6 +41,10 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     processed_at: datetime | None
+    # Cross-lingual support fields
+    source_language: str | None = None
+    translation_enabled: bool = False
+    embedding_dimensions: int = 1536
 
     class Config:
         from_attributes = True
@@ -131,16 +135,14 @@ async def upload_document(
             detail=f"File too large. Max size: {settings.RAG_MAX_FILE_SIZE // 1024 // 1024}MB",
         )
 
-    # Get agent to access tool_configs
+    # Get agent to access tool_configs for agent-specific settings
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
 
-    # Get embedding config from agent's tool_configs first
-    kb_config = agent.tool_configs.get("knowledge_base", {}) if agent else {}
-
-    # If not configured at agent level, check workspace-level integrations
-    if not kb_config.get("api_key") and agent:
-        # Get agent's workspace
+    # Get credentials from workspace integrations ONLY (never from agent.tool_configs)
+    # Credentials include: api_key, embedding_model, embedding_provider
+    kb_credentials: dict[str, Any] = {}
+    if agent:
         ws_result = await db.execute(
             select(AgentWorkspace).where(AgentWorkspace.agent_id == agent_id).limit(1)
         )
@@ -151,19 +153,24 @@ async def upload_document(
             workspace_integrations = await get_workspace_integrations(
                 user_uuid, agent_workspace.workspace_id, db
             )
-            kb_config = workspace_integrations.get("knowledge_base", {})
+            kb_credentials = workspace_integrations.get("knowledge_base", {})
 
-    if not kb_config.get("api_key"):
+    if not kb_credentials.get("api_key"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Knowledge Base not configured. Please configure the embedding API key in the agent's tool settings or connect the Knowledge Base integration for the workspace.",
+            detail="Knowledge Base not configured. Please connect the Knowledge Base integration in the workspace Integrations page.",
         )
 
-    # Build embedding config
+    # Get agent-specific settings from tool_configs (enable_translation, translation_model)
+    agent_kb_settings = agent.tool_configs.get("knowledge_base", {}) if agent else {}
+
+    # Build embedding config: credentials from workspace, settings from agent
     embedding_config = {
-        "api_key": kb_config.get("api_key"),
-        "embedding_model": kb_config.get("embedding_model", "text-embedding-3-small"),
-        "embedding_provider": kb_config.get("embedding_provider", "openai"),
+        "api_key": kb_credentials.get("api_key"),
+        "embedding_model": kb_credentials.get("embedding_model", "text-embedding-3-small"),
+        "embedding_provider": kb_credentials.get("embedding_provider", "openai"),
+        "enable_translation": agent_kb_settings.get("enable_translation", "false"),
+        "translation_model": agent_kb_settings.get("translation_model", "gpt-4o-mini"),
     }
 
     # Create document record
@@ -338,15 +345,13 @@ async def reindex_document(
             detail="Document content not available. Please re-upload the file.",
         )
 
-    # Get agent to access tool_configs
+    # Get agent to access tool_configs for agent-specific settings
     agent_result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = agent_result.scalar_one_or_none()
 
-    # Get embedding config from agent's tool_configs first
-    kb_config = agent.tool_configs.get("knowledge_base", {}) if agent else {}
-
-    # If not configured at agent level, check workspace-level integrations
-    if not kb_config.get("api_key") and agent:
+    # Get credentials from workspace integrations ONLY (never from agent.tool_configs)
+    kb_credentials: dict[str, Any] = {}
+    if agent:
         ws_result = await db.execute(
             select(AgentWorkspace).where(AgentWorkspace.agent_id == agent_id).limit(1)
         )
@@ -357,19 +362,24 @@ async def reindex_document(
             workspace_integrations = await get_workspace_integrations(
                 user_uuid, agent_workspace.workspace_id, db
             )
-            kb_config = workspace_integrations.get("knowledge_base", {})
+            kb_credentials = workspace_integrations.get("knowledge_base", {})
 
-    if not kb_config.get("api_key"):
+    if not kb_credentials.get("api_key"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Knowledge Base not configured. Please configure the embedding API key in the agent's tool settings or connect the Knowledge Base integration for the workspace.",
+            detail="Knowledge Base not configured. Please connect the Knowledge Base integration in the workspace Integrations page.",
         )
 
-    # Build embedding config
+    # Get agent-specific settings from tool_configs (enable_translation, translation_model)
+    agent_kb_settings = agent.tool_configs.get("knowledge_base", {}) if agent else {}
+
+    # Build embedding config: credentials from workspace, settings from agent
     embedding_config = {
-        "api_key": kb_config.get("api_key"),
-        "embedding_model": kb_config.get("embedding_model", "text-embedding-3-small"),
-        "embedding_provider": kb_config.get("embedding_provider", "openai"),
+        "api_key": kb_credentials.get("api_key"),
+        "embedding_model": kb_credentials.get("embedding_model", "text-embedding-3-small"),
+        "embedding_provider": kb_credentials.get("embedding_provider", "openai"),
+        "enable_translation": agent_kb_settings.get("enable_translation", "false"),
+        "translation_model": agent_kb_settings.get("translation_model", "gpt-4o-mini"),
     }
 
     # Reset status

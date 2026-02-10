@@ -65,6 +65,7 @@ class UpdateAgentRequest(BaseModel):
     pricing_tier: str | None = Field(None, pattern="^(budget|balanced|premium-mini|premium)$")
     system_prompt: str | None = Field(None, min_length=10)
     language: str | None = None
+    use_best_practices: bool | None = None
     voice: str | None = None
     enabled_tools: list[str] | None = None
     enabled_tool_ids: dict[str, list[str]] | None = Field(
@@ -103,6 +104,7 @@ class AgentResponse(BaseModel):
     pricing_tier: str
     system_prompt: str
     language: str
+    use_best_practices: bool
     voice: str
     enabled_tools: list[str]
     enabled_tool_ids: dict[str, list[str]]
@@ -356,6 +358,7 @@ def _apply_agent_updates(agent: Agent, request: UpdateAgentRequest) -> None:
         "description",
         "system_prompt",
         "language",
+        "use_best_practices",
         "voice",
         "enabled_tools",
         "enabled_tool_ids",
@@ -452,6 +455,7 @@ def _agent_to_response(agent: Agent) -> AgentResponse:
         pricing_tier=agent.pricing_tier,
         system_prompt=agent.system_prompt,
         language=agent.language,
+        use_best_practices=agent.use_best_practices,
         voice=agent.voice,
         enabled_tools=agent.enabled_tools,
         enabled_tool_ids=agent.enabled_tool_ids,

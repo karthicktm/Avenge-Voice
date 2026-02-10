@@ -6,6 +6,9 @@ from openai import AsyncOpenAI
 
 logger = structlog.get_logger()
 
+# Dimension for large embedding models (text-embedding-3-large)
+LARGE_EMBEDDING_DIMENSIONS = 3072
+
 # Model dimensions mapping
 MODEL_DIMENSIONS = {
     # OpenAI models
@@ -53,6 +56,11 @@ class EmbeddingProvider:
             self.client = AsyncOpenAI(api_key=api_key)
         else:
             self.client = None  # Voyage uses HTTP API
+
+    @property
+    def is_large_model(self) -> bool:
+        """Check if using a large (3072-dim) embedding model."""
+        return self.dimensions == LARGE_EMBEDDING_DIMENSIONS
 
     async def generate_embedding(self, text: str) -> list[float]:
         """Generate embedding for a single text.

@@ -1,5 +1,7 @@
 """PostgreSQL pgvector provider for vector storage and similarity search."""
 
+# ruff: noqa: S608 - embedding_col is controlled internally, not user input
+
 import uuid
 from typing import Any
 
@@ -10,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import DocumentChunk
 
 logger = structlog.get_logger()
+
+# Dimension for large embedding models (text-embedding-3-large)
+LARGE_EMBEDDING_DIMENSIONS = 3072
 
 
 class PgVectorProvider:
@@ -73,6 +78,64 @@ class PgVectorProvider:
             )
             raise
 
+    async def store_chunks_v2(
+        self,
+        document_id: uuid.UUID,
+        chunks: list[dict[str, Any]],
+    ) -> int:
+        """Store document chunks with translation and dual embedding support.
+
+        Args:
+            document_id: UUID of the parent document
+            chunks: List of chunk dictionaries with keys:
+                - index: Chunk position in document
+                - original_text: Original text content
+                - translated_text: English translation (or None if same as original)
+                - embedding: Embedding vector
+                - source_language: Source language code
+                - translation_status: Status of translation
+                - use_large: Whether to use embedding_large column
+
+        Returns:
+            Number of chunks stored
+        """
+        if not chunks:
+            return 0
+
+        try:
+            for chunk_data in chunks:
+                use_large = chunk_data.get("use_large", False)
+
+                chunk = DocumentChunk(
+                    document_id=document_id,
+                    chunk_index=chunk_data["index"],
+                    content_text=chunk_data["original_text"],
+                    translated_text=chunk_data.get("translated_text"),
+                    source_language=chunk_data.get("source_language"),
+                    translation_status=chunk_data.get("translation_status", "not_needed"),
+                    # Use appropriate embedding column based on model dimensions
+                    embedding=chunk_data["embedding"] if not use_large else None,
+                    embedding_large=chunk_data["embedding"] if use_large else None,
+                )
+                self.db.add(chunk)
+
+            await self.db.flush()
+
+            self.logger.info(
+                "chunks_stored_v2",
+                document_id=str(document_id),
+                chunk_count=len(chunks),
+                use_large=chunks[0].get("use_large", False) if chunks else False,
+            )
+            return len(chunks)
+        except Exception:
+            self.logger.exception(
+                "chunk_storage_v2_failed",
+                document_id=str(document_id),
+                chunk_count=len(chunks),
+            )
+            raise
+
     async def similarity_search(
         self,
         agent_id: uuid.UUID,
@@ -80,6 +143,10 @@ class PgVectorProvider:
         top_k: int = 3,
     ) -> list[dict[str, Any]]:
         """Search for similar chunks using cosine similarity.
+
+        Supports both embedding columns (1536 and 3072 dimensions).
+        Automatically selects the appropriate column based on query dimension.
+        Always returns original content_text (not translated) in results.
 
         Args:
             agent_id: Agent UUID to scope the search
@@ -90,22 +157,30 @@ class PgVectorProvider:
             List of matching chunks with similarity scores
         """
         try:
+            # Determine which embedding column to use based on query dimension
+            embedding_dim = len(query_embedding)
+            use_large = embedding_dim == LARGE_EMBEDDING_DIMENSIONS
+            embedding_col = "embedding_large" if use_large else "embedding"
+
             # Use raw SQL for pgvector similarity search with cosine distance
             # <=> is the cosine distance operator (1 - cosine_similarity)
+            # Always return content_text (original) not translated_text
             query = text(
-                """
+                f"""
                 SELECT
                     dc.id,
                     dc.document_id,
                     dc.chunk_index,
                     dc.content_text,
+                    dc.source_language,
                     d.filename,
-                    1 - (dc.embedding <=> :query_embedding) as similarity
+                    1 - (dc.{embedding_col} <=> :query_embedding) as similarity
                 FROM document_chunks dc
                 JOIN documents d ON dc.document_id = d.id
                 WHERE d.agent_id = :agent_id
                   AND d.status = 'ready'
-                ORDER BY dc.embedding <=> :query_embedding
+                  AND dc.{embedding_col} IS NOT NULL
+                ORDER BY dc.{embedding_col} <=> :query_embedding
                 LIMIT :top_k
                 """
             )
@@ -125,7 +200,8 @@ class PgVectorProvider:
                     "chunk_id": str(row.id),
                     "document_id": str(row.document_id),
                     "chunk_index": row.chunk_index,
-                    "content": row.content_text,
+                    "content": row.content_text,  # Always return original content
+                    "source_language": row.source_language,
                     "filename": row.filename,
                     "similarity": float(row.similarity),
                 }
@@ -137,6 +213,7 @@ class PgVectorProvider:
                 agent_id=str(agent_id),
                 top_k=top_k,
                 results_found=len(results),
+                embedding_dimensions=embedding_dim,
             )
             return results
         except Exception:

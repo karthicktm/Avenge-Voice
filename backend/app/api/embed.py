@@ -595,10 +595,33 @@ async def get_embed_ephemeral_token(  # noqa: PLR0915
                 ws_obj.settings.get("timezone", "UTC") if ws_obj and ws_obj.settings else "UTC"
             )
 
+            # Get knowledge base info if agent has documents
+            knowledge_base_info: dict[str, Any] | None = None
+            enabled_tools = agent.enabled_tools or []
+            if "knowledge_base" in enabled_tools:
+                from app.models.document import Document
+
+                doc_result = await db.execute(
+                    select(Document.filename)
+                    .where(Document.agent_id == agent.id)
+                    .where(Document.status == "ready")
+                )
+                doc_names = [row[0] for row in doc_result.fetchall()]
+                if doc_names:
+                    knowledge_base_info = {
+                        "document_count": len(doc_names),
+                        "document_names": doc_names,
+                    }
+
             # Build instructions for the frontend with timezone context
             system_prompt = agent.system_prompt or "You are a helpful voice assistant."
             instructions = build_instructions_with_language(
-                system_prompt, agent.language, timezone=workspace_timezone
+                system_prompt,
+                agent.language,
+                enabled_tools=enabled_tools,
+                timezone=workspace_timezone,
+                knowledge_base_info=knowledge_base_info,
+                use_best_practices=agent.use_best_practices,
             )
 
             # Get tool definitions for this agent (matching realtime.py implementation)

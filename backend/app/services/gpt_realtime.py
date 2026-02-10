@@ -1,5 +1,7 @@
 """GPT Realtime API service for Premium tier voice agents."""
 
+# ruff: noqa: RUF001 - Contains intentional non-ASCII characters for internationalization
+
 import json
 import types
 import uuid
@@ -43,6 +45,91 @@ LANGUAGE_NAMES: dict[str, str] = {
     "id-ID": "Indonesian",
     "ms-MY": "Malay",
     "fil-PH": "Filipino",
+    "sv-SE": "Swedish",
+}
+
+# Best practices translated for each supported language
+BEST_PRACTICES: dict[str, str] = {
+    "en": """- Be concise and direct in your responses
+- Confirm understanding before taking actions
+- Ask clarifying questions when needed
+- Summarize key points at the end of complex explanations
+- If you don't know something, say so honestly""",
+    "sv": """- Var kortfattad och direkt i dina svar
+- Bekräfta förståelse innan du vidtar åtgärder
+- Ställ förtydligande frågor vid behov
+- Sammanfatta viktiga punkter i slutet av komplexa förklaringar
+- Om du inte vet något, säg det ärligt""",
+    "es": """- Sé conciso y directo en tus respuestas
+- Confirma la comprensión antes de tomar acciones
+- Haz preguntas aclaratorias cuando sea necesario
+- Resume los puntos clave al final de explicaciones complejas
+- Si no sabes algo, dilo honestamente""",
+    "fr": """- Soyez concis et direct dans vos réponses
+- Confirmez votre compréhension avant d'agir
+- Posez des questions de clarification si nécessaire
+- Résumez les points clés à la fin des explications complexes
+- Si vous ne savez pas quelque chose, dites-le honnêtement""",
+    "de": """- Seien Sie prägnant und direkt in Ihren Antworten
+- Bestätigen Sie Ihr Verständnis, bevor Sie handeln
+- Stellen Sie bei Bedarf klärende Fragen
+- Fassen Sie wichtige Punkte am Ende komplexer Erklärungen zusammen
+- Wenn Sie etwas nicht wissen, sagen Sie es ehrlich""",
+    "it": """- Sii conciso e diretto nelle tue risposte
+- Conferma la comprensione prima di agire
+- Fai domande di chiarimento quando necessario
+- Riassumi i punti chiave alla fine di spiegazioni complesse
+- Se non sai qualcosa, dillo onestamente""",
+    "pt": """- Seja conciso e direto nas suas respostas
+- Confirme a compreensão antes de agir
+- Faça perguntas esclarecedoras quando necessário
+- Resuma os pontos-chave no final de explicações complexas
+- Se não souber algo, diga honestamente""",
+    "nl": """- Wees beknopt en direct in uw antwoorden
+- Bevestig uw begrip voordat u actie onderneemt
+- Stel verduidelijkende vragen wanneer nodig
+- Vat belangrijke punten samen aan het einde van complexe uitleg
+- Als u iets niet weet, zeg het eerlijk""",
+    "ja": """- 簡潔で直接的な回答を心がけてください
+- 行動を起こす前に理解を確認してください
+- 必要に応じて明確化のための質問をしてください
+- 複雑な説明の最後に要点をまとめてください
+- わからないことは正直に伝えてください""",
+    "ko": """- 간결하고 직접적으로 답변하세요
+- 행동을 취하기 전에 이해를 확인하세요
+- 필요할 때 명확히 하는 질문을 하세요
+- 복잡한 설명 끝에 핵심 사항을 요약하세요
+- 모르는 것이 있으면 솔직히 말하세요""",
+    "zh": """- 回答要简洁直接
+- 采取行动前确认理解
+- 需要时提出澄清问题
+- 在复杂解释结束时总结要点
+- 如果不知道某事，请诚实说明""",
+    "ru": """- Будьте краткими и прямыми в ответах
+- Подтвердите понимание перед действиями
+- Задавайте уточняющие вопросы при необходимости
+- Резюмируйте ключевые моменты в конце сложных объяснений
+- Если вы чего-то не знаете, честно скажите об этом""",
+    "ar": """- كن موجزًا ومباشرًا في إجاباتك
+- تأكد من الفهم قبل اتخاذ الإجراءات
+- اطرح أسئلة توضيحية عند الحاجة
+- لخص النقاط الرئيسية في نهاية الشروحات المعقدة
+- إذا كنت لا تعرف شيئًا، قل ذلك بصدق""",
+    "hi": """- अपने जवाबों में संक्षिप्त और प्रत्यक्ष रहें
+- कार्रवाई करने से पहले समझ की पुष्टि करें
+- आवश्यकता होने पर स्पष्टीकरण के प्रश्न पूछें
+- जटिल स्पष्टीकरण के अंत में मुख्य बिंदुओं का सारांश दें
+- अगर आप कुछ नहीं जानते, तो ईमानदारी से बताएं""",
+    "pl": """- Bądź zwięzły i bezpośredni w odpowiedziach
+- Potwierdź zrozumienie przed podjęciem działań
+- Zadawaj pytania wyjaśniające w razie potrzeby
+- Podsumuj kluczowe punkty na końcu złożonych wyjaśnień
+- Jeśli czegoś nie wiesz, powiedz to szczerze""",
+    "tr": """- Yanıtlarınızda kısa ve doğrudan olun
+- Eylem almadan önce anlayışınızı doğrulayın
+- Gerektiğinde açıklayıcı sorular sorun
+- Karmaşık açıklamaların sonunda önemli noktaları özetleyin
+- Bir şeyi bilmiyorsanız, dürüstçe söyleyin""",
 }
 
 
@@ -52,6 +139,7 @@ def build_instructions_with_language(
     enabled_tools: list[str] | None = None,
     timezone: str | None = None,
     knowledge_base_info: dict[str, Any] | None = None,
+    use_best_practices: bool = True,
 ) -> str:
     """Build comprehensive voice agent instructions.
 
@@ -66,12 +154,14 @@ def build_instructions_with_language(
         knowledge_base_info: Info about uploaded documents (optional)
             - document_count: Number of documents
             - document_names: List of document filenames
+        use_best_practices: Whether to include language-specific best practices
 
     Returns:
         Complete instructions string optimized for voice conversations
     """
     language_name = LANGUAGE_NAMES.get(language, language)
     tz_name = timezone or "UTC"
+    enabled_tools = enabled_tools or []
 
     # Get current date/time in the workspace timezone for context
     from datetime import datetime
@@ -86,35 +176,61 @@ def build_instructions_with_language(
         # Fallback if timezone is invalid
         current_datetime = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
 
-    # Build knowledge base section if available
-    knowledge_base_section = ""
-    if knowledge_base_info and knowledge_base_info.get("document_count", 0) > 0:
-        doc_count = knowledge_base_info["document_count"]
-        doc_names = knowledge_base_info.get("document_names", [])
+    # Build information retrieval section with priority ordering
+    info_retrieval_section = ""
+    has_knowledge_base = knowledge_base_info and knowledge_base_info.get("document_count", 0) > 0
+    has_web_search = "web_search" in enabled_tools or "browse_website" in enabled_tools
 
-        # Format document list (limit for brevity)
-        max_docs_to_show = 10
-        if doc_names:
-            doc_list = ", ".join(doc_names[:max_docs_to_show])
-            if len(doc_names) > max_docs_to_show:
-                doc_list += f", and {len(doc_names) - max_docs_to_show} more"
-        else:
-            doc_list = f"{doc_count} documents"
+    if has_knowledge_base or has_web_search:
+        info_retrieval_section = "\n[INFORMATION RETRIEVAL - PRIORITY ORDER]\n"
 
-        knowledge_base_section = f"""
-[KNOWLEDGE BASE]
-You have access to a knowledge base with {doc_count} uploaded document(s): {doc_list}
+        if has_knowledge_base and knowledge_base_info:
+            doc_count = knowledge_base_info["document_count"]
+            doc_names = knowledge_base_info.get("document_names", [])
 
-IMPORTANT: When the user asks questions about products, services, pricing, policies, FAQs,
-or any information that might be in your documentation, you MUST use the search_knowledge_base
-tool to find accurate information. Do NOT make up answers - always search first.
+            # Format document list (limit for brevity)
+            max_docs_to_show = 10
+            if doc_names:
+                doc_list = ", ".join(doc_names[:max_docs_to_show])
+                if len(doc_names) > max_docs_to_show:
+                    doc_list += f", and {len(doc_names) - max_docs_to_show} more"
+            else:
+                doc_list = f"{doc_count} documents"
 
-Examples of when to search:
-- "What are your prices?" -> search_knowledge_base("pricing rates cost")
-- "How does X work?" -> search_knowledge_base("how X works features")
-- "What's your return policy?" -> search_knowledge_base("return policy refund")
-- "Tell me about your services" -> search_knowledge_base("services offerings")
+            info_retrieval_section += f"""1. FIRST - Knowledge Base ({doc_count} documents: {doc_list}):
+   - ALWAYS search knowledge_base FIRST for questions about products, services, pricing, policies, FAQs
+   - Use search_knowledge_base("relevant search terms") before answering
+   - Examples: pricing -> search_knowledge_base("pricing rates cost")
+
 """
+            if has_web_search:
+                info_retrieval_section += """2. SECOND - Web Search (only if knowledge base has no answer):
+   - Use web_search or browse_website ONLY when knowledge_base returns no relevant results
+   - Do NOT use web search for information that should be in your documents
+
+"""
+        elif has_web_search:
+            info_retrieval_section += """1. Web Search:
+   - Use web_search or browse_website to find current information online
+   - Summarize findings concisely for voice
+
+"""
+
+        info_retrieval_section += """CRITICAL BOUNDARY RULES:
+- NEVER make up or guess information - only use what you retrieve
+- If no information is found, say "I don't have that information" or ask to clarify
+- Stay within the boundaries of retrieved content - do not extrapolate or invent details
+- If unsure, search again with different terms before saying you don't know
+"""
+
+    # Build best practices section (translated to agent's language)
+    best_practices_section = ""
+    if use_best_practices:
+        # Get language code prefix (e.g., "en" from "en-US", "sv" from "sv-SE")
+        lang_prefix = language.split("-")[0] if "-" in language else language
+        practices = BEST_PRACTICES.get(lang_prefix, BEST_PRACTICES.get("en", ""))
+        if practices:
+            best_practices_section = f"\n[BEST PRACTICES]\n{practices}\n"
 
     # Build the complete voice agent instructions
     instructions = f"""[CONTEXT]
@@ -128,7 +244,7 @@ Current: {current_datetime}
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses concise - this is voice, not text
 - Summarize tool results naturally
-{knowledge_base_section}
+{info_retrieval_section}{best_practices_section}
 [YOUR ROLE]
 {system_prompt}"""
 
@@ -332,14 +448,17 @@ class GPTRealtimeSession:
         # Build instructions with language directive and timezone
         system_prompt = self.agent_config.get("system_prompt", "You are a helpful voice assistant.")
         language = self.agent_config.get("language", "en-US")
+        use_best_practices = self.agent_config.get("use_best_practices", True)
         # Default to marin for natural conversational tone
         voice = self.agent_config.get("voice", "marin")
         temperature = self.agent_config.get("temperature", 0.6)
         instructions = build_instructions_with_language(
             system_prompt,
             language,
+            enabled_tools=enabled_tools,
             timezone=workspace_timezone,
             knowledge_base_info=knowledge_base_info,
+            use_best_practices=use_best_practices,
         )
 
         session_config = {

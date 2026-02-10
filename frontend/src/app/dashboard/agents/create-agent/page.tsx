@@ -1049,27 +1049,34 @@ Guidelines:
                                       })}
                                     </div>
 
-                                    {/* Knowledge Base Configuration */}
+                                    {/* Knowledge Base Configuration - Translation Settings Only */}
                                     {integration.id === "knowledge_base" && (
                                       <div className="mt-4 space-y-3 rounded-lg border bg-background p-4">
                                         <h4 className="text-sm font-medium">
-                                          Embedding Configuration
+                                          Cross-Lingual Search Settings
                                         </h4>
                                         <p className="text-xs text-muted-foreground">
-                                          Configure the embedding provider for this agent&apos;s
-                                          knowledge base.
+                                          Configure translation for documents in non-English
+                                          languages. API credentials are configured in{" "}
+                                          <Link
+                                            href="/dashboard/integrations"
+                                            className="text-primary underline"
+                                          >
+                                            Workspace Integrations
+                                          </Link>
+                                          .
                                         </p>
 
                                         <div className="grid gap-3">
                                           <div className="space-y-1.5">
                                             <label className="text-xs font-medium">
-                                              Embedding Provider
+                                              Enable Cross-Lingual Search
                                             </label>
                                             <Select
                                               value={
                                                 form.watch(
-                                                  "toolConfigs.knowledge_base.embedding_provider"
-                                                ) || "openai"
+                                                  "toolConfigs.knowledge_base.enable_translation"
+                                                ) || "false"
                                               }
                                               onValueChange={(value) => {
                                                 const currentConfigs =
@@ -1078,106 +1085,66 @@ Guidelines:
                                                   ...currentConfigs,
                                                   knowledge_base: {
                                                     ...currentConfigs.knowledge_base,
-                                                    embedding_provider: value,
-                                                    embedding_model:
-                                                      value === "openai"
-                                                        ? "text-embedding-3-small"
-                                                        : "voyage-3",
+                                                    enable_translation: value,
                                                   },
                                                 });
                                               }}
                                             >
                                               <SelectTrigger className="h-8">
-                                                <SelectValue placeholder="Select provider" />
+                                                <SelectValue placeholder="Select option" />
                                               </SelectTrigger>
                                               <SelectContent>
-                                                <SelectItem value="openai">OpenAI</SelectItem>
-                                                <SelectItem value="voyage">Voyage AI</SelectItem>
+                                                <SelectItem value="false">Disabled</SelectItem>
+                                                <SelectItem value="true">
+                                                  Enabled (Recommended for non-English docs)
+                                                </SelectItem>
                                               </SelectContent>
                                             </Select>
-                                          </div>
-
-                                          <div className="space-y-1.5">
-                                            <label className="text-xs font-medium">
-                                              Embedding Model
-                                            </label>
-                                            <Select
-                                              value={
-                                                form.watch(
-                                                  "toolConfigs.knowledge_base.embedding_model"
-                                                ) || "text-embedding-3-small"
-                                              }
-                                              onValueChange={(value) => {
-                                                const currentConfigs =
-                                                  form.getValues("toolConfigs") || {};
-                                                form.setValue("toolConfigs", {
-                                                  ...currentConfigs,
-                                                  knowledge_base: {
-                                                    ...currentConfigs.knowledge_base,
-                                                    embedding_model: value,
-                                                  },
-                                                });
-                                              }}
-                                            >
-                                              <SelectTrigger className="h-8">
-                                                <SelectValue placeholder="Select model" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {(form.watch(
-                                                  "toolConfigs.knowledge_base.embedding_provider"
-                                                ) || "openai") === "openai" ? (
-                                                  <>
-                                                    <SelectItem value="text-embedding-3-small">
-                                                      text-embedding-3-small (1536 dim)
-                                                    </SelectItem>
-                                                    <SelectItem value="text-embedding-3-large">
-                                                      text-embedding-3-large (3072 dim)
-                                                    </SelectItem>
-                                                    <SelectItem value="text-embedding-ada-002">
-                                                      text-embedding-ada-002 (1536 dim)
-                                                    </SelectItem>
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <SelectItem value="voyage-3">
-                                                      voyage-3 (1024 dim)
-                                                    </SelectItem>
-                                                    <SelectItem value="voyage-3-lite">
-                                                      voyage-3-lite (512 dim)
-                                                    </SelectItem>
-                                                  </>
-                                                )}
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-
-                                          <div className="space-y-1.5">
-                                            <label className="text-xs font-medium">API Key</label>
-                                            <Input
-                                              type="password"
-                                              placeholder="Enter your API key"
-                                              className="h-8"
-                                              value={
-                                                form.watch("toolConfigs.knowledge_base.api_key") ||
-                                                ""
-                                              }
-                                              onChange={(e) => {
-                                                const currentConfigs =
-                                                  form.getValues("toolConfigs") || {};
-                                                form.setValue("toolConfigs", {
-                                                  ...currentConfigs,
-                                                  knowledge_base: {
-                                                    ...currentConfigs.knowledge_base,
-                                                    api_key: e.target.value,
-                                                  },
-                                                });
-                                              }}
-                                            />
                                             <p className="text-xs text-muted-foreground">
-                                              Your embedding provider API key for document
-                                              processing
+                                              Translate non-English documents to English for better
+                                              cross-lingual search
                                             </p>
                                           </div>
+
+                                          {form.watch(
+                                            "toolConfigs.knowledge_base.enable_translation"
+                                          ) === "true" && (
+                                            <div className="space-y-1.5">
+                                              <label className="text-xs font-medium">
+                                                Translation Model
+                                              </label>
+                                              <Select
+                                                value={
+                                                  form.watch(
+                                                    "toolConfigs.knowledge_base.translation_model"
+                                                  ) || "gpt-4o-mini"
+                                                }
+                                                onValueChange={(value) => {
+                                                  const currentConfigs =
+                                                    form.getValues("toolConfigs") || {};
+                                                  form.setValue("toolConfigs", {
+                                                    ...currentConfigs,
+                                                    knowledge_base: {
+                                                      ...currentConfigs.knowledge_base,
+                                                      translation_model: value,
+                                                    },
+                                                  });
+                                                }}
+                                              >
+                                                <SelectTrigger className="h-8">
+                                                  <SelectValue placeholder="Select model" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="gpt-4o-mini">
+                                                    GPT-4o Mini (Faster, cheaper)
+                                                  </SelectItem>
+                                                  <SelectItem value="gpt-4o">
+                                                    GPT-4o (Higher quality)
+                                                  </SelectItem>
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
                                     )}
