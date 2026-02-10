@@ -1612,27 +1612,24 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                                       })}
                                     </div>
 
-                                    {/* Web Search Configuration */}
-                                    {integration.id === "web_search" && (
+                                    {/* Site Search Configuration */}
+                                    {integration.id === "site_search" && (
                                       <div className="mt-4 space-y-3 rounded-lg border bg-background p-4">
                                         <h4 className="text-sm font-medium">
-                                          Search Configuration
+                                          Site Search Configuration
                                         </h4>
                                         <p className="text-xs text-muted-foreground">
-                                          Optionally restrict searches to a specific website.
+                                          Configure the website your agent can search during calls.
                                         </p>
 
                                         <div className="space-y-1.5">
-                                          <label className="text-xs font-medium">
-                                            Restrict to Domain (Optional)
-                                          </label>
+                                          <label className="text-xs font-medium">Website URL</label>
                                           <Input
-                                            type="text"
-                                            placeholder="example.com"
+                                            type="url"
+                                            placeholder="https://www.example.com"
                                             className="h-8"
                                             value={
-                                              form.watch("toolConfigs.web_search.search_domain") ||
-                                              ""
+                                              form.watch("toolConfigs.site_search.site_url") || ""
                                             }
                                             onChange={(e) => {
                                               const currentConfigs =
@@ -1641,9 +1638,9 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                                                 "toolConfigs",
                                                 {
                                                   ...currentConfigs,
-                                                  web_search: {
-                                                    ...currentConfigs.web_search,
-                                                    search_domain: e.target.value,
+                                                  site_search: {
+                                                    ...currentConfigs.site_search,
+                                                    site_url: e.target.value,
                                                   },
                                                 },
                                                 { shouldDirty: true }
@@ -1651,8 +1648,42 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                                             }}
                                           />
                                           <p className="text-xs text-muted-foreground">
-                                            Only search within this website. Leave empty to search
-                                            the entire web.
+                                            The website to crawl and search during calls.
+                                          </p>
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                          <label className="text-xs font-medium">
+                                            Site Description (Optional)
+                                          </label>
+                                          <Input
+                                            type="text"
+                                            placeholder="Apartment listings, product catalog..."
+                                            className="h-8"
+                                            value={
+                                              form.watch(
+                                                "toolConfigs.site_search.site_description"
+                                              ) || ""
+                                            }
+                                            onChange={(e) => {
+                                              const currentConfigs =
+                                                form.getValues("toolConfigs") || {};
+                                              form.setValue(
+                                                "toolConfigs",
+                                                {
+                                                  ...currentConfigs,
+                                                  site_search: {
+                                                    ...currentConfigs.site_search,
+                                                    site_description: e.target.value,
+                                                  },
+                                                },
+                                                { shouldDirty: true }
+                                              );
+                                            }}
+                                          />
+                                          <p className="text-xs text-muted-foreground">
+                                            Describe what this site contains to help the AI search
+                                            more effectively.
                                           </p>
                                         </div>
                                       </div>
@@ -1928,7 +1959,10 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
 
             {hasKnowledgeBase && (
               <TabsContent value="knowledge-base" className="mt-4">
-                <KnowledgeBaseTab agentId={agentId} />
+                <KnowledgeBaseTab
+                  agentId={agentId}
+                  siteUrl={form.watch("toolConfigs.site_search.site_url") || ""}
+                />
               </TabsContent>
             )}
           </Tabs>

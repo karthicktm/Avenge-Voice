@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  Globe,
   Loader2,
   RefreshCw,
   Trash2,
@@ -16,6 +17,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
@@ -37,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  crawlSite,
   listDocuments,
   uploadDocuments,
   deleteDocument,
@@ -47,14 +50,16 @@ import {
 
 interface KnowledgeBaseTabProps {
   agentId: string;
+  siteUrl?: string;
 }
 
 const SUPPORTED_TYPES = ["pdf", "docx", "txt", "md"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
-export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
+export function KnowledgeBaseTab({ agentId, siteUrl }: KnowledgeBaseTabProps) {
   const queryClient = useQueryClient();
   const [isDragging, setIsDragging] = useState(false);
+  const [crawlUrl, setCrawlUrl] = useState(siteUrl ?? "");
 
   // Fetch documents
   const {
@@ -107,6 +112,18 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to reindex document");
+    },
+  });
+
+  // Crawl mutation
+  const crawlMutation = useMutation({
+    mutationFn: (url: string) => crawlSite(agentId, url),
+    onSuccess: (result) => {
+      toast.success(result.message);
+      void queryClient.invalidateQueries({ queryKey: ["documents", agentId] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to start crawl");
     },
   });
 
@@ -204,6 +221,14 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
     }
   };
 
+  const handleCrawl = () => {
+    if (!crawlUrl.trim()) {
+      toast.error("Please enter a website URL");
+      return;
+    }
+    crawlMutation.mutate(crawlUrl.trim());
+  };
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -211,7 +236,7 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
           <div>
             <CardTitle className="text-sm font-medium">Knowledge Base</CardTitle>
             <CardDescription>
-              Upload documents to create a searchable knowledge base for your agent
+              Upload documents or crawl websites to create a searchable knowledge base
             </CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={() => void refetch()}>
@@ -258,6 +283,40 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
           </div>
         </div>
 
+        {/* Crawl Website section */}
+        <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-muted-foreground" />
+            <h4 className="text-sm font-medium">Crawl Website</h4>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Automatically crawl a website and index its pages into the knowledge base.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="url"
+              placeholder="https://www.example.com"
+              className="h-8"
+              value={crawlUrl}
+              onChange={(e) => setCrawlUrl(e.target.value)}
+              disabled={crawlMutation.isPending}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCrawl}
+              disabled={crawlMutation.isPending || !crawlUrl.trim()}
+            >
+              {crawlMutation.isPending ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Globe className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Crawl Now
+            </Button>
+          </div>
+        </div>
+
         {/* Documents list */}
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
@@ -268,7 +327,7 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
             <FileText className="mx-auto h-12 w-12 text-muted-foreground/50" />
             <p className="mt-2 text-sm font-medium text-muted-foreground">No documents uploaded</p>
             <p className="text-xs text-muted-foreground">
-              Upload documents to enable knowledge base search
+              Upload documents or crawl a website to enable knowledge base search
             </p>
           </div>
         ) : (
@@ -286,16 +345,36 @@ export function KnowledgeBaseTab({ agentId }: KnowledgeBaseTabProps) {
               <TableBody>
                 {documents.map((doc) => {
                   const statusDisplay = getStatusDisplay(doc.status);
+                  const isWebCrawl = doc.source_type === "web_crawl";
                   return (
                     <TableRow key={doc.id}>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          {isWebCrawl ? (
+                            <Globe className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                          )}
                           <div>
                             <p className="text-sm font-medium">{doc.filename}</p>
-                            <p className="text-xs uppercase text-muted-foreground">
-                              {doc.file_type}
-                            </p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs uppercase text-muted-foreground">
+                                {doc.file_type}
+                              </p>
+                              {isWebCrawl && (
+                                <Badge variant="outline" className="px-1 py-0 text-[10px]">
+                                  Web Crawl
+                                </Badge>
+                              )}
+                            </div>
+                            {isWebCrawl && doc.source_url && (
+                              <p
+                                className="max-w-[200px] truncate text-[10px] text-muted-foreground"
+                                title={doc.source_url}
+                              >
+                                {doc.source_url}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </TableCell>

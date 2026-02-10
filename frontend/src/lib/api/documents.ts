@@ -16,6 +16,8 @@ export interface Document {
   created_at: string;
   updated_at: string;
   processed_at: string | null;
+  source_type?: string;
+  source_url?: string | null;
 }
 
 export interface DocumentListResponse {
@@ -80,6 +82,26 @@ export async function reindexDocument(agentId: string, documentId: string): Prom
   const response = await api.post<Document>(
     `/api/v1/agents/${agentId}/documents/${documentId}/reindex`
   );
+  return response.data;
+}
+
+export interface CrawlResponse {
+  status: string;
+  message: string;
+}
+
+/**
+ * Trigger a site crawl for knowledge base indexing.
+ */
+export async function crawlSite(
+  agentId: string,
+  siteUrl: string,
+  maxPages: number = 50
+): Promise<CrawlResponse> {
+  const response = await api.post<CrawlResponse>(`/api/v1/agents/${agentId}/crawl`, {
+    site_url: siteUrl,
+    max_pages: maxPages,
+  });
   return response.data;
 }
 

@@ -179,9 +179,9 @@ def build_instructions_with_language(
     # Build information retrieval section with priority ordering
     info_retrieval_section = ""
     has_knowledge_base = knowledge_base_info and knowledge_base_info.get("document_count", 0) > 0
-    has_web_search = "web_search" in enabled_tools or "browse_website" in enabled_tools
+    has_site_search = "search_site" in enabled_tools
 
-    if has_knowledge_base or has_web_search:
+    if has_knowledge_base or has_site_search:
         info_retrieval_section = "\n[INFORMATION RETRIEVAL - PRIORITY ORDER]\n"
 
         if has_knowledge_base and knowledge_base_info:
@@ -203,24 +203,32 @@ def build_instructions_with_language(
    - Examples: pricing -> search_knowledge_base("pricing rates cost")
 
 """
-            if has_web_search:
-                info_retrieval_section += """2. SECOND - Web Search (only if knowledge base has no answer):
-   - Use web_search or browse_website ONLY when knowledge_base returns no relevant results
-   - Do NOT use web search for information that should be in your documents
+            if has_site_search:
+                info_retrieval_section += """2. SECOND - Site Search (only if knowledge base has no answer):
+   - Use search_site ONLY when knowledge_base returns no relevant results
+   - search_site will intelligently crawl the configured website to find information
 
 """
-        elif has_web_search:
-            info_retrieval_section += """1. Web Search:
-   - Use web_search or browse_website to find current information online
+        elif has_site_search:
+            info_retrieval_section += """1. Site Search:
+   - Use search_site to find information on the configured website
    - Summarize findings concisely for voice
 
 """
 
         info_retrieval_section += """CRITICAL BOUNDARY RULES:
-- NEVER make up or guess information - only use what you retrieve
-- If no information is found, say "I don't have that information" or ask to clarify
+- You MUST ONLY use the configured knowledge base and website to answer questions
+- NEVER answer from your own training data for topics that should come from the knowledge base or website
+- NEVER make up or guess information - only use what you retrieve from configured sources
+- If no information is found in your configured sources, say "I don't have that information in my sources" or ask to clarify
 - Stay within the boundaries of retrieved content - do not extrapolate or invent details
 - If unsure, search again with different terms before saying you don't know
+- Do NOT provide general knowledge answers when the caller asks about topics covered by your knowledge base or website
+
+TOOL ENGAGEMENT RULES:
+- IMPORTANT: Before calling ANY tool, ALWAYS say a brief acknowledgment first so the caller knows you are working on their request
+- Examples: "Let me look that up for you", "One moment while I check", "Let me find that information"
+- NEVER go silent while processing - always speak before using a tool
 """
 
     # Build best practices section (translated to agent's language)

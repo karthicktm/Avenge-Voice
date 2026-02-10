@@ -45,6 +45,9 @@ class DocumentResponse(BaseModel):
     source_language: str | None = None
     translation_enabled: bool = False
     embedding_dimensions: int = 1536
+    # Source tracking
+    source_type: str = "upload"
+    source_url: str | None = None
 
     class Config:
         from_attributes = True
@@ -55,6 +58,28 @@ class DocumentListResponse(BaseModel):
 
     documents: list[DocumentResponse]
     total: int
+
+
+def _doc_to_response(doc: Document) -> DocumentResponse:
+    """Convert a Document model to a DocumentResponse."""
+    return DocumentResponse(
+        id=str(doc.id),
+        agent_id=str(doc.agent_id),
+        filename=doc.filename,
+        file_type=doc.file_type,
+        file_size=doc.file_size,
+        status=doc.status,
+        error_message=doc.error_message,
+        chunk_count=doc.chunk_count,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        processed_at=doc.processed_at,
+        source_language=doc.source_language,
+        translation_enabled=doc.translation_enabled,
+        embedding_dimensions=doc.embedding_dimensions,
+        source_type=doc.source_type,
+        source_url=doc.source_url,
+    )
 
 
 # Helper functions
@@ -190,19 +215,7 @@ async def upload_document(
     # Process document in background
     background_tasks.add_task(process_document_background, document.id, content, embedding_config)
 
-    return DocumentResponse(
-        id=str(document.id),
-        agent_id=str(document.agent_id),
-        filename=document.filename,
-        file_type=document.file_type,
-        file_size=document.file_size,
-        status=document.status,
-        error_message=document.error_message,
-        chunk_count=document.chunk_count,
-        created_at=document.created_at,
-        updated_at=document.updated_at,
-        processed_at=document.processed_at,
-    )
+    return _doc_to_response(document)
 
 
 @router.get(
@@ -222,22 +235,7 @@ async def list_documents(
     documents = await rag_service.get_documents(agent_id)
 
     return DocumentListResponse(
-        documents=[
-            DocumentResponse(
-                id=str(doc.id),
-                agent_id=str(doc.agent_id),
-                filename=doc.filename,
-                file_type=doc.file_type,
-                file_size=doc.file_size,
-                status=doc.status,
-                error_message=doc.error_message,
-                chunk_count=doc.chunk_count,
-                created_at=doc.created_at,
-                updated_at=doc.updated_at,
-                processed_at=doc.processed_at,
-            )
-            for doc in documents
-        ],
+        documents=[_doc_to_response(doc) for doc in documents],
         total=len(documents),
     )
 
@@ -265,19 +263,7 @@ async def get_document(
             detail="Document not found",
         )
 
-    return DocumentResponse(
-        id=str(document.id),
-        agent_id=str(document.agent_id),
-        filename=document.filename,
-        file_type=document.file_type,
-        file_size=document.file_size,
-        status=document.status,
-        error_message=document.error_message,
-        chunk_count=document.chunk_count,
-        created_at=document.created_at,
-        updated_at=document.updated_at,
-        processed_at=document.processed_at,
-    )
+    return _doc_to_response(document)
 
 
 @router.delete(
@@ -395,16 +381,4 @@ async def reindex_document(
         process_document_background, document.id, content_bytes, embedding_config
     )
 
-    return DocumentResponse(
-        id=str(document.id),
-        agent_id=str(document.agent_id),
-        filename=document.filename,
-        file_type=document.file_type,
-        file_size=document.file_size,
-        status=document.status,
-        error_message=document.error_message,
-        chunk_count=document.chunk_count,
-        created_at=document.created_at,
-        updated_at=document.updated_at,
-        processed_at=document.processed_at,
-    )
+    return _doc_to_response(document)

@@ -37,6 +37,7 @@ from app.api import (
     phone_numbers,
     realtime,
     setup,
+    site_indexer,
     telephony,
     telephony_ws,
     tools,
@@ -198,6 +199,7 @@ app.include_router(password_reset.router)  # Password reset API
 app.include_router(compliance.router)  # Compliance API (GDPR/CCPA)
 app.include_router(integrations.router)  # Integrations API (external tools)
 app.include_router(documents.router)  # Documents API (Knowledge Base/RAG)
+app.include_router(site_indexer.router)  # Site indexer API (web crawl)
 app.include_router(embed.router)  # Public embed API (unauthenticated)
 app.include_router(embed.ws_router)  # Public embed WebSocket
 app.include_router(setup.router)  # First-run setup API (unauthenticated)

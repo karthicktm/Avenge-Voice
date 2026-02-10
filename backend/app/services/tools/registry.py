@@ -11,9 +11,8 @@ from app.services.tools.crm_tools import CRMTools
 from app.services.tools.gohighlevel_tools import GoHighLevelTools
 from app.services.tools.rag_tools import RAGTools
 from app.services.tools.shopify_tools import ShopifyTools
+from app.services.tools.site_search_tools import SiteSearchTools
 from app.services.tools.sms_tools import TelnyxSMSTools, TwilioSMSTools
-from app.services.tools.web_browse_tools import WebBrowseTools
-from app.services.tools.web_search_tools import WebSearchTools
 
 
 class ToolRegistry:
@@ -46,7 +45,7 @@ class ToolRegistry:
             agent_id: Agent UUID for RAG/Knowledge Base operations
             openai_api_key: OpenAI API key (fallback for RAG embeddings if not in integrations)
             tool_configs: Per-tool configuration from agent settings
-                         e.g., {"web_search": {"search_domain": "example.com"}}
+                         e.g., {"site_search": {"site_url": "https://example.com"}}
         """
         self.db = db
         self.user_id = user_id
@@ -61,8 +60,7 @@ class ToolRegistry:
         self._shopify_tools: ShopifyTools | None = None
         self._twilio_sms_tools: TwilioSMSTools | None = None
         self._telnyx_sms_tools: TelnyxSMSTools | None = None
-        self._web_search_tools: WebSearchTools | None = None
-        self._web_browse_tools: WebBrowseTools | None = None
+        self._site_search_tools: SiteSearchTools | None = None
         self._rag_tools: RAGTools | None = None
 
     def _get_ghl_tools(self) -> GoHighLevelTools | None:
@@ -146,43 +144,28 @@ class ToolRegistry:
 
         return None
 
-    def _get_web_search_tools(self) -> WebSearchTools:
-        """Get Web Search tools with OpenAI web search support.
+    def _get_site_search_tools(self) -> SiteSearchTools | None:
+        """Get Site Search tools for LLM-powered website crawling.
 
-        Uses OpenAI's built-in web_search via Responses API (preferred),
-        falls back to Tavily, then to direct URL fetching for domain-restricted searches.
-
-        Supports optional domain restriction via tool_configs:
-            {"web_search": {"search_domain": "example.com"}}
+        Requires site_url to be configured via tool_configs:
+            {"site_search": {"site_url": "https://example.com", "site_description": "..."}}
         """
-        if self._web_search_tools:
-            return self._web_search_tools
+        if self._site_search_tools:
+            return self._site_search_tools
 
-        # Get web search config (supports domain restriction)
-        web_search_config = self.tool_configs.get("web_search", {})
-        search_domain = web_search_config.get("search_domain")
+        site_config = self.tool_configs.get("site_search", {})
+        site_url = site_config.get("site_url")
 
-        self._web_search_tools = WebSearchTools(
-            search_domain=search_domain,
+        if not site_url:
+            return None
+
+        self._site_search_tools = SiteSearchTools(
+            site_url=site_url,
+            site_description=site_config.get("site_description"),
             openai_api_key=self.openai_api_key,
+            language=site_config.get("language", "en-US"),
         )
-        return self._web_search_tools
-
-    def _get_web_browse_tools(self) -> WebBrowseTools:
-        """Get Web Browse tools for navigating and extracting website content.
-
-        Supports optional domain restriction via tool_configs:
-            {"web_search": {"search_domain": "example.com"}}
-        """
-        if self._web_browse_tools:
-            return self._web_browse_tools
-
-        # Use the same domain restriction as web search
-        web_search_config = self.tool_configs.get("web_search", {})
-        allowed_domain = web_search_config.get("search_domain")
-
-        self._web_browse_tools = WebBrowseTools(allowed_domain=allowed_domain)
-        return self._web_browse_tools
+        return self._site_search_tools
 
     def _get_rag_tools(self) -> RAGTools | None:
         """Get RAG tools if agent_id and embedding credentials are available.
@@ -246,7 +229,7 @@ class ToolRegistry:
         self._rag_tools = RAGTools(self.db, self.agent_id, embedding_config=embedding_config)
         return self._rag_tools
 
-    def get_all_tool_definitions(
+    def get_all_tool_definitions(  # noqa: PLR0912
         self,
         enabled_tools: list[str],
         enabled_tool_ids: dict[str, list[str]] | None = None,
@@ -319,16 +302,12 @@ class ToolRegistry:
             telnyx_tools = TelnyxSMSTools.get_tool_definitions()
             tools.extend(filter_tools("telnyx-sms", telnyx_tools))
 
-        # Web Search tools (always available, no API key needed)
-        if "web_search" in enabled_tools:
-            web_search_instance = self._get_web_search_tools()
-            web_search_tools = web_search_instance.get_tool_definitions()
-            tools.extend(filter_tools("web_search", web_search_tools))
-
-            # Also include web browse tools when web_search is enabled
-            self._get_web_browse_tools()  # Initialize instance
-            web_browse_tools = WebBrowseTools.get_tool_definitions()
-            tools.extend(filter_tools("web_search", web_browse_tools))
+        # Site Search tools (requires site_url configured)
+        if "site_search" in enabled_tools:
+            site_search_instance = self._get_site_search_tools()
+            if site_search_instance:
+                site_search_tools = site_search_instance.get_tool_definitions()
+                tools.extend(filter_tools("site_search", site_search_tools))
 
         # Knowledge Base / RAG tools (requires agent_id)
         import structlog
@@ -484,24 +463,19 @@ class ToolRegistry:
                 }
             return await telnyx_tools.execute_tool(tool_name, arguments)
 
-        # Web Search tools
-        web_search_tool_names = {
-            "web_search",
+        # Site Search tools
+        site_search_tool_names = {
+            "search_site",
         }
 
-        if tool_name in web_search_tool_names:
-            web_search_tools = self._get_web_search_tools()
-            return await web_search_tools.execute_tool(tool_name, arguments)
-
-        # Web Browse tools
-        web_browse_tool_names = {
-            "browse_website",
-            "extract_page_data",
-        }
-
-        if tool_name in web_browse_tool_names:
-            web_browse_tools = self._get_web_browse_tools()
-            return await web_browse_tools.execute_tool(tool_name, arguments)
+        if tool_name in site_search_tool_names:
+            site_search_tools = self._get_site_search_tools()
+            if not site_search_tools:
+                return {
+                    "success": False,
+                    "error": "Site Search not configured. Please set a website URL.",
+                }
+            return await site_search_tools.execute_tool(tool_name, arguments)
 
         # RAG / Knowledge Base tools
         rag_tool_names = {

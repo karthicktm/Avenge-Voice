@@ -38,6 +38,18 @@ class Document(Base):
     )
     file_size: Mapped[int] = mapped_column(Integer, nullable=False, comment="File size in bytes")
 
+    # Source tracking
+    source_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="upload",
+        server_default="upload",
+        comment="Source type: upload or web_crawl",
+    )
+    source_url: Mapped[str | None] = mapped_column(
+        String(2000), nullable=True, comment="URL the content was crawled from (for web_crawl)"
+    )
+
     # Extracted content (raw text before chunking)
     content: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Extracted text content from the file"
@@ -124,7 +136,9 @@ class DocumentChunk(Base):
         String(10), nullable=True, comment="Source language code for this chunk"
     )
     translation_status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="not_needed",
+        String(20),
+        nullable=False,
+        default="not_needed",
         comment="Translation status: not_needed, completed, failed, skipped",
     )
 
