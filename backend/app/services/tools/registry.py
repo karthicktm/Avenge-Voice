@@ -302,19 +302,14 @@ class ToolRegistry:
             telnyx_tools = TelnyxSMSTools.get_tool_definitions()
             tools.extend(filter_tools("telnyx-sms", telnyx_tools))
 
-        # Site Search tools (requires site_url configured)
-        if "site_search" in enabled_tools:
-            site_search_instance = self._get_site_search_tools()
-            if site_search_instance:
-                site_search_tools = site_search_instance.get_tool_definitions()
-                tools.extend(filter_tools("site_search", site_search_tools))
-
-        # Knowledge Base / RAG tools (requires agent_id)
+        # Knowledge Base / RAG tools (requires agent_id) — register BEFORE site search
+        # so we know whether KB exists when building site search tool description
         import structlog
 
         logger = structlog.get_logger()
 
         kb_in_enabled = "knowledge_base" in enabled_tools
+        has_knowledge_base = False
         logger.info(
             "knowledge_base_tool_check",
             kb_in_enabled_tools=kb_in_enabled,
@@ -327,9 +322,19 @@ class ToolRegistry:
             if rag_tools_instance:
                 rag_tools = RAGTools.get_tool_definitions()
                 tools.extend(filter_tools("knowledge_base", rag_tools))
+                has_knowledge_base = True
                 logger.info("knowledge_base_tool_registered", tool_count=len(rag_tools))
             else:
                 logger.warning("knowledge_base_tool_not_registered_no_instance")
+
+        # Site Search tools (requires site_url configured)
+        if "site_search" in enabled_tools:
+            site_search_instance = self._get_site_search_tools()
+            if site_search_instance:
+                site_search_tools = site_search_instance.get_tool_definitions(
+                    has_knowledge_base=has_knowledge_base,
+                )
+                tools.extend(filter_tools("site_search", site_search_tools))
 
         return tools
 

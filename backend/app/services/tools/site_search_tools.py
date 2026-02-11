@@ -303,16 +303,23 @@ class SiteSearchTools:
             site_url=self.site_url,
         )
 
-    def get_tool_definitions(self) -> list[dict[str, Any]]:
+    def get_tool_definitions(self, *, has_knowledge_base: bool = False) -> list[dict[str, Any]]:
         """Get OpenAI function calling tool definitions."""
         parsed = urlparse(self.site_url)
         domain = parsed.netloc or parsed.path
 
-        desc_parts = [
-            f"IMPORTANT: You MUST use this tool to search {domain} whenever the user asks about "
-            f"products, services, availability, pricing, locations, or ANY information that would be on this website. "
-            f"Do NOT try to answer from memory — always search first to get accurate, up-to-date information.",
-        ]
+        if has_knowledge_base:
+            desc_parts = [
+                f"Search {domain} for live/up-to-date website information. "
+                f"ONLY use this tool when the knowledge base (search_knowledge_base) does not have the answer. "
+                f"Always try search_knowledge_base FIRST before using this tool.",
+            ]
+        else:
+            desc_parts = [
+                f"IMPORTANT: You MUST use this tool to search {domain} whenever the user asks about "
+                f"products, services, availability, pricing, locations, or ANY information that would be on this website. "
+                f"Do NOT try to answer from memory — always search first to get accurate, up-to-date information.",
+            ]
         if self.site_description:
             desc_parts.append(f"This website contains: {self.site_description}")
 
