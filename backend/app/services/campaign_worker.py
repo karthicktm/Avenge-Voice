@@ -289,6 +289,9 @@ class CampaignWorker:
     ) -> TelnyxService | TwilioService | None:
         """Get telephony service for a campaign.
 
+        Selects the correct provider by checking which one owns the campaign's
+        from_phone_number. Falls back to the first available provider.
+
         Args:
             campaign: Campaign to get service for
             db: Database session
@@ -306,20 +309,36 @@ class CampaignWorker:
         if not user_settings:
             return None
 
-        # Prefer Telnyx, fall back to Twilio
-        if user_settings.telnyx_api_key:
-            return TelnyxService(
+        telnyx_service = (
+            TelnyxService(
                 api_key=user_settings.telnyx_api_key,
                 public_key=user_settings.telnyx_public_key,
             )
+            if user_settings.telnyx_api_key
+            else None
+        )
 
-        if user_settings.twilio_account_sid and user_settings.twilio_auth_token:
-            return TwilioService(
+        twilio_service = (
+            TwilioService(
                 account_sid=user_settings.twilio_account_sid,
                 auth_token=user_settings.twilio_auth_token,
             )
+            if user_settings.twilio_account_sid and user_settings.twilio_auth_token
+            else None
+        )
 
-        return None
+        # If both available, detect correct provider from the campaign's from number
+        if telnyx_service and twilio_service:
+            try:
+                twilio_numbers = await twilio_service.list_phone_numbers()
+                twilio_nums = [n.phone_number for n in twilio_numbers]
+                if campaign.from_phone_number in twilio_nums:
+                    return twilio_service
+            except Exception:
+                self.logger.debug("Failed to check Twilio numbers, defaulting to Telnyx")
+            return telnyx_service
+
+        return telnyx_service or twilio_service
 
     async def _initiate_call(
         self,

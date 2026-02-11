@@ -274,11 +274,15 @@ export default function CRMPage() {
       fromNumber: string;
       agentId: string;
     }) => {
-      return initiateCall({
-        to_number: toNumber,
-        from_number: fromNumber,
-        agent_id: agentId,
-      });
+      if (!activeWorkspaceId) throw new Error("No workspace available");
+      return initiateCall(
+        {
+          to_number: toNumber,
+          from_number: fromNumber,
+          agent_id: agentId,
+        },
+        activeWorkspaceId
+      );
     },
     onSuccess: (data) => {
       toast.success(`Call initiated! Call ID: ${data.call_id}`);

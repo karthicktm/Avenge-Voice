@@ -22,7 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { initiateCall, hangupCall, listPhoneNumbers, type PhoneNumber } from "@/lib/api/telephony";
+import {
+  initiateCall,
+  hangupCall,
+  listPhoneNumbers,
+  type PhoneNumber,
+  type InitiateCallRequest,
+} from "@/lib/api/telephony";
 import type { Agent } from "@/lib/api/agents";
 import { api } from "@/lib/api";
 
@@ -115,7 +121,10 @@ export function MakeCallDialog({ open, onOpenChange, agent, workspaceId }: MakeC
   }, [open]);
 
   const initiateMutation = useMutation({
-    mutationFn: initiateCall,
+    mutationFn: (req: InitiateCallRequest) => {
+      if (!effectiveWorkspaceId) throw new Error("No workspace available");
+      return initiateCall(req, effectiveWorkspaceId);
+    },
     onSuccess: (data) => {
       setCallId(data.call_id);
       setCallState("ringing");

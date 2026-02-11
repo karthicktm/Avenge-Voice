@@ -194,14 +194,20 @@ export async function releasePhoneNumber(
 /**
  * Initiate an outbound call
  */
-export async function initiateCall(request: InitiateCallRequest): Promise<CallResponse> {
-  const response = await fetchWithTimeout(`${API_BASE}/api/v1/telephony/calls`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(request),
-  });
+export async function initiateCall(
+  request: InitiateCallRequest,
+  workspaceId: string
+): Promise<CallResponse> {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/api/v1/telephony/calls?workspace_id=${workspaceId}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
