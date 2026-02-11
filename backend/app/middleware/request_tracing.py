@@ -1,20 +1,23 @@
-"""Request tracing middleware for correlation IDs and logging."""
+"""Request tracing middleware for correlation IDs and logging.
+
+Uses pure ASGI instead of BaseHTTPMiddleware to avoid the known Starlette
+issue where BaseHTTPMiddleware swallows exceptions and returns bare 500
+responses that bypass CORSMiddleware header injection.
+"""
 
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import MutableMapping
 from typing import Any
 
 import structlog
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = structlog.get_logger()
 
 
-class RequestTracingMiddleware(BaseHTTPMiddleware):
-    """Middleware to add request tracing with correlation IDs.
+class RequestTracingMiddleware:
+    """Pure ASGI middleware to add request tracing with correlation IDs.
 
     This middleware:
     1. Generates or extracts a correlation ID for each request
@@ -23,11 +26,33 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
     4. Adds correlation ID to response headers
     """
 
-    async def dispatch(self, request: Request, call_next: Callable[..., Any]) -> Response:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Process request with tracing."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         # Get or generate correlation ID
-        correlation_id = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())
-        request_id = str(uuid.uuid4())[:8]  # Short ID for this specific request
+        headers_raw: list[tuple[bytes, bytes]] = scope.get("headers", [])
+        correlation_id: str | None = None
+        for key, value in headers_raw:
+            if key.lower() == b"x-correlation-id":
+                correlation_id = value.decode("latin-1")
+                break
+        if not correlation_id:
+            correlation_id = str(uuid.uuid4())
+
+        request_id = str(uuid.uuid4())[:8]
+
+        # Extract client IP
+        client_ip = self._get_client_ip(scope)
+
+        # Extract path and method
+        method = scope.get("method", "")
+        path = scope.get("path", "")
 
         # Start timing
         start_time = time.perf_counter()
@@ -37,40 +62,43 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
         structlog.contextvars.bind_contextvars(
             correlation_id=correlation_id,
             request_id=request_id,
-            method=request.method,
-            path=request.url.path,
-            client_ip=self._get_client_ip(request),
+            method=method,
+            path=path,
+            client_ip=client_ip,
         )
 
-        # Log request start
+        # Extract query string for logging
+        query_string = scope.get("query_string", b"")
+        query_params = query_string.decode("latin-1") if query_string else None
+
         logger.info(
             "request_started",
-            query_params=dict(request.query_params) if request.query_params else None,
+            query_params=query_params or None,
         )
 
+        response_status: int | None = None
+
+        async def send_with_tracing(message: MutableMapping[str, Any]) -> None:
+            nonlocal response_status
+            if message["type"] == "http.response.start":
+                response_status = message.get("status", 0)
+                headers = list(message.get("headers", []))
+                headers.append((b"x-correlation-id", correlation_id.encode("latin-1")))
+                headers.append((b"x-request-id", request_id.encode("latin-1")))
+                message["headers"] = headers
+            await send(message)
+
         try:
-            response: Response = await call_next(request)
+            await self.app(scope, receive, send_with_tracing)
 
-            # Calculate duration
             duration_ms = (time.perf_counter() - start_time) * 1000
-
-            # Log request completion
             logger.info(
                 "request_completed",
-                status_code=response.status_code,
+                status_code=response_status,
                 duration_ms=round(duration_ms, 2),
             )
-
-            # Add correlation ID to response headers
-            response.headers["X-Correlation-ID"] = correlation_id
-            response.headers["X-Request-ID"] = request_id
-
-            return response
-
         except Exception as e:
-            # Calculate duration even on error
             duration_ms = (time.perf_counter() - start_time) * 1000
-
             logger.exception(
                 "request_failed",
                 error=str(e),
@@ -79,21 +107,19 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
             )
             raise
 
-    def _get_client_ip(self, request: Request) -> str:
+    def _get_client_ip(self, scope: Scope) -> str:
         """Extract client IP, handling proxies."""
-        # Check X-Forwarded-For header (from load balancers/proxies)
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # Take the first IP (original client)
-            return forwarded_for.split(",")[0].strip()
+        headers_raw: list[tuple[bytes, bytes]] = scope.get("headers", [])
 
-        # Check X-Real-IP header
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
+        for key, value in headers_raw:
+            key_lower = key.lower()
+            if key_lower == b"x-forwarded-for":
+                return value.decode("latin-1").split(",")[0].strip()
+            if key_lower == b"x-real-ip":
+                return value.decode("latin-1")
 
-        # Fall back to direct client IP
-        if request.client:
-            return request.client.host
+        client: tuple[str, int] | None = scope.get("client")
+        if client:
+            return client[0]
 
         return "unknown"
