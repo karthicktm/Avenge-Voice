@@ -202,10 +202,17 @@ app.add_middleware(RequestTracingMiddleware)
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
 
+# Build CORS origins: start with configured list, ensure FRONTEND_URL and PUBLIC_URL are included
+cors_origins: list[str] = list(settings.CORS_ORIGINS)
+for url in [settings.FRONTEND_URL, settings.PUBLIC_URL]:
+    if url and url not in cors_origins:
+        cors_origins.append(url)
+logger.info("cors_origins_configured", origins=cors_origins)
+
 # Add CORS middleware (must be added AFTER security headers so it runs first)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=cors_origins,
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=settings.CORS_ALLOW_METHODS,
     allow_headers=settings.CORS_ALLOW_HEADERS,

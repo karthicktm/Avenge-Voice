@@ -97,6 +97,21 @@ class Settings(BaseSettings):
     CORS_ALLOW_METHODS: list[str] = ["*"]
     CORS_ALLOW_HEADERS: list[str] = ["*"]
 
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> list[str]:
+        """Parse CORS origins from env var (supports comma-separated or JSON list)."""
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            # Handle comma-separated string: "url1,url2"
+            if v.startswith("["):
+                import json
+
+                return json.loads(v)  # type: ignore[no-any-return]
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v  # type: ignore[return-value]
+
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
 
