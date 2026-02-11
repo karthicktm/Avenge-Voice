@@ -676,8 +676,8 @@ async def initiate_call(
     if not service:
         raise HTTPException(status_code=500, detail="Failed to initialize telephony service")
 
-    # Build webhook URL and initiate the call
-    base_url = str(request.base_url).rstrip("/")
+    # Build webhook URL using PUBLIC_URL (required for external providers like Twilio)
+    base_url = settings.PUBLIC_URL or str(request.base_url).rstrip("/")
     webhook_url = f"{base_url}/webhooks/{provider}/answer?agent_id={call_request.agent_id}"
 
     call_info = await service.initiate_call(
