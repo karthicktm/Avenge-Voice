@@ -82,6 +82,7 @@ class InitiateCallRequest(BaseModel):
     to_number: str
     from_number: str
     agent_id: str
+    provider: str | None = None  # "twilio" or "telnyx"; auto-detected if not specified
 
 
 class CallResponse(BaseModel):
@@ -147,6 +148,40 @@ async def get_telnyx_service(
         api_key=user_settings.telnyx_api_key,
         public_key=user_settings.telnyx_public_key,
     )
+
+
+async def resolve_call_provider(
+    requested_provider: str | None,
+    from_number: str,
+    telnyx_service: TelnyxService | None,
+    twilio_service: TwilioService | None,
+) -> str:
+    """Resolve which telephony provider to use for a call.
+
+    Priority: explicit provider hint > auto-detect from from_number > first available.
+    """
+    services = {"telnyx": telnyx_service, "twilio": twilio_service}
+
+    # Explicit provider requested
+    if requested_provider in services:
+        if services[requested_provider] is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{requested_provider.title()} credentials not configured. Please add them in Settings.",
+            )
+        return requested_provider
+
+    # Both available — auto-detect by checking if from_number belongs to Twilio
+    if telnyx_service and twilio_service:
+        try:
+            twilio_numbers = await twilio_service.list_phone_numbers()
+            twilio_nums = [n.phone_number for n in twilio_numbers]
+            return "twilio" if from_number in twilio_nums else "telnyx"
+        except Exception:
+            return "telnyx"
+
+    # Only one configured
+    return "twilio" if twilio_service else "telnyx"
 
 
 async def get_agent_by_phone_number(phone_number: str, db: AsyncSession) -> Agent | None:
@@ -623,11 +658,7 @@ async def initiate_call(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Determine provider from agent's phone number configuration
-    # Default to Telnyx if not specified
-    provider = "telnyx"
-
-    # Try Telnyx first
+    # Initialize available provider services
     telnyx_service = await get_telnyx_service(current_user.id, db, workspace_id=workspace_uuid)
     twilio_service = await get_twilio_service(current_user.id, db, workspace_id=workspace_uuid)
 
@@ -637,28 +668,24 @@ async def initiate_call(
             detail="No telephony provider configured. Please add Twilio or Telnyx credentials in Settings.",
         )
 
-    # Build webhook URL
-    base_url = str(request.base_url).rstrip("/")
-    webhook_url = f"{base_url}/webhooks/{'telnyx' if telnyx_service else 'twilio'}/answer?agent_id={call_request.agent_id}"
-
-    if telnyx_service:
-        provider = "telnyx"
-        call_info = await telnyx_service.initiate_call(
-            to_number=call_request.to_number,
-            from_number=call_request.from_number,
-            webhook_url=webhook_url,
-            agent_id=call_request.agent_id,
-        )
-    elif twilio_service:
-        provider = "twilio"
-        call_info = await twilio_service.initiate_call(
-            to_number=call_request.to_number,
-            from_number=call_request.from_number,
-            webhook_url=webhook_url,
-            agent_id=call_request.agent_id,
-        )
-    else:
+    # Resolve which provider to use (explicit hint > auto-detect > first available)
+    provider = await resolve_call_provider(
+        call_request.provider, call_request.from_number, telnyx_service, twilio_service
+    )
+    service = telnyx_service if provider == "telnyx" else twilio_service
+    if not service:
         raise HTTPException(status_code=500, detail="Failed to initialize telephony service")
+
+    # Build webhook URL and initiate the call
+    base_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{base_url}/webhooks/{provider}/answer?agent_id={call_request.agent_id}"
+
+    call_info = await service.initiate_call(
+        to_number=call_request.to_number,
+        from_number=call_request.from_number,
+        webhook_url=webhook_url,
+        agent_id=call_request.agent_id,
+    )
 
     log.info("call_initiated", call_id=call_info.call_id, provider=provider)
 

@@ -76,6 +76,7 @@ export interface InitiateCallRequest {
   to_number: string;
   from_number: string;
   agent_id: string;
+  provider?: "twilio" | "telnyx";
 }
 
 export interface CallResponse {

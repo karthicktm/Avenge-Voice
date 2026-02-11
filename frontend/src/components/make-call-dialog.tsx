@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Phone, PhoneCall, PhoneOff, Loader2, Clock } from "lucide-react";
@@ -46,7 +46,6 @@ export function MakeCallDialog({ open, onOpenChange, agent, workspaceId }: MakeC
   const [callState, setCallState] = useState<CallState>("idle");
   const [callId, setCallId] = useState<string | null>(null);
   const [callDuration, setCallDuration] = useState(0);
-  const [provider] = useState<"twilio" | "telnyx">("telnyx");
 
   // Fetch agent's workspaces if workspaceId not provided
   const { data: agentWorkspaces = [] } = useQuery<AgentWorkspace[]>({
@@ -61,13 +60,26 @@ export function MakeCallDialog({ open, onOpenChange, agent, workspaceId }: MakeC
   // Use provided workspaceId or fall back to agent's first workspace
   const effectiveWorkspaceId = workspaceId ?? agentWorkspaces[0]?.workspace_id;
 
-  // Fetch available phone numbers
-  const { data: phoneNumbers = [] } = useQuery({
-    queryKey: ["phone-numbers", provider, effectiveWorkspaceId],
+  // Fetch available phone numbers from both providers
+  const { data: telnyxNumbers = [] } = useQuery({
+    queryKey: ["phone-numbers", "telnyx", effectiveWorkspaceId],
     queryFn: () =>
-      effectiveWorkspaceId ? listPhoneNumbers(provider, effectiveWorkspaceId) : Promise.resolve([]),
+      effectiveWorkspaceId ? listPhoneNumbers("telnyx", effectiveWorkspaceId) : Promise.resolve([]),
     enabled: open && !!effectiveWorkspaceId,
   });
+
+  const { data: twilioNumbers = [] } = useQuery({
+    queryKey: ["phone-numbers", "twilio", effectiveWorkspaceId],
+    queryFn: () =>
+      effectiveWorkspaceId ? listPhoneNumbers("twilio", effectiveWorkspaceId) : Promise.resolve([]),
+    enabled: open && !!effectiveWorkspaceId,
+  });
+
+  // Combine phone numbers from both providers
+  const phoneNumbers = useMemo(
+    () => [...telnyxNumbers, ...twilioNumbers],
+    [telnyxNumbers, twilioNumbers]
+  );
 
   // Set default from number when phone numbers load
   useEffect(() => {
@@ -120,10 +132,15 @@ export function MakeCallDialog({ open, onOpenChange, agent, workspaceId }: MakeC
     },
   });
 
+  // Determine provider from the selected from number
+  const selectedProvider = twilioNumbers.find((n) => n.phone_number === selectedFromNumber)
+    ? "twilio"
+    : "telnyx";
+
   const hangupMutation = useMutation({
     mutationFn: () => {
       if (!callId) throw new Error("No call to hang up");
-      return hangupCall(callId, provider);
+      return hangupCall(callId, selectedProvider);
     },
     onSuccess: () => {
       setCallState("ended");
@@ -147,6 +164,7 @@ export function MakeCallDialog({ open, onOpenChange, agent, workspaceId }: MakeC
       to_number: phoneNumber,
       from_number: selectedFromNumber,
       agent_id: agent.id,
+      provider: selectedProvider,
     });
   };
 
@@ -192,6 +210,7 @@ export function MakeCallDialog({ open, onOpenChange, agent, workspaceId }: MakeC
                     <SelectItem key={num.id} value={num.phone_number}>
                       {formatPhoneNumber(num.phone_number)}
                       {num.friendly_name ? ` (${num.friendly_name})` : ""}
+                      {` [${twilioNumbers.find((n) => n.id === num.id) ? "Twilio" : "Telnyx"}]`}
                     </SelectItem>
                   ))}
                 </SelectContent>
