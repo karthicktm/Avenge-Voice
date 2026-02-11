@@ -680,12 +680,24 @@ async def initiate_call(
     base_url = settings.PUBLIC_URL or str(request.base_url).rstrip("/")
     webhook_url = f"{base_url}/webhooks/{provider}/answer?agent_id={call_request.agent_id}"
 
-    call_info = await service.initiate_call(
-        to_number=call_request.to_number,
-        from_number=call_request.from_number,
-        webhook_url=webhook_url,
-        agent_id=call_request.agent_id,
-    )
+    try:
+        call_info = await service.initiate_call(
+            to_number=call_request.to_number,
+            from_number=call_request.from_number,
+            webhook_url=webhook_url,
+            agent_id=call_request.agent_id,
+        )
+    except Exception as e:
+        log.exception(
+            "call_initiation_failed",
+            provider=provider,
+            error=str(e),
+            webhook_url=webhook_url,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to initiate call via {provider}: {e}",
+        ) from e
 
     log.info("call_initiated", call_id=call_info.call_id, provider=provider)
 
