@@ -1,5 +1,7 @@
 """Twilio telephony service implementation."""
 
+import asyncio
+
 import structlog
 from twilio.rest import Client
 from twilio.twiml.voice_response import Connect, VoiceResponse
@@ -59,7 +61,8 @@ class TwilioService(TelephonyProvider):
         # Build callback URLs
         status_callback = webhook_url.replace("/answer", "/status")
 
-        call = self.client.calls.create(
+        call = await asyncio.to_thread(
+            self.client.calls.create,
             to=to_number,
             from_=from_number,
             url=webhook_url,
@@ -92,7 +95,7 @@ class TwilioService(TelephonyProvider):
         self.logger.info("hanging_up_call", call_sid=call_id)
 
         try:
-            self.client.calls(call_id).update(status="completed")
+            await asyncio.to_thread(self.client.calls(call_id).update, status="completed")
             return True
         except Exception as e:
             self.logger.exception("hangup_failed", call_sid=call_id, error=str(e))
@@ -106,8 +109,10 @@ class TwilioService(TelephonyProvider):
         """
         self.logger.info("listing_phone_numbers")
 
+        raw_numbers = await asyncio.to_thread(self.client.incoming_phone_numbers.list)
+
         numbers = []
-        for number in self.client.incoming_phone_numbers.list():
+        for number in raw_numbers:
             numbers.append(
                 PhoneNumber(
                     id=number.sid,
@@ -161,7 +166,9 @@ class TwilioService(TelephonyProvider):
             params["contains"] = contains
 
         numbers = []
-        available = self.client.available_phone_numbers(country).local.list(**params)
+        available = await asyncio.to_thread(
+            self.client.available_phone_numbers(country).local.list, **params
+        )
 
         for number in available:
             numbers.append(
@@ -192,7 +199,9 @@ class TwilioService(TelephonyProvider):
         """
         self.logger.info("purchasing_phone_number", phone_number=phone_number)
 
-        number = self.client.incoming_phone_numbers.create(phone_number=phone_number)
+        number = await asyncio.to_thread(
+            self.client.incoming_phone_numbers.create, phone_number=phone_number
+        )
 
         self.logger.info("phone_number_purchased", sid=number.sid)
 
@@ -220,7 +229,7 @@ class TwilioService(TelephonyProvider):
         self.logger.info("releasing_phone_number", sid=phone_number_id)
 
         try:
-            self.client.incoming_phone_numbers(phone_number_id).delete()
+            await asyncio.to_thread(self.client.incoming_phone_numbers(phone_number_id).delete)
             return True
         except Exception as e:
             self.logger.exception("release_failed", sid=phone_number_id, error=str(e))
@@ -257,7 +266,9 @@ class TwilioService(TelephonyProvider):
                 update_params["status_callback"] = status_callback_url
                 update_params["status_callback_method"] = "POST"
 
-            self.client.incoming_phone_numbers(phone_number_id).update(**update_params)
+            await asyncio.to_thread(
+                self.client.incoming_phone_numbers(phone_number_id).update, **update_params
+            )
             return True
         except Exception as e:
             self.logger.exception("webhook_config_failed", sid=phone_number_id, error=str(e))
@@ -325,7 +336,7 @@ class TwilioService(TelephonyProvider):
             CallInfo or None if not found
         """
         try:
-            call = self.client.calls(call_sid).fetch()
+            call = await asyncio.to_thread(self.client.calls(call_sid).fetch)
 
             # Map Twilio status to our CallStatus
             status_map = {

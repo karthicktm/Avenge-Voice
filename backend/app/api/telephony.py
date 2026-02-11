@@ -23,7 +23,6 @@ from sqlalchemy.orm import selectinload
 from app.api.settings import get_user_api_keys
 from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.core.config import settings
-from app.core.limiter import limiter
 from app.core.webhook_security import verify_telnyx_webhook, verify_twilio_webhook
 from app.db.session import get_db
 from app.models.agent import Agent
@@ -481,7 +480,6 @@ async def _configure_webhook_for_provider(
 
 
 @router.post("/phone-numbers/purchase", response_model=PhoneNumberResponse)
-@limiter.limit("5/minute")  # Strict rate limit for phone number purchases (costs money!)
 async def purchase_phone_number(
     purchase_request: PurchasePhoneNumberRequest,
     request: Request,
@@ -614,7 +612,6 @@ async def release_phone_number(
 
 
 @router.post("/calls", response_model=CallResponse)
-@limiter.limit("30/minute")  # Rate limit outbound call initiation (costs money!)
 async def initiate_call(
     call_request: InitiateCallRequest,
     request: Request,
