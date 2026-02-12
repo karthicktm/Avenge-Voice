@@ -143,8 +143,23 @@ async def verify_twilio_webhook(request: Request) -> bool:
         logger.warning("missing_twilio_signature")
         raise HTTPException(status_code=403, detail="Missing Twilio signature")
 
-    # Get URL and params
-    url = str(request.url)
+    # Reconstruct the public URL that Twilio used to sign the request.
+    # Behind a reverse proxy (e.g., Railway), request.url returns the internal
+    # URL which won't match Twilio's signature.
+    if settings.PUBLIC_URL:
+        url = settings.PUBLIC_URL.rstrip("/") + request.url.path
+        if request.url.query:
+            url += f"?{request.url.query}"
+    else:
+        # Fall back to X-Forwarded headers from reverse proxy
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("x-forwarded-host") or request.headers.get(
+            "host", request.url.netloc
+        )
+        url = f"{proto}://{host}{request.url.path}"
+        if request.url.query:
+            url += f"?{request.url.query}"
+
     params = await get_twilio_webhook_params(request)
 
     # Validate signature
