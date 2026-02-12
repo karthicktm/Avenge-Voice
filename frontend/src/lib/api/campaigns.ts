@@ -11,6 +11,8 @@ export interface Campaign {
   agent_name: string | null;
   name: string;
   description: string | null;
+  script: string | null;
+  campaign_greeting: string | null;
   status: CampaignStatus;
   from_phone_number: string;
   scheduled_start: string | null;
@@ -88,6 +90,8 @@ export interface CreateCampaignRequest {
   agent_id: string;
   name: string;
   description?: string;
+  script?: string;
+  campaign_greeting?: string;
   from_phone_number: string;
   scheduled_start?: string;
   scheduled_end?: string;
@@ -107,6 +111,8 @@ export interface CreateCampaignRequest {
 export interface UpdateCampaignRequest {
   name?: string;
   description?: string;
+  script?: string;
+  campaign_greeting?: string;
   from_phone_number?: string;
   scheduled_start?: string;
   scheduled_end?: string;

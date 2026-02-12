@@ -15,10 +15,12 @@ import structlog
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.call_record import CallRecord
+from app.models.campaign import Campaign, CampaignContact
 from app.models.workspace import AgentWorkspace
 from app.services.gpt_realtime import GPTRealtimeSession
 
@@ -65,6 +67,70 @@ async def save_transcript_to_call_record(
         log.info("transcript_saved", record_id=str(call_record.id), length=len(transcript))
     else:
         log.warning("call_record_not_found_for_transcript", call_sid=call_sid)
+
+
+async def _load_campaign_context(
+    campaign_id: str,
+    campaign_contact_id: str,
+    db: AsyncSession,
+    log: Any,
+) -> dict[str, Any] | None:
+    """Load campaign + contact context from the database.
+
+    Args:
+        campaign_id: Campaign UUID string
+        campaign_contact_id: CampaignContact UUID string
+        db: Database session
+        log: Logger instance
+
+    Returns:
+        Campaign context dict or None if not found
+    """
+    try:
+        campaign_uuid = uuid.UUID(campaign_id)
+        cc_uuid = uuid.UUID(campaign_contact_id)
+    except ValueError:
+        log.warning("invalid_campaign_params", campaign_id=campaign_id, cc_id=campaign_contact_id)
+        return None
+
+    # Load campaign
+    result = await db.execute(select(Campaign).where(Campaign.id == campaign_uuid))
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        log.warning("campaign_not_found", campaign_id=campaign_id)
+        return None
+
+    # Load campaign contact with joined contact
+    cc_result = await db.execute(
+        select(CampaignContact)
+        .options(selectinload(CampaignContact.contact))
+        .where(CampaignContact.id == cc_uuid)
+    )
+    campaign_contact = cc_result.scalar_one_or_none()
+    if not campaign_contact:
+        log.warning("campaign_contact_not_found", campaign_contact_id=campaign_contact_id)
+        return None
+
+    contact = campaign_contact.contact
+
+    context: dict[str, Any] = {
+        "campaign_id": campaign_id,
+        "campaign_contact_id": campaign_contact_id,
+        "campaign_name": campaign.name,
+        "campaign_script": campaign.script,
+        "campaign_greeting": campaign.campaign_greeting,
+    }
+
+    if contact:
+        context["contact_name"] = f"{contact.first_name} {contact.last_name or ''}".strip()
+        context["contact_company"] = contact.company_name
+        context["contact_email"] = contact.email
+        context["contact_phone"] = contact.phone_number
+        context["contact_tags"] = contact.tags
+        context["contact_notes"] = contact.notes
+
+    log.info("campaign_context_loaded", campaign_name=campaign.name, has_contact=bool(contact))
+    return context
 
 
 @router.websocket("/twilio/{agent_id}")
@@ -120,8 +186,17 @@ async def twilio_media_stream(
         # Get workspace for the agent
         workspace_id = await get_agent_workspace_id(agent.id, db)
 
+        # Load campaign context if this is a campaign call
+        campaign_id_param = websocket.query_params.get("campaign_id", "")
+        campaign_contact_id_param = websocket.query_params.get("campaign_contact_id", "")
+        campaign_context: dict[str, Any] | None = None
+        if campaign_id_param and campaign_contact_id_param:
+            campaign_context = await _load_campaign_context(
+                campaign_id_param, campaign_contact_id_param, db, log
+            )
+
         # Build agent config
-        agent_config = {
+        agent_config: dict[str, Any] = {
             "agent_id": str(agent.id),
             "system_prompt": agent.system_prompt,
             "enabled_tools": agent.enabled_tools,
@@ -137,6 +212,12 @@ async def twilio_media_stream(
             "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
             "turn_detection_silence_duration_ms": agent.turn_detection_silence_duration_ms,
         }
+
+        # Add campaign context and override greeting if present
+        if campaign_context:
+            agent_config["campaign_context"] = campaign_context
+            if campaign_context.get("campaign_greeting"):
+                agent_config["initial_greeting"] = campaign_context["campaign_greeting"]
 
         # Initialize GPT Realtime session
         async with GPTRealtimeSession(
@@ -309,6 +390,13 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     if result.get("action") == "end_call":
                         log.info("end_call_action_received", reason=result.get("reason"))
                         pending_end_call = True
+                    # Handle disposition tool result
+                    elif result.get("action") == "set_disposition":
+                        await realtime_session.save_campaign_disposition(
+                            disposition=result.get("disposition", ""),
+                            notes=result.get("notes"),
+                        )
+                        log.info("disposition_saved", disposition=result.get("disposition"))
 
                 # Capture transcript events
                 elif (
@@ -436,8 +524,17 @@ async def telnyx_media_stream(
         # Get workspace for the agent
         workspace_id = await get_agent_workspace_id(agent.id, db)
 
+        # Load campaign context if this is a campaign call
+        campaign_id_param = websocket.query_params.get("campaign_id", "")
+        campaign_contact_id_param = websocket.query_params.get("campaign_contact_id", "")
+        campaign_context: dict[str, Any] | None = None
+        if campaign_id_param and campaign_contact_id_param:
+            campaign_context = await _load_campaign_context(
+                campaign_id_param, campaign_contact_id_param, db, log
+            )
+
         # Build agent config
-        agent_config = {
+        agent_config: dict[str, Any] = {
             "agent_id": str(agent.id),
             "system_prompt": agent.system_prompt,
             "enabled_tools": agent.enabled_tools,
@@ -453,6 +550,12 @@ async def telnyx_media_stream(
             "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
             "turn_detection_silence_duration_ms": agent.turn_detection_silence_duration_ms,
         }
+
+        # Add campaign context and override greeting if present
+        if campaign_context:
+            agent_config["campaign_context"] = campaign_context
+            if campaign_context.get("campaign_greeting"):
+                agent_config["initial_greeting"] = campaign_context["campaign_greeting"]
 
         # Initialize GPT Realtime session
         async with GPTRealtimeSession(
@@ -591,6 +694,13 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                     if result.get("action") == "end_call":
                         log.info("end_call_action_received", reason=result.get("reason"))
                         pending_end_call = True
+                    # Handle disposition tool result
+                    elif result.get("action") == "set_disposition":
+                        await realtime_session.save_campaign_disposition(
+                            disposition=result.get("disposition", ""),
+                            notes=result.get("notes"),
+                        )
+                        log.info("disposition_saved", disposition=result.get("disposition"))
 
                 # Capture transcript events
                 elif (

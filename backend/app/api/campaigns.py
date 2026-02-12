@@ -73,6 +73,8 @@ class CampaignResponse(BaseModel):
     agent_name: str | None = None
     name: str
     description: str | None
+    script: str | None = None
+    campaign_greeting: str | None = None
     status: str
     from_phone_number: str
     scheduled_start: datetime | None
@@ -110,6 +112,8 @@ class CampaignCreate(BaseModel):
     agent_id: str
     name: str
     description: str | None = None
+    script: str | None = None
+    campaign_greeting: str | None = None
     from_phone_number: str
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
@@ -205,6 +209,8 @@ class CampaignUpdate(BaseModel):
 
     name: str | None = None
     description: str | None = None
+    script: str | None = None
+    campaign_greeting: str | None = None
     from_phone_number: str | None = None
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
@@ -327,6 +333,8 @@ def campaign_to_response(campaign: Campaign) -> CampaignResponse:
         agent_name=campaign.agent.name if campaign.agent else None,
         name=campaign.name,
         description=campaign.description,
+        script=campaign.script,
+        campaign_greeting=campaign.campaign_greeting,
         status=campaign.status,
         from_phone_number=campaign.from_phone_number,
         scheduled_start=campaign.scheduled_start,
@@ -447,6 +455,8 @@ async def create_campaign(
         agent_id=agent_uuid,
         name=data.name,
         description=data.description,
+        script=data.script,
+        campaign_greeting=data.campaign_greeting,
         status=CampaignStatus.DRAFT.value,
         from_phone_number=data.from_phone_number,
         scheduled_start=data.scheduled_start,

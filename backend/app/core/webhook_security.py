@@ -1,57 +1,15 @@
 """Webhook signature validation for Twilio and Telnyx."""
 
-import hashlib
-import hmac
 from functools import wraps
 from typing import Any
 
 import structlog
 from fastapi import HTTPException, Request
+from twilio.request_validator import RequestValidator
 
 from app.core.config import settings
 
 logger = structlog.get_logger()
-
-
-def validate_twilio_signature(
-    signature: str,
-    url: str,
-    params: dict[str, Any],
-    auth_token: str,
-) -> bool:
-    """Validate Twilio webhook signature.
-
-    Twilio signs webhooks using HMAC-SHA1 with the account auth token.
-    The signature is passed in the X-Twilio-Signature header.
-
-    Args:
-        signature: The X-Twilio-Signature header value
-        url: The full URL of the webhook endpoint
-        params: The POST parameters from the request
-        auth_token: The Twilio auth token
-
-    Returns:
-        True if signature is valid, False otherwise
-    """
-    if not signature or not auth_token:
-        return False
-
-    # Sort params and concatenate to URL
-    sorted_params = sorted(params.items())
-    data = url + "".join(f"{k}{v}" for k, v in sorted_params)
-
-    # Create HMAC-SHA1 signature
-    expected_sig = hmac.new(
-        auth_token.encode("utf-8"),
-        data.encode("utf-8"),
-        hashlib.sha1,
-    ).digest()
-
-    import base64
-
-    expected_sig_b64 = base64.b64encode(expected_sig).decode("utf-8")
-
-    return hmac.compare_digest(signature, expected_sig_b64)
 
 
 def validate_telnyx_signature(
@@ -162,9 +120,10 @@ async def verify_twilio_webhook(request: Request) -> bool:
 
     params = await get_twilio_webhook_params(request)
 
-    # Validate signature
-    if not validate_twilio_signature(signature, url, params, auth_token):
-        logger.warning("invalid_twilio_signature", url=url)
+    # Validate signature using Twilio SDK's RequestValidator
+    validator = RequestValidator(auth_token)
+    if not validator.validate(url, params, signature):
+        logger.warning("invalid_twilio_signature", url=url, params=list(params.keys()))
         raise HTTPException(status_code=403, detail="Invalid Twilio signature")
 
     return True

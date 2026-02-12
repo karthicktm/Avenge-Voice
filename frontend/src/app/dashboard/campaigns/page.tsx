@@ -86,6 +86,8 @@ interface Contact {
 type CampaignFormData = {
   name: string;
   description: string;
+  script: string;
+  campaign_greeting: string;
   agent_id: string;
   from_phone_number: string;
   calls_per_minute: number;
@@ -97,6 +99,8 @@ type CampaignFormData = {
 const emptyFormData: CampaignFormData = {
   name: "",
   description: "",
+  script: "",
+  campaign_greeting: "",
   agent_id: "",
   from_phone_number: "",
   calls_per_minute: 5,
@@ -327,6 +331,8 @@ export default function CampaignsPage() {
       agent_id: formData.agent_id,
       name: formData.name,
       description: formData.description || undefined,
+      script: formData.script || undefined,
+      campaign_greeting: formData.campaign_greeting || undefined,
       from_phone_number: formData.from_phone_number,
       calls_per_minute: formData.calls_per_minute,
       max_concurrent_calls: formData.max_concurrent_calls,
@@ -757,6 +763,36 @@ export default function CampaignsPage() {
                   placeholder="Campaign description..."
                   rows={2}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="script">Campaign Script / Objective</Label>
+                <Textarea
+                  id="script"
+                  value={formData.script}
+                  onChange={(e) => setFormData({ ...formData, script: e.target.value })}
+                  placeholder="e.g., Introduce our new product line, qualify interest, and book a demo..."
+                  rows={3}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The AI agent will follow this script during calls
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="campaignGreeting">Outbound Greeting</Label>
+                <Textarea
+                  id="campaignGreeting"
+                  value={formData.campaign_greeting}
+                  onChange={(e) =>
+                    setFormData({ ...formData, campaign_greeting: e.target.value })
+                  }
+                  placeholder="e.g., Hi {name}, this is Sarah from Acme Corp..."
+                  rows={2}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Overrides the agent&apos;s default greeting for this campaign
+                </p>
               </div>
 
               <div className="space-y-2">

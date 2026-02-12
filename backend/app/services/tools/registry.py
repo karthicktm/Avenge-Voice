@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.tools.calendly_tools import CalendlyTools
 from app.services.tools.call_control_tools import CallControlTools
+from app.services.tools.campaign_tools import CampaignTools
 from app.services.tools.crm_tools import CRMTools
 from app.services.tools.gohighlevel_tools import GoHighLevelTools
 from app.services.tools.rag_tools import RAGTools
@@ -33,6 +34,7 @@ class ToolRegistry:
         agent_id: uuid.UUID | None = None,
         openai_api_key: str | None = None,
         tool_configs: dict[str, dict[str, Any]] | None = None,
+        campaign_context: dict[str, Any] | None = None,
     ) -> None:
         """Initialize tool registry.
 
@@ -46,6 +48,7 @@ class ToolRegistry:
             openai_api_key: OpenAI API key (fallback for RAG embeddings if not in integrations)
             tool_configs: Per-tool configuration from agent settings
                          e.g., {"site_search": {"site_url": "https://example.com"}}
+            campaign_context: Campaign context dict (auto-registers disposition tool when present)
         """
         self.db = db
         self.user_id = user_id
@@ -54,6 +57,7 @@ class ToolRegistry:
         self.agent_id = agent_id
         self.openai_api_key = openai_api_key
         self.tool_configs = tool_configs or {}
+        self.campaign_context = campaign_context
         self.crm_tools = CRMTools(db, user_id, workspace_id=workspace_id)
         self._ghl_tools: GoHighLevelTools | None = None
         self._calendly_tools: CalendlyTools | None = None
@@ -229,7 +233,7 @@ class ToolRegistry:
         self._rag_tools = RAGTools(self.db, self.agent_id, embedding_config=embedding_config)
         return self._rag_tools
 
-    def get_all_tool_definitions(  # noqa: PLR0912
+    def get_all_tool_definitions(  # noqa: PLR0912, PLR0915
         self,
         enabled_tools: list[str],
         enabled_tool_ids: dict[str, list[str]] | None = None,
@@ -326,6 +330,11 @@ class ToolRegistry:
                 logger.info("knowledge_base_tool_registered", tool_count=len(rag_tools))
             else:
                 logger.warning("knowledge_base_tool_not_registered_no_instance")
+
+        # Campaign tools - auto-registered when campaign_context is present
+        if self.campaign_context:
+            campaign_tools = CampaignTools.get_tool_definitions()
+            tools.extend(campaign_tools)
 
         # Site Search tools (requires site_url configured)
         if "site_search" in enabled_tools:
@@ -495,6 +504,14 @@ class ToolRegistry:
                     "error": "Knowledge Base not available. Agent ID required.",
                 }
             return await rag_tools.execute_tool(tool_name, arguments)
+
+        # Campaign tools
+        campaign_tool_names = {
+            "set_call_disposition",
+        }
+
+        if tool_name in campaign_tool_names:
+            return await CampaignTools.execute_tool(tool_name, arguments)
 
         # Unknown tool
         return {"success": False, "error": f"Unknown tool: {tool_name}"}

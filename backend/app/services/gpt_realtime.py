@@ -245,13 +245,14 @@ BEST_PRACTICES: dict[str, str] = {
 }
 
 
-def build_instructions_with_language(
+def build_instructions_with_language(  # noqa: PLR0912, PLR0915
     system_prompt: str,
     language: str,
     enabled_tools: list[str] | None = None,
     timezone: str | None = None,
     knowledge_base_info: dict[str, Any] | None = None,
     use_best_practices: bool = True,
+    campaign_context: dict[str, Any] | None = None,
 ) -> str:
     """Build comprehensive voice agent instructions.
 
@@ -340,6 +341,38 @@ def build_instructions_with_language(
         if practices:
             best_practices_section = f"\n[BEST PRACTICES]\n{practices}\n"
 
+    # Build campaign context section if this is an outbound campaign call
+    campaign_section = ""
+    if campaign_context:
+        campaign_section = "\n[CAMPAIGN CONTEXT]\nThis is an OUTBOUND campaign call.\n"
+
+        script = campaign_context.get("campaign_script")
+        if script:
+            campaign_section += f"Campaign objective / script:\n{script}\n"
+
+        contact_name = campaign_context.get("contact_name")
+        if contact_name:
+            campaign_section += f"\nContact name: {contact_name}\n"
+            campaign_section += "Address the contact by name.\n"
+
+        contact_company = campaign_context.get("contact_company")
+        if contact_company:
+            campaign_section += f"Company: {contact_company}\n"
+
+        contact_email = campaign_context.get("contact_email")
+        if contact_email:
+            campaign_section += f"Email: {contact_email}\n"
+
+        contact_tags = campaign_context.get("contact_tags")
+        if contact_tags:
+            campaign_section += f"Tags: {contact_tags}\n"
+
+        contact_notes = campaign_context.get("contact_notes")
+        if contact_notes:
+            campaign_section += f"Notes: {contact_notes}\n"
+
+        campaign_section += "\nAfter the call, use set_call_disposition to record the outcome.\n"
+
     # Build the complete voice agent instructions
     instructions = f"""[CONTEXT]
 Language: {language_name}
@@ -352,7 +385,7 @@ Current: {current_datetime}
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses concise - this is voice, not text
 - Summarize tool results naturally
-{info_retrieval_section}{best_practices_section}
+{info_retrieval_section}{best_practices_section}{campaign_section}
 [YOUR ROLE]
 {system_prompt}"""
 
@@ -461,6 +494,7 @@ class GPTRealtimeSession:
 
         # Initialize tool registry with enabled tools and workspace context
         # Pass OpenAI API key for RAG embeddings fallback
+        campaign_context = self.agent_config.get("campaign_context")
         self.tool_registry = ToolRegistry(
             self.db,
             self.user_id,
@@ -469,6 +503,7 @@ class GPTRealtimeSession:
             agent_id=agent_id,
             openai_api_key=api_key,
             tool_configs=tool_configs,
+            campaign_context=campaign_context,
         )
 
         # Connect to OpenAI Realtime API
@@ -560,6 +595,7 @@ class GPTRealtimeSession:
         # Default to marin for natural conversational tone
         voice = self.agent_config.get("voice", "marin")
         temperature = self.agent_config.get("temperature", 0.6)
+        campaign_context = self.agent_config.get("campaign_context")
         instructions = build_instructions_with_language(
             system_prompt,
             language,
@@ -567,6 +603,7 @@ class GPTRealtimeSession:
             timezone=workspace_timezone,
             knowledge_base_info=knowledge_base_info,
             use_best_practices=use_best_practices,
+            campaign_context=campaign_context,
         )
 
         # Use agent's VAD settings (from DB) instead of hardcoded values
@@ -891,6 +928,49 @@ class GPTRealtimeSession:
             List of transcript entry dictionaries
         """
         return [entry.to_dict() for entry in self._transcript_entries]
+
+    async def save_campaign_disposition(self, disposition: str, notes: str | None = None) -> None:
+        """Save call disposition to the campaign contact record.
+
+        Args:
+            disposition: Disposition code (e.g., 'interested', 'not_interested')
+            notes: Optional notes about the disposition
+        """
+        campaign_context = self.agent_config.get("campaign_context")
+        if not campaign_context:
+            self.logger.warning("save_disposition_no_campaign_context")
+            return
+
+        campaign_contact_id = campaign_context.get("campaign_contact_id")
+        if not campaign_contact_id:
+            self.logger.warning("save_disposition_no_campaign_contact_id")
+            return
+
+        try:
+            from app.models.campaign import CampaignContact
+
+            cc_uuid = uuid.UUID(campaign_contact_id)
+            result = await self.db.execute(
+                select(CampaignContact).where(CampaignContact.id == cc_uuid)
+            )
+            campaign_contact = result.scalar_one_or_none()
+
+            if campaign_contact:
+                campaign_contact.disposition = disposition
+                campaign_contact.disposition_notes = notes
+                await self.db.commit()
+                self.logger.info(
+                    "campaign_disposition_saved",
+                    campaign_contact_id=campaign_contact_id,
+                    disposition=disposition,
+                )
+            else:
+                self.logger.warning(
+                    "campaign_contact_not_found_for_disposition",
+                    campaign_contact_id=campaign_contact_id,
+                )
+        except Exception as e:
+            self.logger.exception("save_disposition_error", error=str(e))
 
     async def cleanup(self) -> None:
         """Cleanup resources."""

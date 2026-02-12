@@ -928,6 +928,8 @@ async def twilio_status_callback(
 async def twilio_answer_webhook(
     request: Request,
     agent_id: str = Query(default=""),
+    campaign_id: str = Query(default=""),
+    campaign_contact_id: str = Query(default=""),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Handle Twilio outbound call connection.
@@ -938,13 +940,20 @@ async def twilio_answer_webhook(
     # Validate Twilio signature
     await verify_twilio_webhook(request)
 
-    log = logger.bind(webhook="twilio_answer", agent_id=agent_id)
+    log = logger.bind(
+        webhook="twilio_answer",
+        agent_id=agent_id,
+        campaign_id=campaign_id or None,
+        campaign_contact_id=campaign_contact_id or None,
+    )
     log.info("twilio_outbound_answered")
 
-    # Build WebSocket URL
+    # Build WebSocket URL with campaign params
     base_url = str(request.base_url).rstrip("/")
     ws_url = base_url.replace("http://", "wss://").replace("https://", "wss://")
     stream_url = f"{ws_url}/ws/telephony/twilio/{agent_id}"
+    if campaign_id and campaign_contact_id:
+        stream_url += f"?campaign_id={campaign_id}&campaign_contact_id={campaign_contact_id}"
 
     twilio_service = TwilioService("", "")
     twiml = twilio_service.generate_answer_response(stream_url, agent_id)
@@ -1039,6 +1048,8 @@ async def telnyx_voice_webhook(
 async def telnyx_answer_webhook(
     request: Request,
     agent_id: str = Query(default=""),
+    campaign_id: str = Query(default=""),
+    campaign_contact_id: str = Query(default=""),
 ) -> Response:
     """Handle Telnyx outbound call connection.
 
@@ -1048,13 +1059,20 @@ async def telnyx_answer_webhook(
     # Validate Telnyx signature
     await verify_telnyx_webhook(request)
 
-    log = logger.bind(webhook="telnyx_answer", agent_id=agent_id)
+    log = logger.bind(
+        webhook="telnyx_answer",
+        agent_id=agent_id,
+        campaign_id=campaign_id or None,
+        campaign_contact_id=campaign_contact_id or None,
+    )
     log.info("telnyx_outbound_answered")
 
-    # Build WebSocket URL
+    # Build WebSocket URL with campaign params
     base_url = str(request.base_url).rstrip("/")
     ws_url = base_url.replace("http://", "wss://").replace("https://", "wss://")
     stream_url = f"{ws_url}/ws/telephony/telnyx/{agent_id}"
+    if campaign_id and campaign_contact_id:
+        stream_url += f"?campaign_id={campaign_id}&campaign_contact_id={campaign_contact_id}"
 
     telnyx_service = TelnyxService("")
     texml = telnyx_service.generate_answer_response(stream_url, agent_id)

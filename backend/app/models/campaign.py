@@ -107,6 +107,12 @@ class Campaign(Base):
     description: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Campaign description"
     )
+    script: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Campaign objective / talking points for the AI agent"
+    )
+    campaign_greeting: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Outbound greeting (overrides agent default greeting)"
+    )
     status: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
