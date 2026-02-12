@@ -431,9 +431,10 @@ async def create_campaign(
     user_uuid = user_id_to_uuid(current_user.id)
 
     # Verify agent exists and belongs to user
+    # Note: Agent.user_id is an integer, not UUID
     agent_uuid = uuid.UUID(data.agent_id)
     result = await db.execute(
-        select(Agent).where(Agent.id == agent_uuid, Agent.user_id == user_uuid)
+        select(Agent).where(Agent.id == agent_uuid, Agent.user_id == current_user.id)
     )
     agent = result.scalar_one_or_none()
     if not agent:
@@ -468,7 +469,7 @@ async def create_campaign(
         result = await db.execute(
             select(Contact).where(
                 Contact.id.in_(data.contact_ids),
-                Contact.user_id == user_uuid,  # Ensure user owns contacts
+                Contact.user_id == current_user.id,  # Contact.user_id is int
             )
         )
         contacts = result.scalars().all()
