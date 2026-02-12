@@ -279,8 +279,8 @@ class RAGService:
         Returns:
             List of relevant chunks with similarity scores
         """
-        self.logger.info(
-            "knowledge_base_search",
+        self.logger.warning(
+            "knowledge_base_search_started",
             agent_id=str(agent_id),
             query=query,
             top_k=top_k,
@@ -328,10 +328,24 @@ class RAGService:
             query_embedding=query_embedding,
             top_k=top_k,
         )
-        keyword_results = await self.vector_provider.keyword_search(
-            agent_id=agent_id,
+
+        # Keyword search with graceful fallback — if it fails, vector-only results are used
+        keyword_results: list[dict[str, Any]] = []
+        try:
+            keyword_results = await self.vector_provider.keyword_search(
+                agent_id=agent_id,
+                query=query,
+                top_k=top_k,
+            )
+        except Exception:
+            self.logger.exception("keyword_search_fallback", agent_id=str(agent_id), query=query)
+
+        self.logger.warning(
+            "hybrid_search_results",
+            agent_id=str(agent_id),
             query=query,
-            top_k=top_k,
+            vector_count=len(vector_results),
+            keyword_count=len(keyword_results),
         )
 
         # Fuse results using Reciprocal Rank Fusion (RRF)

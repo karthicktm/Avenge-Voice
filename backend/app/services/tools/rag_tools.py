@@ -87,7 +87,7 @@ class RAGTools:
             # Limit top_k
             top_k = min(top_k, 5)
 
-            self.logger.info(
+            self.logger.warning(
                 "knowledge_base_search_started",
                 query=query,
                 top_k=top_k,
@@ -100,6 +100,11 @@ class RAGTools:
             )
 
             if not results:
+                self.logger.warning(
+                    "knowledge_base_search_empty",
+                    query=query,
+                    agent_id=str(self.agent_id),
+                )
                 return {
                     "success": True,
                     "found": False,
@@ -117,7 +122,7 @@ class RAGTools:
                 for r in results
             ]
 
-            self.logger.info(
+            self.logger.warning(
                 "knowledge_base_search_completed",
                 query=query,
                 result_count=len(formatted_results),
