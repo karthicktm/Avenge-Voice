@@ -1,6 +1,6 @@
 """Add script and campaign_greeting to campaigns.
 
-Revision ID: 031_add_script_and_greeting_to_campaigns
+Revision ID: 031_campaign_script_greeting
 Revises: 030_add_fulltext_search
 Create Date: 2026-02-12
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "031_add_script_and_greeting_to_campaigns"
+revision: str = "031_campaign_script_greeting"
 down_revision: str = "030_add_fulltext_search"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
