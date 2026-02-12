@@ -224,6 +224,28 @@ class PgVectorProvider:
             )
             raise
 
+    @staticmethod
+    def _build_or_tsquery(query: str) -> str:
+        """Build an OR-based tsquery string from a raw query.
+
+        Splits on whitespace, keeps only alphanumeric tokens, and joins
+        with ' | ' so any individual term can match. This is critical
+        because voice agents often rephrase queries (e.g. "produkt 4802")
+        and AND semantics would require every word to appear in the chunk.
+
+        Args:
+            query: Raw search query text
+
+        Returns:
+            OR-joined tsquery string (e.g. "produkt | 4802")
+        """
+        import re
+
+        tokens = re.findall(r"\w+", query, re.UNICODE)
+        if not tokens:
+            return query
+        return " | ".join(tokens)
+
     async def keyword_search(
         self,
         agent_id: uuid.UUID,
@@ -234,6 +256,7 @@ class PgVectorProvider:
 
         Uses 'simple' dictionary for language-agnostic matching that works
         well for product codes, SKUs, and multilingual content.
+        Terms are joined with OR so any word in the query can match.
 
         Args:
             agent_id: Agent UUID to scope the search
@@ -244,6 +267,8 @@ class PgVectorProvider:
             List of matching chunks with ts_rank scores
         """
         try:
+            or_query = self._build_or_tsquery(query)
+
             sql = text(
                 """
                 SELECT
@@ -253,12 +278,12 @@ class PgVectorProvider:
                     dc.content_text,
                     dc.source_language,
                     d.filename,
-                    ts_rank(dc.content_tsv, plainto_tsquery('simple', :query)) as similarity
+                    ts_rank(dc.content_tsv, to_tsquery('simple', :query)) as similarity
                 FROM document_chunks dc
                 JOIN documents d ON dc.document_id = d.id
                 WHERE d.agent_id = :agent_id
                   AND d.status = 'ready'
-                  AND dc.content_tsv @@ plainto_tsquery('simple', :query)
+                  AND dc.content_tsv @@ to_tsquery('simple', :query)
                 ORDER BY similarity DESC
                 LIMIT :top_k
                 """
@@ -266,7 +291,7 @@ class PgVectorProvider:
 
             result = await self.db.execute(
                 sql,
-                {"agent_id": agent_id, "query": query, "top_k": top_k},
+                {"agent_id": agent_id, "query": or_query, "top_k": top_k},
             )
             rows = result.fetchall()
 
