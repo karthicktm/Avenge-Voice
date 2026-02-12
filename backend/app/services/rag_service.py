@@ -1,5 +1,6 @@
 """RAG (Retrieval-Augmented Generation) service for knowledge base functionality."""
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -321,14 +322,77 @@ class RAGService:
         # Generate query embedding
         query_embedding = await provider.generate_embedding(query)
 
-        # Perform similarity search
-        results = await self.vector_provider.similarity_search(
-            agent_id=agent_id,
-            query_embedding=query_embedding,
-            top_k=top_k,
+        # Run vector search and keyword search concurrently
+        vector_results, keyword_results = await asyncio.gather(
+            self.vector_provider.similarity_search(
+                agent_id=agent_id,
+                query_embedding=query_embedding,
+                top_k=top_k,
+            ),
+            self.vector_provider.keyword_search(
+                agent_id=agent_id,
+                query=query,
+                top_k=top_k,
+            ),
         )
 
+        # Fuse results using Reciprocal Rank Fusion (RRF)
+        results = self._fuse_results(vector_results, keyword_results, top_k)
+
         return results
+
+    @staticmethod
+    def _fuse_results(
+        vector_results: list[dict[str, Any]],
+        keyword_results: list[dict[str, Any]],
+        top_k: int,
+        k: int = 60,
+    ) -> list[dict[str, Any]]:
+        """Fuse vector and keyword search results using Reciprocal Rank Fusion.
+
+        RRF score = sum(1 / (k + rank)) across result lists.
+        Falls back gracefully when one list is empty.
+
+        Args:
+            vector_results: Results from vector similarity search
+            keyword_results: Results from keyword full-text search
+            top_k: Number of results to return
+            k: RRF constant (default 60)
+
+        Returns:
+            Fused and deduplicated results sorted by RRF score
+        """
+        # If only one source has results, return it directly
+        if not keyword_results:
+            return vector_results[:top_k]
+        if not vector_results:
+            return keyword_results[:top_k]
+
+        # Build score map keyed by chunk_id
+        scores: dict[str, float] = {}
+        chunks: dict[str, dict[str, Any]] = {}
+
+        for rank, result in enumerate(vector_results):
+            cid = result["chunk_id"]
+            scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank + 1)
+            chunks[cid] = result
+
+        for rank, result in enumerate(keyword_results):
+            cid = result["chunk_id"]
+            scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank + 1)
+            if cid not in chunks:
+                chunks[cid] = result
+
+        # Sort by fused score descending
+        ranked_ids = sorted(scores, key=lambda cid: scores[cid], reverse=True)
+
+        # Return top_k results with fused score
+        fused: list[dict[str, Any]] = []
+        for cid in ranked_ids[:top_k]:
+            entry = {**chunks[cid], "similarity": scores[cid]}
+            fused.append(entry)
+
+        return fused
 
     async def delete_document(self, document_id: uuid.UUID) -> bool:
         """Delete a document and its chunks.

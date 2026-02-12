@@ -2,10 +2,11 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -149,6 +150,9 @@ class DocumentChunk(Base):
     embedding_large: Mapped[list[float] | None] = mapped_column(
         Vector(3072), nullable=True, comment="Embedding vector for text-embedding-3-large"
     )
+
+    # Full-text search vector (auto-populated by DB trigger)
+    content_tsv: Mapped[Any | None] = mapped_column(TSVECTOR, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

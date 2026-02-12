@@ -224,6 +224,81 @@ class PgVectorProvider:
             )
             raise
 
+    async def keyword_search(
+        self,
+        agent_id: uuid.UUID,
+        query: str,
+        top_k: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Search for chunks using PostgreSQL full-text keyword search.
+
+        Uses 'simple' dictionary for language-agnostic matching that works
+        well for product codes, SKUs, and multilingual content.
+
+        Args:
+            agent_id: Agent UUID to scope the search
+            query: Raw search query text
+            top_k: Number of results to return
+
+        Returns:
+            List of matching chunks with ts_rank scores
+        """
+        try:
+            sql = text(
+                """
+                SELECT
+                    dc.id,
+                    dc.document_id,
+                    dc.chunk_index,
+                    dc.content_text,
+                    dc.source_language,
+                    d.filename,
+                    ts_rank(dc.content_tsv, plainto_tsquery('simple', :query)) as similarity
+                FROM document_chunks dc
+                JOIN documents d ON dc.document_id = d.id
+                WHERE d.agent_id = :agent_id
+                  AND d.status = 'ready'
+                  AND dc.content_tsv @@ plainto_tsquery('simple', :query)
+                ORDER BY similarity DESC
+                LIMIT :top_k
+                """
+            )
+
+            result = await self.db.execute(
+                sql,
+                {"agent_id": agent_id, "query": query, "top_k": top_k},
+            )
+            rows = result.fetchall()
+
+            results = [
+                {
+                    "chunk_id": str(row.id),
+                    "document_id": str(row.document_id),
+                    "chunk_index": row.chunk_index,
+                    "content": row.content_text,
+                    "source_language": row.source_language,
+                    "filename": row.filename,
+                    "similarity": float(row.similarity),
+                }
+                for row in rows
+            ]
+
+            self.logger.info(
+                "keyword_search_completed",
+                agent_id=str(agent_id),
+                query=query,
+                top_k=top_k,
+                results_found=len(results),
+            )
+            return results
+        except Exception:
+            self.logger.exception(
+                "keyword_search_failed",
+                agent_id=str(agent_id),
+                top_k=top_k,
+            )
+            raise
+
     async def delete_document_chunks(self, document_id: uuid.UUID) -> int:
         """Delete all chunks for a document.
 
