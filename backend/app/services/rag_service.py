@@ -267,6 +267,10 @@ class RAGService:
     ) -> list[dict[str, Any]]:
         """Search knowledge base for relevant content.
 
+        Automatically matches the embedding model to the document's indexed
+        dimensions to prevent mismatches (e.g. documents indexed with
+        text-embedding-3-large but search configured with text-embedding-3-small).
+
         Args:
             agent_id: Agent UUID
             query: Search query
@@ -282,8 +286,40 @@ class RAGService:
             top_k=top_k,
         )
 
+        # Check what embedding dimensions the agent's documents actually use
+        doc_result = await self.db.execute(
+            select(Document.embedding_dimensions)
+            .where(Document.agent_id == agent_id, Document.status == "ready")
+            .limit(1)
+        )
+        doc_row = doc_result.scalar_one_or_none()
+
+        provider = self.embedding_provider
+        if doc_row and doc_row != provider.dimensions:
+            # Document was indexed with a different model than currently configured.
+            # Create a provider matching the document's dimensions to avoid mismatch.
+            from app.services.providers.embedding_provider import MODEL_DIMENSIONS
+
+            matching_model = next(
+                (m for m, d in MODEL_DIMENSIONS.items() if d == doc_row),
+                None,
+            )
+            if matching_model:
+                self.logger.warning(
+                    "embedding_dimension_mismatch_corrected",
+                    configured_model=provider.model,
+                    configured_dims=provider.dimensions,
+                    document_dims=doc_row,
+                    corrected_model=matching_model,
+                )
+                provider = EmbeddingProvider(
+                    api_key=provider.api_key,
+                    model=matching_model,
+                    provider=provider.provider,
+                )
+
         # Generate query embedding
-        query_embedding = await self.embedding_provider.generate_embedding(query)
+        query_embedding = await provider.generate_embedding(query)
 
         # Perform similarity search
         results = await self.vector_provider.similarity_search(
