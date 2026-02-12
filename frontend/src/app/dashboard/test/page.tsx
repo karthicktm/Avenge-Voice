@@ -713,7 +713,12 @@ export default function TestAgentPage() {
         console.log("[WebRTC] Configuring session with", tools.length, "tools");
 
         // Send session update with agent config and tools
-        const instructions = editedSystemPrompt || "You are a helpful voice assistant.";
+        // Use compiled instructions from backend (includes KB context, language best practices)
+        // Falls back to raw edited prompt only if backend instructions unavailable
+        const instructions =
+          tokenData.agent?.instructions ??
+          editedSystemPrompt ??
+          "You are a helpful voice assistant.";
         const sessionUpdate = {
           type: "session.update",
           session: {
