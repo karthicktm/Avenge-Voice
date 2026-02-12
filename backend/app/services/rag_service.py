@@ -1,6 +1,5 @@
 """RAG (Retrieval-Augmented Generation) service for knowledge base functionality."""
 
-import asyncio
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -322,18 +321,17 @@ class RAGService:
         # Generate query embedding
         query_embedding = await provider.generate_embedding(query)
 
-        # Run vector search and keyword search concurrently
-        vector_results, keyword_results = await asyncio.gather(
-            self.vector_provider.similarity_search(
-                agent_id=agent_id,
-                query_embedding=query_embedding,
-                top_k=top_k,
-            ),
-            self.vector_provider.keyword_search(
-                agent_id=agent_id,
-                query=query,
-                top_k=top_k,
-            ),
+        # Run vector search and keyword search sequentially
+        # (AsyncSession cannot safely run concurrent queries on the same connection)
+        vector_results = await self.vector_provider.similarity_search(
+            agent_id=agent_id,
+            query_embedding=query_embedding,
+            top_k=top_k,
+        )
+        keyword_results = await self.vector_provider.keyword_search(
+            agent_id=agent_id,
+            query=query,
+            top_k=top_k,
         )
 
         # Fuse results using Reciprocal Rank Fusion (RRF)
