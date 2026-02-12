@@ -350,8 +350,15 @@ async def embed_websocket(
         agent_config = {
             "system_prompt": agent.system_prompt,
             "enabled_tools": agent.enabled_tools,
+            "enabled_tool_ids": agent.enabled_tool_ids,
+            "tool_configs": agent.tool_configs,
             "language": agent.language,
             "voice": agent.voice or "shimmer",
+            "temperature": agent.temperature,
+            "turn_detection_mode": agent.turn_detection_mode,
+            "turn_detection_threshold": agent.turn_detection_threshold,
+            "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
+            "turn_detection_silence_duration_ms": agent.turn_detection_silence_duration_ms,
         }
 
         if agent.pricing_tier in ("premium", "premium-mini"):

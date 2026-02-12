@@ -502,7 +502,7 @@ class GPTRealtimeSession:
             )
             raise
 
-    async def _configure_session(self) -> None:
+    async def _configure_session(self) -> None:  # noqa: PLR0915
         """Configure Realtime API session with agent settings and internal tools."""
         if not self.connection or not self.tool_registry:
             self.logger.warning(
@@ -569,7 +569,29 @@ class GPTRealtimeSession:
             use_best_practices=use_best_practices,
         )
 
-        session_config = {
+        # Use agent's VAD settings (from DB) instead of hardcoded values
+        vad_threshold = self.agent_config.get("turn_detection_threshold", 0.5)
+        vad_prefix_padding_ms = self.agent_config.get("turn_detection_prefix_padding_ms", 300)
+        vad_silence_duration_ms = self.agent_config.get("turn_detection_silence_duration_ms", 500)
+
+        # Build turn detection config based on agent mode
+        turn_detection_mode = self.agent_config.get("turn_detection_mode", "normal")
+        if turn_detection_mode == "disabled":
+            turn_detection: dict[str, Any] | None = None
+        elif turn_detection_mode == "semantic":
+            turn_detection = {
+                "type": "semantic_vad",
+                "eagerness": "medium",
+            }
+        else:
+            turn_detection = {
+                "type": "server_vad",
+                "threshold": vad_threshold,
+                "prefix_padding_ms": vad_prefix_padding_ms,
+                "silence_duration_ms": vad_silence_duration_ms,
+            }
+
+        session_config: dict[str, Any] = {
             "modalities": ["text", "audio"],
             "instructions": instructions,
             "voice": voice,
@@ -579,15 +601,11 @@ class GPTRealtimeSession:
             "input_audio_format": "g711_ulaw",
             "output_audio_format": "g711_ulaw",
             "input_audio_transcription": {"model": "whisper-1"},
-            "turn_detection": {
-                "type": "server_vad",
-                "threshold": 0.5,
-                "prefix_padding_ms": 200,
-                "silence_duration_ms": 200,
-            },
             "tools": tools,
             "tool_choice": "auto",
         }
+        if turn_detection is not None:
+            session_config["turn_detection"] = turn_detection
 
         self.logger.info("configuring_session", tool_count=len(tools), enabled_tools=enabled_tools)
 

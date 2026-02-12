@@ -214,7 +214,12 @@ async def realtime_websocket(
             "tool_configs": agent.tool_configs,
             "language": agent.language,
             "voice": agent.voice or "shimmer",
+            "temperature": agent.temperature,
             "agent_id": str(agent.id),
+            "turn_detection_mode": agent.turn_detection_mode,
+            "turn_detection_threshold": agent.turn_detection_threshold,
+            "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
+            "turn_detection_silence_duration_ms": agent.turn_detection_silence_duration_ms,
         }
 
         # Initialize GPT Realtime session with internal tools

@@ -122,12 +122,20 @@ async def twilio_media_stream(
 
         # Build agent config
         agent_config = {
+            "agent_id": str(agent.id),
             "system_prompt": agent.system_prompt,
             "enabled_tools": agent.enabled_tools,
+            "enabled_tool_ids": agent.enabled_tool_ids,
+            "tool_configs": agent.tool_configs,
             "language": agent.language,
             "voice": agent.voice or "shimmer",
+            "temperature": agent.temperature,
             "enable_transcript": agent.enable_transcript,
             "initial_greeting": agent.initial_greeting,
+            "turn_detection_mode": agent.turn_detection_mode,
+            "turn_detection_threshold": agent.turn_detection_threshold,
+            "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
+            "turn_detection_silence_duration_ms": agent.turn_detection_silence_duration_ms,
         }
 
         # Initialize GPT Realtime session
@@ -430,12 +438,20 @@ async def telnyx_media_stream(
 
         # Build agent config
         agent_config = {
+            "agent_id": str(agent.id),
             "system_prompt": agent.system_prompt,
             "enabled_tools": agent.enabled_tools,
+            "enabled_tool_ids": agent.enabled_tool_ids,
+            "tool_configs": agent.tool_configs,
             "language": agent.language,
             "voice": agent.voice or "shimmer",
+            "temperature": agent.temperature,
             "enable_transcript": agent.enable_transcript,
             "initial_greeting": agent.initial_greeting,
+            "turn_detection_mode": agent.turn_detection_mode,
+            "turn_detection_threshold": agent.turn_detection_threshold,
+            "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
+            "turn_detection_silence_duration_ms": agent.turn_detection_silence_duration_ms,
         }
 
         # Initialize GPT Realtime session
