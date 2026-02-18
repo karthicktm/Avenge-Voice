@@ -29,6 +29,7 @@ from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.call_record import CallDirection, CallRecord, CallStatus
 from app.models.campaign import Campaign, CampaignContact, CampaignContactStatus
+from app.models.user_settings import UserSettings
 from app.models.workspace import AgentWorkspace
 from app.services.telephony.telnyx_service import TelnyxService
 from app.services.telephony.twilio_service import TwilioService
@@ -677,7 +678,7 @@ async def initiate_call(
 
     # Build webhook URL using PUBLIC_URL (required for external providers like Twilio)
     base_url = settings.PUBLIC_URL or str(request.base_url).rstrip("/")
-    webhook_url = f"{base_url}/webhooks/{provider}/answer?agent_id={call_request.agent_id}"
+    webhook_url = f"{base_url}/webhooks/{provider}/answer?agent_id={call_request.agent_id}&workspace_id={workspace_id}"
 
     try:
         call_info = await service.initiate_call(
@@ -860,6 +861,7 @@ async def twilio_voice_webhook(
 async def twilio_status_callback(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    workspace_id: str = Query(default=""),
     call_sid: str = Form(default="", alias="CallSid"),
     call_status: str = Form(default="", alias="CallStatus"),
     call_duration: str = Form(default="0", alias="CallDuration"),
@@ -870,8 +872,22 @@ async def twilio_status_callback(
 
     Called when call status changes (initiated, ringing, answered, completed).
     """
-    # Validate Twilio signature
-    await verify_twilio_webhook(request)
+    # Look up workspace-specific Twilio auth token for signature validation
+    twilio_auth_token: str | None = None
+    if workspace_id:
+        try:
+            workspace_uuid = uuid.UUID(workspace_id)
+            ws_settings_result = await db.execute(
+                select(UserSettings).where(UserSettings.workspace_id == workspace_uuid)
+            )
+            ws_settings = ws_settings_result.scalar_one_or_none()
+            if ws_settings:
+                twilio_auth_token = ws_settings.twilio_auth_token
+        except Exception:
+            logger.warning("twilio_status_workspace_lookup_failed", workspace_id=workspace_id)
+
+    # Validate Twilio signature using workspace-specific token
+    await verify_twilio_webhook(request, auth_token=twilio_auth_token)
 
     log = logger.bind(
         webhook="twilio_status",
@@ -928,6 +944,7 @@ async def twilio_status_callback(
 async def twilio_answer_webhook(
     request: Request,
     agent_id: str = Query(default=""),
+    workspace_id: str = Query(default=""),
     campaign_id: str = Query(default=""),
     campaign_contact_id: str = Query(default=""),
     db: AsyncSession = Depends(get_db),
@@ -937,8 +954,22 @@ async def twilio_answer_webhook(
     Called when an outbound call is answered by the recipient.
     Returns TwiML to connect to our WebSocket.
     """
-    # Validate Twilio signature
-    await verify_twilio_webhook(request)
+    # Look up workspace-specific Twilio auth token for signature validation
+    twilio_auth_token: str | None = None
+    if workspace_id:
+        try:
+            workspace_uuid = uuid.UUID(workspace_id)
+            ws_settings_result = await db.execute(
+                select(UserSettings).where(UserSettings.workspace_id == workspace_uuid)
+            )
+            ws_settings = ws_settings_result.scalar_one_or_none()
+            if ws_settings:
+                twilio_auth_token = ws_settings.twilio_auth_token
+        except Exception:
+            logger.warning("twilio_answer_workspace_lookup_failed", workspace_id=workspace_id)
+
+    # Validate Twilio signature using workspace-specific token
+    await verify_twilio_webhook(request, auth_token=twilio_auth_token)
 
     log = logger.bind(
         webhook="twilio_answer",

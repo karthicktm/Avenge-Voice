@@ -220,9 +220,13 @@ export async function initiateCall(
 /**
  * Hang up an active call
  */
-export async function hangupCall(callId: string, provider: Provider): Promise<void> {
+export async function hangupCall(
+  callId: string,
+  provider: Provider,
+  workspaceId: string
+): Promise<void> {
   const response = await fetchWithTimeout(
-    `${API_BASE}/api/v1/telephony/calls/${callId}/hangup?provider=${provider}`,
+    `${API_BASE}/api/v1/telephony/calls/${callId}/hangup?provider=${provider}&workspace_id=${workspaceId}`,
     {
       method: "POST",
     }

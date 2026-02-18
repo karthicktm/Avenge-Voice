@@ -784,9 +784,7 @@ export default function CampaignsPage() {
                 <Textarea
                   id="campaignGreeting"
                   value={formData.campaign_greeting}
-                  onChange={(e) =>
-                    setFormData({ ...formData, campaign_greeting: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, campaign_greeting: e.target.value })}
                   placeholder="e.g., Hi {name}, this is Sarah from Acme Corp..."
                   rows={2}
                 />

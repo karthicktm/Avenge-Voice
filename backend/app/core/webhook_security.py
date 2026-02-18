@@ -71,11 +71,14 @@ async def get_twilio_webhook_params(request: Request) -> dict[str, str]:
     return {key: str(value) for key, value in form_data.items()}
 
 
-async def verify_twilio_webhook(request: Request) -> bool:
+async def verify_twilio_webhook(
+    request: Request, auth_token: str | None = None
+) -> bool:
     """Verify Twilio webhook signature from request.
 
     Args:
         request: FastAPI request object
+        auth_token: Workspace-specific Twilio auth token (overrides global settings)
 
     Returns:
         True if signature is valid or validation is skipped in debug mode
@@ -83,9 +86,9 @@ async def verify_twilio_webhook(request: Request) -> bool:
     Raises:
         HTTPException: If signature validation fails in production
     """
-    # Get auth token from settings
-    auth_token = settings.TWILIO_AUTH_TOKEN
-    if not auth_token:
+    # Use workspace-specific token if provided, otherwise fall back to global settings
+    token = auth_token or settings.TWILIO_AUTH_TOKEN
+    if not token:
         if settings.DEBUG:
             logger.warning("twilio_auth_token_not_configured_debug_mode")
             return True
@@ -121,7 +124,7 @@ async def verify_twilio_webhook(request: Request) -> bool:
     params = await get_twilio_webhook_params(request)
 
     # Validate signature using Twilio SDK's RequestValidator
-    validator = RequestValidator(auth_token)
+    validator = RequestValidator(token)
     if not validator.validate(url, params, signature):
         logger.warning("invalid_twilio_signature", url=url, params=list(params.keys()))
         raise HTTPException(status_code=403, detail="Invalid Twilio signature")
