@@ -366,6 +366,7 @@ class CampaignWorker:
         webhook_url = (
             f"{self.base_url}/webhooks/{provider}/answer"
             f"?agent_id={campaign.agent_id}"
+            f"&workspace_id={campaign.workspace_id}"
             f"&campaign_id={campaign.id}"
             f"&campaign_contact_id={campaign_contact.id}"
         )
