@@ -459,6 +459,16 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
     enabled: !!selectedWorkspaces[0] && !!agent && !isDeleting,
   });
 
+  // Migrate legacy agents: phone_number_id used to store Twilio SID (PNxxx), now stores
+  // the actual phone number string (+1...). When phone numbers load, detect and fix SIDs.
+  useEffect(() => {
+    const stored = form.getValues("phoneNumberId");
+    if (stored && stored.startsWith("PN") && phoneNumbers.length > 0) {
+      const match = phoneNumbers.find((pn) => pn.id === stored);
+      if (match) form.setValue("phoneNumberId", match.phone_number);
+    }
+  }, [phoneNumbers, form]);
+
   // Watch current phone number assignment for webhook config
   const currentPhoneNumberId = form.watch("phoneNumberId");
 
@@ -472,14 +482,19 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
     enabled: !!selectedWorkspaces[0] && !!currentPhoneNumberId && currentPhoneNumberId !== "none",
   });
 
+  // Look up the SID for the currently selected phone number (needed for Twilio API)
+  const selectedPhoneNumberSid = phoneNumbers.find(
+    (pn) => pn.phone_number === currentPhoneNumberId
+  )?.id;
+
   // Mutation to configure webhook on the assigned phone number
   const configureWebhookMutation = useMutation({
     mutationFn: () => {
-      if (!currentPhoneNumberId || !selectedWorkspaces[0]) {
+      if (!selectedPhoneNumberSid || !selectedWorkspaces[0]) {
         throw new Error("No phone number or workspace selected");
       }
       return configurePhoneNumberWebhook(
-        currentPhoneNumberId,
+        selectedPhoneNumberSid,
         telephonyProvider,
         selectedWorkspaces[0]
       );
@@ -1882,7 +1897,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                                   No phone number (inbound disabled)
                                 </SelectItem>
                                 {phoneNumbers.map((pn) => (
-                                  <SelectItem key={pn.id} value={pn.id}>
+                                  <SelectItem key={pn.id} value={pn.phone_number}>
                                     {pn.phone_number}
                                     {pn.friendly_name && ` (${pn.friendly_name})`}
                                     {pn.assigned_agent_id &&

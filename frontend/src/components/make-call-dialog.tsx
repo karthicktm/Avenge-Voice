@@ -90,8 +90,11 @@ export function MakeCallDialog({ open, onOpenChange, agent, workspaceId }: MakeC
   // Set default from number when phone numbers load
   useEffect(() => {
     if (phoneNumbers.length > 0 && !selectedFromNumber) {
-      // Prefer the agent's assigned number if available
-      const agentNumber = phoneNumbers.find((n) => n.id === agent.phone_number_id);
+      // Prefer the agent's assigned number if available.
+      // phone_number_id stores the phone number string; fall back to SID match for legacy agents.
+      const agentNumber =
+        phoneNumbers.find((n) => n.phone_number === agent.phone_number_id) ??
+        phoneNumbers.find((n) => n.id === agent.phone_number_id);
       const firstNumber = phoneNumbers[0];
       setSelectedFromNumber(agentNumber?.phone_number ?? firstNumber?.phone_number ?? "");
     }

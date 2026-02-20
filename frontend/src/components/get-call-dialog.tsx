@@ -74,10 +74,16 @@ export function GetCallDialog({ open, onOpenChange, agent, workspaceId }: GetCal
     enabled: open && !!effectiveWorkspaceId && !!agent.phone_number_id,
   });
 
-  // Find the assigned phone number and detect provider
+  // Find the assigned phone number and detect provider.
+  // phone_number_id stores the actual phone number string (e.g. +15551234567).
+  // Fall back to SID match for legacy agents that stored the SID.
   const allNumbers = [...twilioNumbers, ...telnyxNumbers];
-  const assignedNumber = allNumbers.find((n) => n.id === agent.phone_number_id);
-  const provider: Provider = twilioNumbers.find((n) => n.id === agent.phone_number_id)
+  const assignedNumber =
+    allNumbers.find((n) => n.phone_number === agent.phone_number_id) ??
+    allNumbers.find((n) => n.id === agent.phone_number_id);
+  const provider: Provider = twilioNumbers.find(
+    (n) => n.phone_number === agent.phone_number_id || n.id === agent.phone_number_id
+  )
     ? "twilio"
     : "telnyx";
 
@@ -91,10 +97,11 @@ export function GetCallDialog({ open, onOpenChange, agent, workspaceId }: GetCal
 
   const configureMutation = useMutation({
     mutationFn: () => {
-      if (!agent.phone_number_id || !effectiveWorkspaceId) {
+      // Use the SID (assignedNumber.id) for the Twilio API call, not the phone number string
+      if (!assignedNumber?.id || !effectiveWorkspaceId) {
         throw new Error("No phone number or workspace available");
       }
-      return configurePhoneNumberWebhook(agent.phone_number_id, provider, effectiveWorkspaceId);
+      return configurePhoneNumberWebhook(assignedNumber.id, provider, effectiveWorkspaceId);
     },
     onSuccess: () => {
       setWebhookConfigured(true);
