@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     RELOAD: bool = False
     PUBLIC_URL: str | None = None  # Public URL for webhook callbacks (e.g., ngrok URL)
 
+    @field_validator("PUBLIC_URL", mode="before")
+    @classmethod
+    def strip_trailing_slash(cls, v: Any) -> Any:
+        """Strip trailing slash so URLs like https://host/ don't produce double slashes."""
+        if isinstance(v, str):
+            return v.rstrip("/")
+        return v
+
     # Database
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
