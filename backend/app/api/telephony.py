@@ -907,8 +907,25 @@ async def twilio_voice_webhook(
     This webhook is called when a call comes in to a Twilio phone number.
     It returns TwiML to connect the call to our WebSocket for AI handling.
     """
-    # Validate Twilio signature
-    await verify_twilio_webhook(request)
+    # Pre-fetch the agent by destination number so we can use its workspace-specific
+    # Twilio auth token for signature validation (credentials are stored per-workspace
+    # in UserSettings, not necessarily as global env vars).
+    agent = await get_agent_by_phone_number(to_number, db)
+    agent_workspace_id: uuid.UUID | None = None
+    twilio_auth_token: str | None = None
+
+    if agent:
+        agent_workspace_id = await get_agent_workspace_id(agent.id, db)
+        if agent_workspace_id:
+            ws_settings_result = await db.execute(
+                select(UserSettings).where(UserSettings.workspace_id == agent_workspace_id)
+            )
+            ws_settings = ws_settings_result.scalar_one_or_none()
+            if ws_settings:
+                twilio_auth_token = ws_settings.twilio_auth_token
+
+    # Validate Twilio signature using workspace-specific token (falls back to global)
+    await verify_twilio_webhook(request, auth_token=twilio_auth_token)
 
     log = logger.bind(
         webhook="twilio_voice",
@@ -919,8 +936,6 @@ async def twilio_voice_webhook(
     )
     log.info("twilio_incoming_call")
 
-    # Find agent by phone number
-    agent = await get_agent_by_phone_number(to_number, db)
     agent_id = str(agent.id) if agent else None
 
     if not agent:
@@ -935,10 +950,7 @@ async def twilio_voice_webhook(
             media_type="application/xml",
         )
 
-    # Get workspace for the agent
-    agent_workspace_id = await get_agent_workspace_id(agent.id, db)
-
-    # Create call record for inbound call
+    # Create call record for inbound call (workspace_id already resolved above)
     call_record = CallRecord(
         user_id=agent.user_id,
         workspace_id=agent_workspace_id,
@@ -954,16 +966,17 @@ async def twilio_voice_webhook(
     await db.commit()
     log.info("call_record_created", record_id=str(call_record.id))
 
-    # Build WebSocket URL for media streaming
-    base_url = str(request.base_url).rstrip("/")
-    ws_url = base_url.replace("http://", "wss://").replace("https://", "wss://")
+    # Build WebSocket URL using PUBLIC_URL so behind a reverse proxy (e.g. Railway)
+    # the TwiML points to the correct external address, not the internal one.
+    public_url = settings.PUBLIC_URL or str(request.base_url).rstrip("/")
+    ws_url = public_url.replace("http://", "wss://").replace("https://", "wss://")
     stream_url = f"{ws_url}/ws/telephony/twilio/{agent_id}"
 
     # Generate TwiML to connect to our WebSocket
     twilio_service = TwilioService("", "")  # Just need TwiML generation
     twiml = twilio_service.generate_answer_response(stream_url, agent_id)
 
-    log.info("twilio_twiml_generated", agent_id=agent_id)
+    log.info("twilio_twiml_generated", agent_id=agent_id, stream_url=stream_url)
 
     return Response(content=twiml, media_type="application/xml")
 
@@ -1090,9 +1103,10 @@ async def twilio_answer_webhook(
     )
     log.info("twilio_outbound_answered")
 
-    # Build WebSocket URL with campaign params
-    base_url = str(request.base_url).rstrip("/")
-    ws_url = base_url.replace("http://", "wss://").replace("https://", "wss://")
+    # Build WebSocket URL using PUBLIC_URL so behind a reverse proxy (e.g. Railway)
+    # the TwiML points to the correct external address, not the internal one.
+    public_url = settings.PUBLIC_URL or str(request.base_url).rstrip("/")
+    ws_url = public_url.replace("http://", "wss://").replace("https://", "wss://")
     stream_url = f"{ws_url}/ws/telephony/twilio/{agent_id}"
     if campaign_id and campaign_contact_id:
         stream_url += f"?campaign_id={campaign_id}&campaign_contact_id={campaign_contact_id}"
@@ -1173,15 +1187,16 @@ async def telnyx_voice_webhook(
     await db.commit()
     log.info("call_record_created", record_id=str(call_record.id))
 
-    # Build WebSocket URL
-    base_url = str(request.base_url).rstrip("/")
-    ws_url = base_url.replace("http://", "wss://").replace("https://", "wss://")
+    # Build WebSocket URL using PUBLIC_URL so behind a reverse proxy (e.g. Railway)
+    # the TeXML points to the correct external address, not the internal one.
+    public_url = settings.PUBLIC_URL or str(request.base_url).rstrip("/")
+    ws_url = public_url.replace("http://", "wss://").replace("https://", "wss://")
     stream_url = f"{ws_url}/ws/telephony/telnyx/{agent_id}"
 
     telnyx_service = TelnyxService("")
     texml = telnyx_service.generate_answer_response(stream_url, agent_id)
 
-    log.info("telnyx_texml_generated", agent_id=agent_id)
+    log.info("telnyx_texml_generated", agent_id=agent_id, stream_url=stream_url)
 
     return Response(content=texml, media_type="application/xml")
 
@@ -1209,9 +1224,10 @@ async def telnyx_answer_webhook(
     )
     log.info("telnyx_outbound_answered")
 
-    # Build WebSocket URL with campaign params
-    base_url = str(request.base_url).rstrip("/")
-    ws_url = base_url.replace("http://", "wss://").replace("https://", "wss://")
+    # Build WebSocket URL using PUBLIC_URL so behind a reverse proxy (e.g. Railway)
+    # the TeXML points to the correct external address, not the internal one.
+    public_url = settings.PUBLIC_URL or str(request.base_url).rstrip("/")
+    ws_url = public_url.replace("http://", "wss://").replace("https://", "wss://")
     stream_url = f"{ws_url}/ws/telephony/telnyx/{agent_id}"
     if campaign_id and campaign_contact_id:
         stream_url += f"?campaign_id={campaign_id}&campaign_contact_id={campaign_contact_id}"
