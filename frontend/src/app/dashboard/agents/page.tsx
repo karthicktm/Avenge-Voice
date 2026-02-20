@@ -37,6 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { MakeCallDialog } from "@/components/make-call-dialog";
+import { GetCallDialog } from "@/components/get-call-dialog";
 import { EmbedAgentDialog } from "@/components/embed-agent-dialog";
 import {
   Select,
@@ -70,6 +71,7 @@ export default function AgentsPage() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const [callDialogOpen, setCallDialogOpen] = useState(false);
+  const [getCallDialogOpen, setGetCallDialogOpen] = useState(false);
   const [embedDialogOpen, setEmbedDialogOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -224,6 +226,11 @@ export default function AgentsPage() {
     setCallDialogOpen(true);
   };
 
+  const handleGetCall = (agent: Agent) => {
+    setSelectedAgent(agent);
+    setGetCallDialogOpen(true);
+  };
+
   const handleEmbed = (agent: Agent) => {
     setSelectedAgent(agent);
     setEmbedDialogOpen(true);
@@ -373,6 +380,9 @@ export default function AgentsPage() {
                         <DropdownMenuItem onSelect={() => handleMakeCall(agent)}>
                           Make Call
                         </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => handleGetCall(agent)}>
+                          Get Call
+                        </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => handleDuplicate(agent.id)}>
                           Duplicate
                         </DropdownMenuItem>
@@ -436,6 +446,16 @@ export default function AgentsPage() {
         <MakeCallDialog
           open={callDialogOpen}
           onOpenChange={setCallDialogOpen}
+          agent={selectedAgent}
+          workspaceId={selectedWorkspaceId !== "all" ? selectedWorkspaceId : undefined}
+        />
+      )}
+
+      {/* Get Call Dialog */}
+      {selectedAgent && (
+        <GetCallDialog
+          open={getCallDialogOpen}
+          onOpenChange={setGetCallDialogOpen}
           agent={selectedAgent}
           workspaceId={selectedWorkspaceId !== "all" ? selectedWorkspaceId : undefined}
         />

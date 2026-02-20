@@ -217,6 +217,52 @@ export async function initiateCall(
   return response.json();
 }
 
+export interface WebhookInfo {
+  voice_url: string | null;
+  status_callback_url: string | null;
+  public_url?: string | null;
+}
+
+/**
+ * Get inbound webhook URLs for a provider
+ */
+export async function getWebhookInfo(
+  provider: Provider,
+  workspaceId: string
+): Promise<WebhookInfo> {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/api/v1/telephony/webhook-info?provider=${provider}&workspace_id=${workspaceId}`
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail ?? "Failed to get webhook info");
+  }
+
+  return response.json();
+}
+
+/**
+ * Configure inbound webhook on a phone number
+ */
+export async function configurePhoneNumberWebhook(
+  phoneNumberId: string,
+  provider: Provider,
+  workspaceId: string
+): Promise<{ voice_url: string; status_callback_url: string; message: string }> {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/api/v1/telephony/phone-numbers/${phoneNumberId}/configure-webhook?provider=${provider}&workspace_id=${workspaceId}`,
+    { method: "POST" }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail ?? "Failed to configure webhook");
+  }
+
+  return response.json();
+}
+
 /**
  * Hang up an active call
  */

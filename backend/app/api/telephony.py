@@ -614,6 +614,117 @@ async def release_phone_number(
 # =============================================================================
 
 
+@router.get("/webhook-info")
+async def get_webhook_info(
+    current_user: VerifiedUser,
+    provider: str = Query(..., description="Provider: twilio or telnyx"),
+    workspace_id: str = Query(..., description="Workspace ID"),
+) -> dict[str, str | None]:
+    """Get inbound webhook URLs for the current PUBLIC_URL.
+
+    Args:
+        provider: Telephony provider (twilio or telnyx)
+        current_user: Authenticated user
+        workspace_id: Workspace ID for status callback URL
+
+    Returns:
+        Webhook URLs for configuring the telephony provider
+    """
+    public_url = settings.PUBLIC_URL
+    if not public_url:
+        return {"voice_url": None, "status_callback_url": None}
+
+    return {
+        "voice_url": f"{public_url}/webhooks/{provider}/voice",
+        "status_callback_url": f"{public_url}/webhooks/{provider}/status?workspace_id={workspace_id}",
+        "public_url": public_url,
+    }
+
+
+@router.post("/phone-numbers/{phone_number_id}/configure-webhook")
+async def configure_phone_number_webhook_endpoint(
+    phone_number_id: str,
+    current_user: VerifiedUser,
+    db: AsyncSession = Depends(get_db),
+    provider: str = Query(..., description="Provider: twilio or telnyx"),
+    workspace_id: str = Query(..., description="Workspace ID for API key isolation"),
+) -> dict[str, str]:
+    """Configure inbound webhook URLs on a phone number.
+
+    Args:
+        phone_number_id: Phone number SID (Twilio) or ID (Telnyx)
+        provider: Telephony provider
+        current_user: Authenticated user
+        db: Database session
+        workspace_id: Workspace ID for workspace-specific API keys
+
+    Returns:
+        Configured webhook URLs
+    """
+    log = logger.bind(
+        user_id=current_user.id,
+        provider=provider,
+        phone_number_id=phone_number_id,
+        workspace_id=workspace_id,
+    )
+    log.info("configure_webhook_requested")
+
+    try:
+        workspace_uuid = uuid.UUID(workspace_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid workspace_id format") from e
+
+    public_url = settings.PUBLIC_URL
+    if not public_url:
+        raise HTTPException(
+            status_code=400,
+            detail="PUBLIC_URL is not configured on the server. Cannot set up webhooks.",
+        )
+
+    voice_url = f"{public_url}/webhooks/{provider}/voice"
+    status_callback_url = f"{public_url}/webhooks/{provider}/status?workspace_id={workspace_id}"
+
+    success = False
+
+    if provider == "twilio":
+        twilio_service = await get_twilio_service(current_user.id, db, workspace_id=workspace_uuid)
+        if not twilio_service:
+            raise HTTPException(
+                status_code=400,
+                detail="Twilio credentials not configured. Please add them in Settings.",
+            )
+        success = await twilio_service.configure_phone_number_webhook(
+            phone_number_id=phone_number_id,
+            voice_url=voice_url,
+            status_callback_url=status_callback_url,
+        )
+
+    elif provider == "telnyx":
+        telnyx_service = await get_telnyx_service(current_user.id, db, workspace_id=workspace_uuid)
+        if not telnyx_service:
+            raise HTTPException(
+                status_code=400,
+                detail="Telnyx credentials not configured. Please add them in Settings.",
+            )
+        success = await telnyx_service.configure_phone_number_webhook(
+            phone_number_id=phone_number_id,
+            voice_url=voice_url,
+        )
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid provider. Use 'twilio' or 'telnyx'.")
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to configure webhook on phone number.")
+
+    log.info("webhook_configured", voice_url=voice_url)
+    return {
+        "voice_url": voice_url,
+        "status_callback_url": status_callback_url,
+        "message": "Webhook configured successfully",
+    }
+
+
 @router.post("/calls", response_model=CallResponse)
 async def initiate_call(
     call_request: InitiateCallRequest,

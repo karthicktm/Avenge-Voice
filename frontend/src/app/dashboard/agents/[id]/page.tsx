@@ -51,8 +51,13 @@ import {
   AlertTriangle,
   ShieldAlert,
   Wand2,
+  Copy,
+  Check,
+  Settings2,
+  PhoneIncoming,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { getWebhookInfo, configurePhoneNumberWebhook } from "@/lib/api/telephony";
 import { getLanguagesForTier, getFallbackLanguage } from "@/lib/languages";
 import { AVAILABLE_INTEGRATIONS } from "@/lib/integrations";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -238,6 +243,8 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const isDeletingRef = useRef(false); // Ref for synchronous check
   const [formResetKey, setFormResetKey] = useState(0); // Increment after form.reset() to force Select remount
+  const [webhookCopied, setWebhookCopied] = useState(false);
+  const [webhookConfigured, setWebhookConfigured] = useState(false);
 
   const {
     data: agent,
@@ -451,6 +458,46 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
     },
     enabled: !!selectedWorkspaces[0] && !!agent && !isDeleting,
   });
+
+  // Watch current phone number assignment for webhook config
+  const currentPhoneNumberId = form.watch("phoneNumberId");
+
+  // Fetch webhook info when a phone number and workspace are selected
+  const { data: webhookInfo } = useQuery({
+    queryKey: ["webhook-info", telephonyProvider, selectedWorkspaces[0]],
+    queryFn: () =>
+      selectedWorkspaces[0]
+        ? getWebhookInfo(telephonyProvider, selectedWorkspaces[0])
+        : Promise.resolve(null),
+    enabled: !!selectedWorkspaces[0] && !!currentPhoneNumberId && currentPhoneNumberId !== "none",
+  });
+
+  // Mutation to configure webhook on the assigned phone number
+  const configureWebhookMutation = useMutation({
+    mutationFn: () => {
+      if (!currentPhoneNumberId || !selectedWorkspaces[0]) {
+        throw new Error("No phone number or workspace selected");
+      }
+      return configurePhoneNumberWebhook(
+        currentPhoneNumberId,
+        telephonyProvider,
+        selectedWorkspaces[0]
+      );
+    },
+    onSuccess: () => {
+      setWebhookConfigured(true);
+      toast.success("Webhook configured on phone number");
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to configure webhook: ${error.message}`);
+    },
+  });
+
+  const handleWebhookCopy = (text: string) => {
+    void navigator.clipboard.writeText(text);
+    setWebhookCopied(true);
+    setTimeout(() => setWebhookCopied(false), 2000);
+  };
 
   // Watch the LLM provider to conditionally show/hide Voice tab
   const llmProvider = form.watch("llmProvider");
@@ -1865,6 +1912,56 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                       </FormItem>
                     )}
                   />
+
+                  {/* Webhook Configuration */}
+                  {currentPhoneNumberId &&
+                    currentPhoneNumberId !== "none" &&
+                    webhookInfo?.voice_url && (
+                      <div className="space-y-3 rounded-lg border p-3">
+                        <div className="flex items-center gap-2">
+                          <PhoneIncoming className="h-4 w-4 text-muted-foreground" />
+                          <p className="text-sm font-medium">Inbound Webhook</p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <p className="text-xs text-muted-foreground">
+                            Set this URL as the Voice URL in your {telephonyProvider} console:
+                          </p>
+                          <div className="flex items-center gap-2 rounded-md bg-muted px-3 py-2">
+                            <code className="flex-1 truncate text-xs">{webhookInfo.voice_url}</code>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 shrink-0"
+                              onClick={() => handleWebhookCopy(webhookInfo.voice_url ?? "")}
+                            >
+                              {webhookCopied ? (
+                                <Check className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => configureWebhookMutation.mutate()}
+                          disabled={configureWebhookMutation.isPending || webhookConfigured}
+                        >
+                          {configureWebhookMutation.isPending ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : webhookConfigured ? (
+                            <Check className="mr-2 h-4 w-4 text-green-500" />
+                          ) : (
+                            <Settings2 className="mr-2 h-4 w-4" />
+                          )}
+                          {webhookConfigured ? "Webhook Configured" : "Auto-Configure Webhook"}
+                        </Button>
+                      </div>
+                    )}
 
                   <Separator />
 
