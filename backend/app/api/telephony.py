@@ -464,6 +464,7 @@ async def _configure_webhook_for_provider(
     number_id: str,
     provider: str,
     log: structlog.stdlib.BoundLogger,
+    workspace_id: str | None = None,
 ) -> None:
     """Configure webhook for a purchased phone number."""
     public_url = settings.PUBLIC_URL
@@ -471,6 +472,8 @@ async def _configure_webhook_for_provider(
         return
 
     voice_url = f"{public_url}/webhooks/{provider}/voice"
+    if workspace_id:
+        voice_url += f"?workspace_id={workspace_id}"
     webhook_success = await service.configure_phone_number_webhook(
         phone_number_id=number_id,
         voice_url=voice_url,
@@ -527,7 +530,7 @@ async def purchase_phone_number(
                 detail="Twilio credentials not configured. Please add them in Settings.",
             )
         number = await twilio_service.purchase_phone_number(purchase_request.phone_number)
-        await _configure_webhook_for_provider(twilio_service, number.id, "twilio", log)
+        await _configure_webhook_for_provider(twilio_service, number.id, "twilio", log, workspace_id)
 
     elif purchase_request.provider == "telnyx":
         telnyx_service = await get_telnyx_service(current_user.id, db, workspace_id=workspace_uuid)
@@ -537,7 +540,7 @@ async def purchase_phone_number(
                 detail="Telnyx credentials not configured. Please add them in Settings.",
             )
         number = await telnyx_service.purchase_phone_number(purchase_request.phone_number)
-        await _configure_webhook_for_provider(telnyx_service, number.id, "telnyx", log)
+        await _configure_webhook_for_provider(telnyx_service, number.id, "telnyx", log, workspace_id)
 
     else:
         raise HTTPException(status_code=400, detail="Invalid provider. Use 'twilio' or 'telnyx'.")
@@ -635,7 +638,7 @@ async def get_webhook_info(
         return {"voice_url": None, "status_callback_url": None}
 
     return {
-        "voice_url": f"{public_url}/webhooks/{provider}/voice",
+        "voice_url": f"{public_url}/webhooks/{provider}/voice?workspace_id={workspace_id}",
         "status_callback_url": f"{public_url}/webhooks/{provider}/status?workspace_id={workspace_id}",
         "public_url": public_url,
     }
@@ -681,7 +684,7 @@ async def configure_phone_number_webhook_endpoint(
             detail="PUBLIC_URL is not configured on the server. Cannot set up webhooks.",
         )
 
-    voice_url = f"{public_url}/webhooks/{provider}/voice"
+    voice_url = f"{public_url}/webhooks/{provider}/voice?workspace_id={workspace_id}"
     status_callback_url = f"{public_url}/webhooks/{provider}/status?workspace_id={workspace_id}"
 
     success = False
@@ -897,6 +900,7 @@ async def hangup_call(
 async def twilio_voice_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    workspace_id: str = Query(default=""),
     call_sid: str = Form(default="", alias="CallSid"),
     from_number: str = Form(default="", alias="From"),
     to_number: str = Form(default="", alias="To"),
@@ -906,23 +910,26 @@ async def twilio_voice_webhook(
 
     This webhook is called when a call comes in to a Twilio phone number.
     It returns TwiML to connect the call to our WebSocket for AI handling.
-    """
-    # Pre-fetch the agent by destination number so we can use its workspace-specific
-    # Twilio auth token for signature validation (credentials are stored per-workspace
-    # in UserSettings, not necessarily as global env vars).
-    agent = await get_agent_by_phone_number(to_number, db)
-    agent_workspace_id: uuid.UUID | None = None
-    twilio_auth_token: str | None = None
 
-    if agent:
-        agent_workspace_id = await get_agent_workspace_id(agent.id, db)
-        if agent_workspace_id:
+    workspace_id is passed as a query parameter in the configured webhook URL so we
+    can look up the workspace-specific Twilio auth token for signature validation
+    (same pattern as the answer/status webhooks).
+    """
+    # Look up workspace-specific Twilio auth token for signature validation.
+    # Credentials are stored per-workspace in UserSettings, not as global env vars.
+    twilio_auth_token: str | None = None
+    workspace_uuid: uuid.UUID | None = None
+    if workspace_id:
+        try:
+            workspace_uuid = uuid.UUID(workspace_id)
             ws_settings_result = await db.execute(
-                select(UserSettings).where(UserSettings.workspace_id == agent_workspace_id)
+                select(UserSettings).where(UserSettings.workspace_id == workspace_uuid)
             )
             ws_settings = ws_settings_result.scalar_one_or_none()
             if ws_settings:
                 twilio_auth_token = ws_settings.twilio_auth_token
+        except Exception:
+            logger.warning("twilio_voice_workspace_lookup_failed", workspace_id=workspace_id)
 
     # Validate Twilio signature using workspace-specific token (falls back to global)
     await verify_twilio_webhook(request, auth_token=twilio_auth_token)
@@ -936,11 +943,12 @@ async def twilio_voice_webhook(
     )
     log.info("twilio_incoming_call")
 
+    # Find agent by phone number
+    agent = await get_agent_by_phone_number(to_number, db)
     agent_id = str(agent.id) if agent else None
 
     if not agent:
         log.warning("no_agent_for_number", to_number=to_number)
-        # Return TwiML that says no agent is available
         return Response(
             content="""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -950,7 +958,10 @@ async def twilio_voice_webhook(
             media_type="application/xml",
         )
 
-    # Create call record for inbound call (workspace_id already resolved above)
+    # Resolve workspace: prefer query param (already looked up), fall back to agent's workspace
+    agent_workspace_id = workspace_uuid or await get_agent_workspace_id(agent.id, db)
+
+    # Create call record for inbound call
     call_record = CallRecord(
         user_id=agent.user_id,
         workspace_id=agent_workspace_id,
