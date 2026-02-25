@@ -188,7 +188,9 @@ const agentFormSchema = z.object({
   // Advanced
   enableRecording: z.boolean().default(true),
   enableTranscript: z.boolean().default(true),
-  turnDetectionMode: z.enum(["server-vad", "pushToTalk"]).default("server-vad"),
+  turnDetectionMode: z.enum(["normal", "semantic", "disabled"]).default("normal"),
+  turnDetectionThreshold: z.number().min(0).max(1).default(0.7),
+  turnDetectionSilenceDurationMs: z.number().min(100).max(2000).default(700),
   isActive: z.boolean().default(true),
 
   // Tools & Integrations
@@ -227,6 +229,8 @@ const TAB_FIELDS: Record<string, (keyof AgentFormValues)[]> = {
     "enableRecording",
     "enableTranscript",
     "turnDetectionMode",
+    "turnDetectionThreshold",
+    "turnDetectionSilenceDurationMs",
     "widgetButtonText",
   ],
 };
@@ -348,7 +352,9 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
       phoneNumberId: undefined,
       enableRecording: true,
       enableTranscript: true,
-      turnDetectionMode: "server-vad",
+      turnDetectionMode: "normal",
+      turnDetectionThreshold: 0.7,
+      turnDetectionSilenceDurationMs: 700,
       isActive: true,
       enabledTools: [],
       enabledToolIds: {},
@@ -402,7 +408,9 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
         phoneNumberId: agent.phone_number_id ?? undefined,
         enableRecording: agent.enable_recording,
         enableTranscript: agent.enable_transcript,
-        turnDetectionMode: "server-vad",
+        turnDetectionMode: agent.turn_detection_mode ?? "normal",
+        turnDetectionThreshold: agent.turn_detection_threshold ?? 0.7,
+        turnDetectionSilenceDurationMs: agent.turn_detection_silence_duration_ms ?? 700,
         isActive: agent.is_active,
         enabledTools: agent.enabled_tools ?? [],
         enabledToolIds: agent.enabled_tool_ids ?? {},
@@ -513,6 +521,9 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
     setWebhookCopied(true);
     setTimeout(() => setWebhookCopied(false), 2000);
   };
+
+  // Watch turn detection mode to conditionally show/hide advanced VAD controls
+  const turnDetectionMode = form.watch("turnDetectionMode");
 
   // Watch the LLM provider to conditionally show/hide Voice tab
   const llmProvider = form.watch("llmProvider");
@@ -679,6 +690,9 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
       is_active: data.isActive,
       temperature: data.temperature,
       max_tokens: data.maxTokens,
+      turn_detection_mode: data.turnDetectionMode,
+      turn_detection_threshold: data.turnDetectionThreshold,
+      turn_detection_silence_duration_ms: data.turnDetectionSilenceDurationMs,
     };
 
     // Update agent, workspaces, and embed settings
@@ -2019,7 +2033,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                       <FormItem>
                         <FormLabel className="flex items-center gap-1.5">
                           Turn Detection
-                          <InfoTooltip content="How the agent knows when the caller finished speaking. Server VAD (Voice Activity Detection) automatically detects pauses. Push to Talk requires explicit signals - useful for noisy environments." />
+                          <InfoTooltip content="How the agent knows when the caller finished speaking. Normal uses Voice Activity Detection. Semantic VAD understands speech context — better for noisy environments. Disabled requires explicit Push to Talk signals." />
                         </FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
@@ -2028,8 +2042,11 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="server-vad">Server VAD (Recommended)</SelectItem>
-                            <SelectItem value="pushToTalk">Push to Talk</SelectItem>
+                            <SelectItem value="normal">Normal (Server VAD)</SelectItem>
+                            <SelectItem value="semantic">
+                              Semantic VAD (Better for noisy environments)
+                            </SelectItem>
+                            <SelectItem value="disabled">Disabled (Push to Talk)</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormDescription>
@@ -2039,6 +2056,73 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                       </FormItem>
                     )}
                   />
+
+                  {turnDetectionMode === "normal" && (
+                    <FormField
+                      control={form.control}
+                      name="turnDetectionThreshold"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center justify-between gap-1.5">
+                            <span className="flex items-center gap-1.5">
+                              Noise Sensitivity
+                              <InfoTooltip content="How sensitive the VAD is to audio input. Higher values require louder speech to trigger, reducing false positives from background noise." />
+                            </span>
+                            <span className="font-normal text-muted-foreground">
+                              {field.value.toFixed(2)}
+                            </span>
+                          </FormLabel>
+                          <FormControl>
+                            <Slider
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={[field.value]}
+                              onValueChange={([v]) => field.onChange(v)}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Higher values reduce false triggers from background noise (default: 0.7)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  {(turnDetectionMode === "normal" || turnDetectionMode === "semantic") && (
+                    <FormField
+                      control={form.control}
+                      name="turnDetectionSilenceDurationMs"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center justify-between gap-1.5">
+                            <span className="flex items-center gap-1.5">
+                              End of Speech Detection
+                              <InfoTooltip content="How long the agent waits after speech stops before responding. Longer values give callers more time to pause between sentences." />
+                            </span>
+                            <span className="font-normal text-muted-foreground">
+                              {field.value}ms
+                            </span>
+                          </FormLabel>
+                          <FormControl>
+                            <Slider
+                              min={100}
+                              max={2000}
+                              step={100}
+                              value={[field.value]}
+                              onValueChange={([v]) => field.onChange(v)}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            How long the agent waits after speech stops before responding (default:
+                            700ms)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                 </CardContent>
               </Card>
 

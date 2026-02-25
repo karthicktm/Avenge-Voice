@@ -377,7 +377,7 @@ async def _bridge_audio_streams(
 
 
 @webrtc_router.post("/session/{agent_id}")
-async def create_webrtc_session(
+async def create_webrtc_session(  # noqa: PLR0915
     agent_id: str,
     workspace_id: str,
     request: Request,
@@ -515,13 +515,20 @@ async def create_webrtc_session(
         if agent.temperature
         else 0.6,  # Lower for consistent delivery
         "input_audio_transcription": {"model": "whisper-1"},
-        "turn_detection": {
+    }
+
+    turn_mode = agent.turn_detection_mode or "normal"
+    if turn_mode == "disabled":
+        pass  # omit turn_detection (push-to-talk)
+    elif turn_mode == "semantic":
+        session_config["turn_detection"] = {"type": "semantic_vad", "eagerness": "medium"}
+    else:  # "normal"
+        session_config["turn_detection"] = {
             "type": "server_vad",
             "threshold": agent.turn_detection_threshold or 0.5,
-            "prefix_padding_ms": agent.turn_detection_prefix_padding_ms or 200,
-            "silence_duration_ms": agent.turn_detection_silence_duration_ms or 200,
-        },
-    }
+            "prefix_padding_ms": agent.turn_detection_prefix_padding_ms or 300,
+            "silence_duration_ms": agent.turn_detection_silence_duration_ms or 500,
+        }
 
     # Add tools if any are enabled
     if tools:
@@ -572,7 +579,7 @@ async def create_webrtc_session(
 
 
 @webrtc_router.get("/token/{agent_id}")
-async def get_ephemeral_token(
+async def get_ephemeral_token(  # noqa: PLR0915
     agent_id: str,
     current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
