@@ -191,11 +191,13 @@ async def get_agent_by_phone_number(phone_number: str, db: AsyncSession) -> Agen
     normalized = phone_number.lstrip("+")
 
     result = await db.execute(
-        select(Agent).where(
+        select(Agent)
+        .where(
             (Agent.phone_number_id == phone_number)
             | (Agent.phone_number_id == normalized)
             | (Agent.phone_number_id == f"+{normalized}")
         )
+        .limit(1)
     )
     return result.scalar_one_or_none()
 

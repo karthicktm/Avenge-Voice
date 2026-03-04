@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import VerifiedUser
@@ -334,6 +334,17 @@ async def update_agent(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found",
+        )
+
+    # If assigning a phone number, unassign it from any other agent first
+    if update_request.phone_number_id is not None:
+        await db.execute(
+            update(Agent)
+            .where(
+                Agent.phone_number_id == update_request.phone_number_id,
+                Agent.id != agent.id,
+            )
+            .values(phone_number_id=None)
         )
 
     # Apply updates from request
