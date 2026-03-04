@@ -344,16 +344,22 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
     # Build campaign context section if this is an outbound campaign call
     campaign_section = ""
     if campaign_context:
-        campaign_section = "\n[CAMPAIGN CONTEXT]\nThis is an OUTBOUND campaign call.\n"
+        campaign_section = (
+            "\n\n[CAMPAIGN MISSION - THIS CALL]\n"
+            "IMPORTANT: You are making an OUTBOUND campaign call. "
+            "The campaign script/objective below is your PRIMARY task for this call. "
+            "Follow it precisely. Your role guidelines above still apply for conversation style, "
+            "but this campaign mission defines what you must accomplish.\n"
+        )
 
         script = campaign_context.get("campaign_script")
         if script:
-            campaign_section += f"Campaign objective / script:\n{script}\n"
+            campaign_section += f"\nCampaign script / objective:\n{script}\n"
 
         contact_name = campaign_context.get("contact_name")
         if contact_name:
             campaign_section += f"\nContact name: {contact_name}\n"
-            campaign_section += "Address the contact by name.\n"
+            campaign_section += "Always address the contact by name.\n"
 
         contact_company = campaign_context.get("contact_company")
         if contact_company:
@@ -371,7 +377,9 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
         if contact_notes:
             campaign_section += f"Notes: {contact_notes}\n"
 
-        campaign_section += "\nAfter the call, use set_call_disposition to record the outcome.\n"
+        campaign_section += (
+            "\nAfter the call ends, use set_call_disposition to record the outcome.\n"
+        )
 
     # Build the complete voice agent instructions
     instructions = f"""[CONTEXT]
@@ -385,9 +393,9 @@ Current: {current_datetime}
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses concise - this is voice, not text
 - Summarize tool results naturally
-{info_retrieval_section}{best_practices_section}{campaign_section}
+{info_retrieval_section}{best_practices_section}
 [YOUR ROLE]
-{system_prompt}"""
+{system_prompt}{campaign_section}"""
 
     return instructions
 
