@@ -710,7 +710,30 @@ export default function TestAgentPage() {
         // Get tools from token response
         const tools = tokenData.tools ?? [];
 
-        console.log("[WebRTC] Configuring session with", tools.length, "tools");
+        // Always include switch_language tool — handled client-side, no backend call
+        const switchLanguageTool = {
+          type: "function",
+          name: "switch_language",
+          description:
+            "Switch the conversation to a different language when the caller requests it.",
+          parameters: {
+            type: "object",
+            properties: {
+              language_code: {
+                type: "string",
+                description: "BCP-47 language code (e.g., 'sv-SE' for Swedish, 'fr-FR' for French)",
+              },
+              language_name: {
+                type: "string",
+                description: "Human-readable language name (e.g., 'Swedish', 'French')",
+              },
+            },
+            required: ["language_code", "language_name"],
+          },
+        };
+        const allTools = [...tools, switchLanguageTool];
+
+        console.log("[WebRTC] Configuring session with", allTools.length, "tools");
 
         // Send session update with agent config and tools
         // Use compiled instructions from backend (includes KB context, language best practices)
@@ -737,8 +760,8 @@ export default function TestAgentPage() {
                     prefix_padding_ms: prefixPadding,
                     silence_duration_ms: silenceDuration,
                   },
-            tools: tools,
-            tool_choice: tools.length > 0 ? "auto" : "none",
+            tools: allTools,
+            tool_choice: "auto",
           },
         };
         dataChannel.send(JSON.stringify(sessionUpdate));
@@ -796,6 +819,35 @@ export default function TestAgentPage() {
             // Handle function/tool call
             const { call_id, name, arguments: argsJson } = data;
             console.log("[WebRTC] Function call:", name, argsJson);
+
+            // Handle switch_language client-side — update Whisper language, no backend call
+            if (name === "switch_language") {
+              const args = JSON.parse(argsJson as string) as {
+                language_code: string;
+                language_name: string;
+              };
+              const whisperCode = args.language_code?.split("-")[0] ?? undefined;
+              dataChannel.send(
+                JSON.stringify({
+                  type: "session.update",
+                  session: {
+                    input_audio_transcription: { model: "whisper-1", language: whisperCode },
+                  },
+                })
+              );
+              dataChannel.send(
+                JSON.stringify({
+                  type: "conversation.item.create",
+                  item: {
+                    type: "function_call_output",
+                    call_id: call_id,
+                    output: JSON.stringify({ success: true, language: args.language_name }),
+                  },
+                })
+              );
+              dataChannel.send(JSON.stringify({ type: "response.create" }));
+              return;
+            }
 
             try {
               // Execute tool via backend API

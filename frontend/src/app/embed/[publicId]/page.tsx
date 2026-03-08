@@ -508,8 +508,30 @@ export default function EmbedPage() {
 
       await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
 
-      // Store tools for later reference
-      const agentTools = tokenData.tools ?? [];
+      // Store tools for later reference — always include switch_language (handled client-side)
+      const agentTools = [
+        ...(tokenData.tools ?? []),
+        {
+          type: "function",
+          name: "switch_language",
+          description:
+            "Switch the conversation to a different language when the caller requests it.",
+          parameters: {
+            type: "object",
+            properties: {
+              language_code: {
+                type: "string",
+                description: "BCP-47 language code (e.g., 'sv-SE' for Swedish, 'fr-FR' for French)",
+              },
+              language_name: {
+                type: "string",
+                description: "Human-readable language name (e.g., 'Swedish', 'French')",
+              },
+            },
+            required: ["language_code", "language_name"],
+          },
+        },
+      ];
 
       // Handle data channel events
       dataChannel.onopen = () => {
@@ -533,11 +555,8 @@ export default function EmbedPage() {
           },
         };
 
-        // Add tools if available
-        if (agentTools.length > 0) {
-          sessionConfig.tools = agentTools;
-          sessionConfig.tool_choice = "auto";
-        }
+        sessionConfig.tools = agentTools;
+        sessionConfig.tool_choice = "auto";
 
         const sessionUpdate = {
           type: "session.update",
@@ -565,6 +584,33 @@ export default function EmbedPage() {
         toolName: string,
         args: Record<string, unknown>
       ) => {
+        // Handle switch_language client-side — update Whisper transcription language
+        if (toolName === "switch_language") {
+          const whisperCode = (args.language_code as string)?.split("-")[0] ?? undefined;
+          if (dataChannel.readyState === "open") {
+            dataChannel.send(
+              JSON.stringify({
+                type: "session.update",
+                session: {
+                  input_audio_transcription: { model: "whisper-1", language: whisperCode },
+                },
+              })
+            );
+            dataChannel.send(
+              JSON.stringify({
+                type: "conversation.item.create",
+                item: {
+                  type: "function_call_output",
+                  call_id: callId,
+                  output: JSON.stringify({ success: true, language: args.language_name }),
+                },
+              })
+            );
+            dataChannel.send(JSON.stringify({ type: "response.create" }));
+          }
+          return;
+        }
+
         try {
           const response = await fetch(`/api/public/embed/${publicId}/tool-call`, {
             method: "POST",
