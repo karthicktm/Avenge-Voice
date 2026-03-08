@@ -796,6 +796,19 @@ export default function TestAgentPage() {
             console.log("[WebRTC] Session updated - tools configured:", toolsConfigured);
           }
 
+          // Interrupt agent when user starts speaking
+          if (data.type === "input_audio_buffer.speech_started") {
+            if (dataChannel.readyState === "open") {
+              dataChannel.send(JSON.stringify({ type: "response.cancel" }));
+            }
+            const { audioElement } = webrtcRef.current;
+            if (audioElement?.srcObject) {
+              const stream = audioElement.srcObject as MediaStream;
+              audioElement.srcObject = null;
+              audioElement.srcObject = stream;
+            }
+          }
+
           // Handle transcription - use immediate updates for real-time feel
           if (data.type === "conversation.item.input_audio_transcription.completed") {
             addTranscriptImmediate("user", data.transcript);
