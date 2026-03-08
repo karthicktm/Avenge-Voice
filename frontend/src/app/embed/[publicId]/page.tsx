@@ -584,18 +584,9 @@ export default function EmbedPage() {
         toolName: string,
         args: Record<string, unknown>
       ) => {
-        // Handle switch_language client-side — update Whisper transcription language
+        // Handle switch_language client-side — no backend call needed
         if (toolName === "switch_language") {
-          const whisperCode = (args.language_code as string)?.split("-")[0] ?? undefined;
           if (dataChannel.readyState === "open") {
-            dataChannel.send(
-              JSON.stringify({
-                type: "session.update",
-                session: {
-                  input_audio_transcription: { model: "whisper-1", language: whisperCode },
-                },
-              })
-            );
             dataChannel.send(
               JSON.stringify({
                 type: "conversation.item.create",
@@ -606,7 +597,14 @@ export default function EmbedPage() {
                 },
               })
             );
-            dataChannel.send(JSON.stringify({ type: "response.create" }));
+            dataChannel.send(
+              JSON.stringify({
+                type: "response.create",
+                response: {
+                  instructions: `Language switched to ${args.language_name as string}. Respond in ${args.language_name as string} from now on for the rest of this conversation.`,
+                },
+              })
+            );
           }
           return;
         }

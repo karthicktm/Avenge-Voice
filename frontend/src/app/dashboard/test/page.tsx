@@ -820,21 +820,12 @@ export default function TestAgentPage() {
             const { call_id, name, arguments: argsJson } = data;
             console.log("[WebRTC] Function call:", name, argsJson);
 
-            // Handle switch_language client-side — update Whisper language, no backend call
+            // Handle switch_language client-side — no backend call needed
             if (name === "switch_language") {
               const args = JSON.parse(argsJson as string) as {
                 language_code: string;
                 language_name: string;
               };
-              const whisperCode = args.language_code?.split("-")[0] ?? undefined;
-              dataChannel.send(
-                JSON.stringify({
-                  type: "session.update",
-                  session: {
-                    input_audio_transcription: { model: "whisper-1", language: whisperCode },
-                  },
-                })
-              );
               dataChannel.send(
                 JSON.stringify({
                   type: "conversation.item.create",
@@ -845,7 +836,14 @@ export default function TestAgentPage() {
                   },
                 })
               );
-              dataChannel.send(JSON.stringify({ type: "response.create" }));
+              dataChannel.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    instructions: `Language switched to ${args.language_name}. Respond in ${args.language_name} from now on for the rest of this conversation.`,
+                  },
+                })
+              );
               return;
             }
 
