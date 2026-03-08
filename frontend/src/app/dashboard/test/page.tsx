@@ -802,11 +802,10 @@ export default function TestAgentPage() {
               dataChannel.send(JSON.stringify({ type: "response.cancel" }));
             }
             const { audioElement } = webrtcRef.current;
-            if (audioElement?.srcObject) {
-              const stream = audioElement.srcObject as MediaStream;
-              audioElement.srcObject = null;
-              audioElement.srcObject = stream;
-            }
+            if (audioElement) audioElement.muted = true;
+          } else if (data.type === "input_audio_buffer.speech_stopped") {
+            const { audioElement } = webrtcRef.current;
+            if (audioElement) audioElement.muted = false;
           }
 
           // Handle transcription - use immediate updates for real-time feel

@@ -676,18 +676,16 @@ export default function EmbedPage() {
           // Track agent state based on events
           if (data.type === "input_audio_buffer.speech_started") {
             setAgentState("listening");
-            // Cancel active response and flush audio buffer so agent stops immediately
+            // Cancel active response and mute audio so agent stops immediately
             if (dataChannel.readyState === "open") {
               dataChannel.send(JSON.stringify({ type: "response.cancel" }));
             }
             const { audioElement } = webrtcRef.current;
-            if (audioElement?.srcObject) {
-              const stream = audioElement.srcObject as MediaStream;
-              audioElement.srcObject = null;
-              audioElement.srcObject = stream;
-            }
+            if (audioElement) audioElement.muted = true;
           } else if (data.type === "input_audio_buffer.speech_stopped") {
             setAgentState("thinking");
+            const { audioElement } = webrtcRef.current;
+            if (audioElement) audioElement.muted = false;
           } else if (data.type === "response.audio.delta") {
             setAgentState("speaking");
           } else if (data.type === "response.audio.done") {
