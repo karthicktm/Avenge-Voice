@@ -407,10 +407,10 @@ def _get_provider_config(tier: str) -> dict[str, Any]:
     Returns:
         Provider configuration
     """
-    # Latest models as of Nov 2025:
+    # Latest models as of Mar 2026:
     # - Deepgram: nova-3 (GA Feb 2025, 54% better accuracy than nova-2)
     # - ElevenLabs: eleven_flash_v2_5 (~75ms latency, 32 languages)
-    # - OpenAI: gpt-realtime-2025-08-28 (GA Aug 2025)
+    # - OpenAI: gpt-realtime-1.5 (Feb 2026), gpt-realtime-mini-2025-12-15
     # - Google: gemini-2.5-flash with native audio (30 HD voices)
     configs = {
         "budget": {
@@ -431,7 +431,7 @@ def _get_provider_config(tier: str) -> dict[str, Any]:
         },
         "premium-mini": {
             "llm_provider": "openai-realtime",
-            "llm_model": "gpt-4o-mini-realtime-preview-2024-12-17",
+            "llm_model": "gpt-realtime-mini-2025-12-15",
             "stt_provider": "openai",
             "stt_model": "built-in",
             "tts_provider": "openai",
@@ -439,7 +439,7 @@ def _get_provider_config(tier: str) -> dict[str, Any]:
         },
         "premium": {
             "llm_provider": "openai-realtime",
-            "llm_model": "gpt-realtime-2025-08-28",
+            "llm_model": "gpt-realtime-1.5",
             "stt_provider": "openai",
             "stt_model": "built-in",
             "tts_provider": "openai",

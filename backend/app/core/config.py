@@ -100,6 +100,8 @@ class Settings(BaseSettings):
         "http://localhost:8000",
         "https://avenge-voice-production.up.railway.app",
         "https://avenge-voice-backend-production.up.railway.app",
+        "https://gluer.ai",
+        "https://www.gluer.ai",
     ]
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: list[str] = ["*"]
@@ -116,9 +118,10 @@ class Settings(BaseSettings):
             if v.startswith("["):
                 import json
 
-                return json.loads(v)  # type: ignore[no-any-return]
+                parsed: list[str] = json.loads(v)
+                return parsed
             return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v  # type: ignore[return-value]
+        return list(v)
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
@@ -128,13 +131,13 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
-    FROM_EMAIL: str = "noreply@avenge-voice.com"
-    FROM_NAME: str = "Avenge Voice"
+    FROM_EMAIL: str = "support@gluer.ai"
+    FROM_NAME: str = "Gluer AI"
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Resend Email Service (Primary)
     RESEND_API_KEY: str | None = None
-    RESEND_FROM_EMAIL: str = "noreply@avengeai.com"
+    RESEND_FROM_EMAIL: str = "support@gluer.ai"
     VERIFICATION_CODE_EXPIRY_MINUTES: int = 10
     EMAIL_VERIFICATION_REQUIRED: bool = True
 
@@ -147,6 +150,10 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = "admin@voicenoob.com"
     ADMIN_PASSWORD: str = "admin"
     ADMIN_NAME: str = "Admin"
+
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
 
     # Voice & AI Services
     OPENAI_API_KEY: str | None = None
