@@ -549,11 +549,11 @@ async def get_embed_ephemeral_token(  # noqa: PLR0915
     api_key = user_settings.openai_api_key
     log.info("using_workspace_openai_key")
 
-    # Determine model based on tier
+    # Determine model based on tier (updated Mar 2026)
     realtime_model = (
-        "gpt-4o-mini-realtime-preview-2024-12-17"
+        "gpt-realtime-mini-2025-12-15"
         if agent.pricing_tier == "premium-mini"
-        else "gpt-realtime-2025-08-28"
+        else "gpt-realtime-1.5"
     )
 
     # Build session configuration

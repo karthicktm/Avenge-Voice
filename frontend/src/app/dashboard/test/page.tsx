@@ -297,6 +297,7 @@ export default function TestAgentPage() {
   const transcriptEntriesRef = useRef<TranscriptEntry[]>([]);
   const sessionIdRef = useRef<string>("");
   const sessionStartTimeRef = useRef<number>(0);
+  const activeResponseRef = useRef<boolean>(false);
 
   // Auto-scroll to bottom when transcript updates
   useEffect(() => {
@@ -428,6 +429,7 @@ export default function TestAgentPage() {
       clearInterval(callTimerRef.current);
       callTimerRef.current = null;
     }
+    activeResponseRef.current = false;
 
     // Clear any pending flush timeout
     if (flushTimeoutRef.current) {
@@ -796,10 +798,18 @@ export default function TestAgentPage() {
             console.log("[WebRTC] Session updated - tools configured:", toolsConfigured);
           }
 
+          // Track active response state to avoid cancelling when nothing is playing
+          if (data.type === "response.created") {
+            activeResponseRef.current = true;
+          } else if (data.type === "response.done") {
+            activeResponseRef.current = false;
+          }
+
           // Interrupt agent when user starts speaking
           if (data.type === "input_audio_buffer.speech_started") {
-            if (dataChannel.readyState === "open") {
+            if (dataChannel.readyState === "open" && activeResponseRef.current) {
               dataChannel.send(JSON.stringify({ type: "response.cancel" }));
+              activeResponseRef.current = false;
             }
             const { audioElement } = webrtcRef.current;
             if (audioElement) audioElement.muted = true;

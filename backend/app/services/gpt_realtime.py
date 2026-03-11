@@ -492,8 +492,7 @@ class GPTRealtimeSession:
         if not self.client:
             raise ValueError("OpenAI client not initialized")
 
-        # Use the latest production gpt-realtime model (released Aug 2025)
-        model = "gpt-realtime-2025-08-28"
+        model = self.agent_config.get("llm_model", "gpt-realtime-1.5")
         self.logger.info("connecting_to_openai_realtime", model=model)
 
         try:
