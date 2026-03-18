@@ -27,6 +27,7 @@ import {
   UsersRound,
   Calendar,
   FolderOpen,
+  Database,
   PanelLeftClose,
   PanelLeft,
   LogOut,
@@ -79,6 +80,12 @@ const baseNavigation: NavItem[] = [
     href: "/dashboard/appointments",
     icon: Calendar,
     color: "text-pink-400",
+  },
+  {
+    name: "Lookup",
+    href: "/dashboard/lookup",
+    icon: Database,
+    color: "text-teal-400",
   },
   {
     name: "Integrations",

@@ -10,6 +10,7 @@ from app.services.tools.call_control_tools import CallControlTools
 from app.services.tools.campaign_tools import CampaignTools
 from app.services.tools.crm_tools import CRMTools
 from app.services.tools.gohighlevel_tools import GoHighLevelTools
+from app.services.tools.lookup_tools import LookupTools
 from app.services.tools.rag_tools import RAGTools
 from app.services.tools.shopify_tools import ShopifyTools
 from app.services.tools.site_search_tools import SiteSearchTools
@@ -59,6 +60,7 @@ class ToolRegistry:
         self.tool_configs = tool_configs or {}
         self.campaign_context = campaign_context
         self.crm_tools = CRMTools(db, user_id, workspace_id=workspace_id)
+        self.lookup_tools = LookupTools(db, user_id, workspace_id=workspace_id)
         self._ghl_tools: GoHighLevelTools | None = None
         self._calendly_tools: CalendlyTools | None = None
         self._shopify_tools: ShopifyTools | None = None
@@ -336,6 +338,11 @@ class ToolRegistry:
             campaign_tools = CampaignTools.get_tool_definitions()
             tools.extend(campaign_tools)
 
+        # Lookup tools (structured data collections — no external API needed)
+        if "lookup" in enabled_tools:
+            lookup_tool_defs = LookupTools.get_tool_definitions()
+            tools.extend(filter_tools("lookup", lookup_tool_defs))
+
         # Site Search tools (requires site_url configured)
         if "site_search" in enabled_tools:
             site_search_instance = self._get_site_search_tools()
@@ -504,6 +511,15 @@ class ToolRegistry:
                     "error": "Knowledge Base not available. Agent ID required.",
                 }
             return await rag_tools.execute_tool(tool_name, arguments)
+
+        # Lookup tools
+        lookup_tool_names = {
+            "lookup_search",
+            "lookup_list_collections",
+        }
+
+        if tool_name in lookup_tool_names:
+            return await self.lookup_tools.execute_tool(tool_name, arguments)
 
         # Campaign tools
         campaign_tool_names = {
