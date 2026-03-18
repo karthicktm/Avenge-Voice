@@ -289,6 +289,36 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
     ],
   },
 
+  {
+    id: "lookup",
+    name: "Lookup",
+    slug: "lookup",
+    description:
+      "Query structured data collections (properties, FAQs, products, etc.) during calls",
+    category: "database",
+    authType: "none",
+    icon: "https://cdn.simpleicons.org/databricks",
+    enabled: true,
+    isBuiltIn: true,
+    badge: "Avenge AI",
+    tools: [
+      {
+        id: "lookup_search",
+        name: "Lookup Search",
+        description: "Search records across collections by keyword or domain",
+        riskLevel: "safe",
+        defaultEnabled: true,
+      },
+      {
+        id: "lookup_list_collections",
+        name: "List Collections",
+        description: "List available data collections the agent can query",
+        riskLevel: "safe",
+        defaultEnabled: true,
+      },
+    ],
+  },
+
   // External CRM
   {
     id: "salesforce",

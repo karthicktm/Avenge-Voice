@@ -21,6 +21,7 @@ from app.models.call_record import CallRecord
 from app.models.campaign import Campaign, CampaignContact
 from app.models.contact import Contact
 from app.models.document import Document, DocumentChunk
+from app.models.lookup import LookupCollection, LookupRecord
 from app.models.organization import Organization, PlanType, SubscriptionStatus
 from app.models.phone_number import PhoneNumber
 from app.models.privacy_settings import ConsentRecord, PrivacySettings
@@ -65,6 +66,8 @@ __all__ = [
     "InvitationStatus",
     "Invoice",
     "InvoiceStatus",
+    "LookupCollection",
+    "LookupRecord",
     "Organization",
     "PaymentMethod",
     "PaymentMethodType",

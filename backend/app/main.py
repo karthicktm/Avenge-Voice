@@ -33,6 +33,7 @@ from app.api import (
     embed,
     health,
     integrations,
+    lookup,
     organizations,
     password_reset,
     phone_numbers,
@@ -238,6 +239,7 @@ app.include_router(password_reset.router)  # Password reset API
 app.include_router(compliance.router)  # Compliance API (GDPR/CCPA)
 app.include_router(integrations.router)  # Integrations API (external tools)
 app.include_router(documents.router)  # Documents API (Knowledge Base/RAG)
+app.include_router(lookup.router, prefix=settings.API_V1_PREFIX)  # Lookup API
 app.include_router(site_indexer.router)  # Site indexer API (web crawl)
 app.include_router(embed.router)  # Public embed API (unauthenticated)
 app.include_router(embed.ws_router)  # Public embed WebSocket
