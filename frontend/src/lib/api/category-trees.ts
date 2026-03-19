@@ -132,7 +132,8 @@ export async function validateStructuredUpload(
   form.append("file", file);
   const res = await api.post<StructuredImportPreview>(
     `/api/v1/category-trees/${workspaceId}/${encodeURIComponent(treeName)}/import/structured`,
-    form
+    form,
+    { headers: { "Content-Type": undefined } }
   );
   return res.data;
 }
