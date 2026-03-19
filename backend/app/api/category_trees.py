@@ -376,7 +376,10 @@ def _parse_structured_file(content: bytes, filename: str) -> list[dict[str, str]
 
     if fn.endswith(".csv"):
         try:
-            text = content.decode("utf-8-sig")
+            try:
+                text = content.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text = content.decode("latin-1")
             reader = csv.DictReader(io.StringIO(text))
             return [dict(r) for r in reader]
         except Exception as exc:
