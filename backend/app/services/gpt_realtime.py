@@ -468,6 +468,14 @@ class GPTRealtimeSession:
         agent_id_str = self.agent_config.get("agent_id")
         agent_id = uuid.UUID(agent_id_str) if agent_id_str else None
 
+        # Get Redis for tool result caching
+        from app.db.redis import get_redis as _get_redis
+
+        try:
+            _redis = await _get_redis()
+        except Exception:
+            _redis = None
+
         # Initialize tool registry with enabled tools and workspace context
         # Pass OpenAI API key for RAG embeddings fallback
         campaign_context = self.agent_config.get("campaign_context")
@@ -480,7 +488,17 @@ class GPTRealtimeSession:
             openai_api_key=api_key,
             tool_configs=tool_configs,
             campaign_context=campaign_context,
+            redis=_redis,
         )
+
+        # Pre-warm lookup collections while WebSocket connection establishes
+        enabled_tools = self.agent_config.get("enabled_tools", [])
+        if "lookup" in enabled_tools:
+            try:
+                await self.tool_registry.prewarm_collections()
+                self.logger.info("lookup_collections_prewarmed")
+            except Exception:
+                self.logger.warning("lookup_prewarm_failed_continuing")
 
         # Connect to OpenAI Realtime API
         await self._connect_realtime_api()

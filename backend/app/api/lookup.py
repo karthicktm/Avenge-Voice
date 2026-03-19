@@ -473,7 +473,10 @@ async def import_records(  # noqa: PLR0912, PLR0915
 
     elif filename.endswith(".csv"):
         try:
-            text_content = content.decode("utf-8-sig")
+            try:
+                text_content = content.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text_content = content.decode("latin-1")
             reader = csv.DictReader(io.StringIO(text_content))
             rows = [dict(r) for r in reader]
         except Exception as exc:

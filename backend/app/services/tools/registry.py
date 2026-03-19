@@ -1,7 +1,10 @@
 """Tool registry for managing available tools for voice agents."""
 
+import contextlib
+import hashlib
+import json
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +19,25 @@ from app.services.tools.rag_tools import RAGTools
 from app.services.tools.shopify_tools import ShopifyTools
 from app.services.tools.site_search_tools import SiteSearchTools
 from app.services.tools.sms_tools import TelnyxSMSTools, TwilioSMSTools
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
+
+
+def _short_hash(s: str) -> str:
+    return hashlib.sha256(s.encode()).hexdigest()[:16]
+
+
+def _canonical_lookup_args(args: dict[str, Any]) -> str:
+    return "|".join(
+        [
+            str(args.get("query", "")).lower().strip(),
+            str(args.get("domain") or ""),
+            str(args.get("collection_id") or ""),
+            str(args.get("field") or ""),
+            str(min(int(args.get("limit", 3)), 10)),
+        ]
+    )
 
 
 class ToolRegistry:
@@ -37,6 +59,7 @@ class ToolRegistry:
         openai_api_key: str | None = None,
         tool_configs: dict[str, dict[str, Any]] | None = None,
         campaign_context: dict[str, Any] | None = None,
+        redis: "Redis | None" = None,
     ) -> None:
         """Initialize tool registry.
 
@@ -60,6 +83,8 @@ class ToolRegistry:
         self.openai_api_key = openai_api_key
         self.tool_configs = tool_configs or {}
         self.campaign_context = campaign_context
+        self._redis = redis
+        self._tool_cache: dict[str, Any] = {}
         self.crm_tools = CRMTools(db, user_id, workspace_id=workspace_id)
         self.lookup_tools = LookupTools(db, user_id, workspace_id=workspace_id)
         self.categorize_tools = CategorizeTools(
@@ -243,6 +268,27 @@ class ToolRegistry:
         self._rag_tools = RAGTools(self.db, self.agent_id, embedding_config=embedding_config)
         return self._rag_tools
 
+    async def _redis_get(self, key: str) -> dict[str, Any] | None:
+        if not self._redis:
+            return None
+        try:
+            raw = await self._redis.get(key)
+            return json.loads(raw) if raw else None
+        except Exception:
+            return None
+
+    async def _redis_set(self, key: str, value: dict[str, Any], ttl: int) -> None:
+        if not self._redis:
+            return
+        with contextlib.suppress(Exception):
+            await self._redis.setex(key, ttl, json.dumps(value))
+
+    async def prewarm_collections(self) -> None:
+        """Pre-fetch lookup collections list into session + Redis cache."""
+        if not self.workspace_id:
+            return
+        await self.execute_tool("lookup_list_collections", {})
+
     def get_all_tool_definitions(  # noqa: PLR0912, PLR0915
         self,
         enabled_tools: list[str],
@@ -367,7 +413,7 @@ class ToolRegistry:
 
         return tools
 
-    async def execute_tool(  # noqa: PLR0911, PLR0912
+    async def execute_tool(  # noqa: PLR0911, PLR0912, PLR0915
         self, tool_name: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
         """Execute a tool by routing to appropriate handler.
@@ -532,11 +578,65 @@ class ToolRegistry:
         }
 
         if tool_name in lookup_tool_names:
+            if tool_name == "lookup_search":
+                canonical = _canonical_lookup_args(arguments)
+                session_key = f"lookup_search:{canonical}"
+
+                if session_key in self._tool_cache:
+                    return cast("dict[str, Any]", self._tool_cache[session_key])
+
+                redis_key = f"lookup:search:{self.workspace_id}:{_short_hash(canonical)}"
+                cached = await self._redis_get(redis_key)
+                if cached:
+                    self._tool_cache[session_key] = cached
+                    return cached
+
+                result = await self.lookup_tools.execute_tool(tool_name, arguments)
+                if result.get("success"):
+                    self._tool_cache[session_key] = result
+                    await self._redis_set(redis_key, result, ttl=900)
+                return result
+
+            if tool_name == "lookup_list_collections":
+                session_key = "lookup_list_collections"
+
+                if session_key in self._tool_cache:
+                    return cast("dict[str, Any]", self._tool_cache[session_key])
+
+                redis_key = f"lookup:collections:{self.workspace_id}"
+                cached = await self._redis_get(redis_key)
+                if cached:
+                    self._tool_cache[session_key] = cached
+                    return cached
+
+                result = await self.lookup_tools.execute_tool(tool_name, arguments)
+                if result.get("success"):
+                    self._tool_cache[session_key] = result
+                    await self._redis_set(redis_key, result, ttl=900)
+                return result
+
             return await self.lookup_tools.execute_tool(tool_name, arguments)
 
         # Categorization tools
         if tool_name == "categorize":
-            return await self.categorize_tools.execute_tool(tool_name, arguments)
+            tree_name = str(arguments.get("tree_name", ""))
+            text_norm = str(arguments.get("text", "")).lower().strip()
+            session_key = f"categorize:{tree_name}:{text_norm}"
+
+            if session_key in self._tool_cache:
+                return cast("dict[str, Any]", self._tool_cache[session_key])
+
+            redis_key = f"categorize:{self.workspace_id}:{tree_name}:{_short_hash(text_norm)}"
+            cached = await self._redis_get(redis_key)
+            if cached:
+                self._tool_cache[session_key] = cached
+                return cached
+
+            result = await self.categorize_tools.execute_tool(tool_name, arguments)
+            self._tool_cache[session_key] = result
+            if result.get("success") and result.get("resolution_layer") == "llm":
+                await self._redis_set(redis_key, result, ttl=86400)
+            return result
 
         # Campaign tools
         campaign_tool_names = {
