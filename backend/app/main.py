@@ -27,6 +27,7 @@ from app.api import (
     billing,
     calls,
     campaigns,
+    category_trees,
     compliance,
     crm,
     documents,
@@ -240,6 +241,7 @@ app.include_router(compliance.router)  # Compliance API (GDPR/CCPA)
 app.include_router(integrations.router)  # Integrations API (external tools)
 app.include_router(documents.router)  # Documents API (Knowledge Base/RAG)
 app.include_router(lookup.router, prefix=settings.API_V1_PREFIX)  # Lookup API
+app.include_router(category_trees.router, prefix=settings.API_V1_PREFIX)  # Category Trees API
 app.include_router(site_indexer.router)  # Site indexer API (web crawl)
 app.include_router(embed.router)  # Public embed API (unauthenticated)
 app.include_router(embed.ws_router)  # Public embed WebSocket

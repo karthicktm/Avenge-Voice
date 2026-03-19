@@ -28,6 +28,7 @@ import {
   Calendar,
   FolderOpen,
   Database,
+  Network,
   PanelLeftClose,
   PanelLeft,
   LogOut,
@@ -86,6 +87,12 @@ const baseNavigation: NavItem[] = [
     href: "/dashboard/lookup",
     icon: Database,
     color: "text-teal-400",
+  },
+  {
+    name: "Category Trees",
+    href: "/dashboard/category-trees",
+    icon: Network,
+    color: "text-purple-400",
   },
   {
     name: "Integrations",

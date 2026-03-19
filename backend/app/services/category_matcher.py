@@ -1,0 +1,168 @@
+"""Category matching logic — Postgres FTS (Layer 1) + LLM fallback (Layer 2)."""
+
+import uuid
+from typing import Any
+
+import structlog
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.category_tree import CategoryTree
+
+logger = structlog.get_logger()
+
+# ts_rank score below this threshold triggers LLM fallback
+FTS_THRESHOLD = 0.05
+
+
+async def match_category(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    tree_name: str,
+    text: str,
+    user_id: int,
+    top_k: int = 1,
+    openai_api_key: str | None = None,
+) -> tuple[CategoryTree | None, float | None, str]:
+    """Match input text against an active category tree.
+
+    Args:
+        db: Async DB session.
+        workspace_id: Workspace owning the tree.
+        tree_name: Logical tree identifier.
+        text: Raw caller input to classify.
+        user_id: Owner user ID for scoping.
+        top_k: Max candidates to consider.
+        openai_api_key: Optional key for LLM fallback.
+
+    Returns:
+        (matched_node | None, confidence | None, resolution_layer)
+        resolution_layer is one of: "fts" | "llm" | "none"
+    """
+    log = logger.bind(
+        component="category_matcher",
+        workspace_id=str(workspace_id),
+        tree_name=tree_name,
+    )
+
+    # ------------------------------------------------------------------
+    # Layer 1 — Postgres FTS
+    # ------------------------------------------------------------------
+    tsquery = func.plainto_tsquery("simple", text)
+    ts_rank_expr = func.ts_rank(CategoryTree.search_vector, tsquery)
+
+    stmt = (
+        select(CategoryTree, ts_rank_expr.label("score"))
+        .where(
+            CategoryTree.workspace_id == workspace_id,
+            CategoryTree.tree_name == tree_name,
+            CategoryTree.status == "active",
+            CategoryTree.search_vector.op("@@")(tsquery),
+        )
+        .order_by(ts_rank_expr.desc())
+        .limit(max(top_k, 5))  # always fetch at least 5 for LLM fallback
+    )
+
+    result = await db.execute(stmt)
+    rows = result.fetchall()
+
+    if rows:
+        best_node, best_score = rows[0]
+        log.info("fts_result", score=best_score, label=best_node.label)
+
+        if best_score >= FTS_THRESHOLD:
+            return best_node, float(best_score), "fts"
+
+        log.info("fts_below_threshold", score=best_score, threshold=FTS_THRESHOLD)
+    else:
+        log.info("fts_no_results")
+
+    # ------------------------------------------------------------------
+    # Layer 2 — LLM selects best from top-5 FTS candidates
+    # ------------------------------------------------------------------
+    candidates = [r[0] for r in rows[:5]]  # CategoryTree objects
+
+    if not candidates:
+        log.info("no_candidates_for_llm")
+        return None, None, "none"
+
+    llm_node = await _llm_select(
+        text=text,
+        candidates=candidates,
+        openai_api_key=openai_api_key,
+        log=log,
+    )
+
+    if llm_node is not None:
+        return llm_node, 0.8, "llm"
+
+    return None, None, "none"
+
+
+async def _llm_select(  # noqa: PLR0911
+    text: str,
+    candidates: list[CategoryTree],
+    openai_api_key: str | None,
+    log: Any,
+) -> CategoryTree | None:
+    """Ask an LLM to pick the best candidate from a short list.
+
+    Returns the best candidate node, or None if no candidate is a good match.
+    Retries once on JSON parse failure.
+    """
+    if not openai_api_key:
+        log.warning("llm_select_skipped_no_api_key")
+        return None
+
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=openai_api_key)
+    except ImportError:
+        log.warning("llm_select_skipped_openai_not_installed")
+        return None
+
+    candidate_list = "\n".join(
+        f"{i + 1}. [{c.code or '-'}] {c.label}" for i, c in enumerate(candidates)
+    )
+
+    system_prompt = (
+        "You are a category classifier. Given caller input and a list of candidate categories, "
+        "select the single best match by returning its number (1-based). "
+        "If none is a good match, return 0. Respond with ONLY the number — no explanation."
+    )
+    user_message = (
+        f"Caller input: {text!r}\n\n"
+        f"Candidates:\n{candidate_list}\n\n"
+        "Which number best matches? (0 if none)"
+    )
+
+    for attempt in range(2):
+        try:
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                max_tokens=10,
+                temperature=0,
+            )
+            raw = (response.choices[0].message.content or "").strip()
+            idx = int(raw)
+            if idx == 0:
+                log.info("llm_select_no_match")
+                return None
+            if 1 <= idx <= len(candidates):
+                chosen = candidates[idx - 1]
+                log.info("llm_select_matched", label=chosen.label, attempt=attempt)
+                return chosen
+        except (ValueError, IndexError) as exc:
+            log.warning("llm_select_parse_error", raw=raw if "raw" in dir() else "", error=str(exc))
+            if attempt == 1:
+                return None
+        except Exception:
+            log.exception("llm_select_error")
+            return None
+
+    return None
