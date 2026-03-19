@@ -197,5 +197,23 @@ class Settings(BaseSettings):
     RAG_MAX_FILE_SIZE: int = 52_428_800  # 50MB max file size
     RAG_MAX_DOCUMENTS_PER_AGENT: int = 50  # Max documents per agent
 
+    # LiveKit
+    LIVEKIT_URL: str | None = None
+    LIVEKIT_API_KEY: str | None = None
+    LIVEKIT_API_SECRET: str | None = None
+
+    # Agent Deployment
+    DEPLOYMENT_BACKEND: str = "docker"  # "docker" or "railway"
+    AGENT_RUNTIME_IMAGE: str = "avenge-voice-agent:latest"
+    DOCKER_NETWORK_NAME: str = "avenge-voice_default"
+    AGENT_CONTAINER_MEMORY_LIMIT: str = "512m"
+    AGENT_CONTAINER_CPU_LIMIT: float = 0.5
+
+    # Railway Deployment
+    RAILWAY_TOKEN: str | None = None
+    RAILWAY_PROJECT_ID: str | None = None
+    RAILWAY_ENVIRONMENT_ID: str | None = None
+    RAILWAY_AGENT_IMAGE: str = "avenge-voice-agent:latest"
+
 
 settings = Settings()

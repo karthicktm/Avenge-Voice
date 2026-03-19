@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.tools.calendly_tools import CalendlyTools
 from app.services.tools.call_control_tools import CallControlTools
 from app.services.tools.campaign_tools import CampaignTools
+from app.services.tools.categorize_tools import CategorizeTools
 from app.services.tools.crm_tools import CRMTools
 from app.services.tools.gohighlevel_tools import GoHighLevelTools
 from app.services.tools.lookup_tools import LookupTools
@@ -61,6 +62,13 @@ class ToolRegistry:
         self.campaign_context = campaign_context
         self.crm_tools = CRMTools(db, user_id, workspace_id=workspace_id)
         self.lookup_tools = LookupTools(db, user_id, workspace_id=workspace_id)
+        self.categorize_tools = CategorizeTools(
+            db,
+            user_id,
+            workspace_id=workspace_id,
+            agent_id=agent_id,
+            openai_api_key=openai_api_key,
+        )
         self._ghl_tools: GoHighLevelTools | None = None
         self._calendly_tools: CalendlyTools | None = None
         self._shopify_tools: ShopifyTools | None = None
@@ -343,6 +351,11 @@ class ToolRegistry:
             lookup_tool_defs = LookupTools.get_tool_definitions()
             tools.extend(filter_tools("lookup", lookup_tool_defs))
 
+        # Categorization tools (FTS + LLM category tree matching)
+        if "categorization" in enabled_tools:
+            categorize_tool_defs = CategorizeTools.get_tool_definitions()
+            tools.extend(filter_tools("categorization", categorize_tool_defs))
+
         # Site Search tools (requires site_url configured)
         if "site_search" in enabled_tools:
             site_search_instance = self._get_site_search_tools()
@@ -520,6 +533,10 @@ class ToolRegistry:
 
         if tool_name in lookup_tool_names:
             return await self.lookup_tools.execute_tool(tool_name, arguments)
+
+        # Categorization tools
+        if tool_name == "categorize":
+            return await self.categorize_tools.execute_tool(tool_name, arguments)
 
         # Campaign tools
         campaign_tool_names = {

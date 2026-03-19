@@ -16,7 +16,10 @@ export interface LookupCollection {
   domain: string;
   use_case_tag: string | null;
   source_type: string;
-  field_schema: Record<string, { label: string; description?: string; searchable?: boolean }> | null;
+  field_schema: Record<
+    string,
+    { label: string; description?: string; searchable?: boolean }
+  > | null;
   is_active: boolean;
   record_count: number;
 }
@@ -99,7 +102,10 @@ export async function getCollection(id: string): Promise<LookupCollection> {
   return res.data;
 }
 
-export async function updateCollection(id: string, body: CollectionUpdate): Promise<LookupCollection> {
+export async function updateCollection(
+  id: string,
+  body: CollectionUpdate
+): Promise<LookupCollection> {
   const res = await api.put<LookupCollection>(`/api/v1/lookup/collections/${id}`, body);
   return res.data;
 }
@@ -114,19 +120,22 @@ export async function deleteCollection(id: string): Promise<void> {
 
 export async function listRecords(
   collectionId: string,
-  params?: { search?: string; limit?: number; skip?: number },
+  params?: { search?: string; limit?: number; skip?: number }
 ): Promise<PaginatedRecords> {
   const res = await api.get<PaginatedRecords>(
     `/api/v1/lookup/collections/${collectionId}/records`,
-    { params },
+    { params }
   );
   return res.data;
 }
 
-export async function createRecord(collectionId: string, body: RecordCreate): Promise<LookupRecord> {
+export async function createRecord(
+  collectionId: string,
+  body: RecordCreate
+): Promise<LookupRecord> {
   const res = await api.post<LookupRecord>(
     `/api/v1/lookup/collections/${collectionId}/records`,
-    body,
+    body
   );
   return res.data;
 }
@@ -150,7 +159,7 @@ export async function importRecords(collectionId: string, file: File): Promise<I
   const res = await api.post<ImportResult>(
     `/api/v1/lookup/collections/${collectionId}/import`,
     formData,
-    { headers: { "Content-Type": undefined } },
+    { headers: { "Content-Type": undefined } }
   );
   return res.data;
 }

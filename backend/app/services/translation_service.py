@@ -57,9 +57,7 @@ class TranslationService:
             self.logger.warning("language_detection_failed", error=str(e))
             return "en"  # Default to English on failure
 
-    async def translate_to_english(
-        self, text: str, source_lang: str
-    ) -> tuple[str, bool]:
+    async def translate_to_english(self, text: str, source_lang: str) -> tuple[str, bool]:
         """Translate text to English.
 
         Args:
@@ -111,9 +109,7 @@ class TranslationService:
             )
             return text, False  # Return original on failure
 
-    async def translate_chunks(
-        self, chunks: list[str], source_lang: str
-    ) -> tuple[list[str], str]:
+    async def translate_chunks(self, chunks: list[str], source_lang: str) -> tuple[list[str], str]:
         """Translate a list of text chunks to English.
 
         Args:

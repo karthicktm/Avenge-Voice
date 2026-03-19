@@ -163,7 +163,9 @@ async def create_user_with_organization(
         slug=org_slug,
         owner_id=user.id,
         plan_type=plan_type_enum,
-        subscription_status=SubscriptionStatus.TRIAL if plan_key != "free" else SubscriptionStatus.ACTIVE,
+        subscription_status=SubscriptionStatus.TRIAL
+        if plan_key != "free"
+        else SubscriptionStatus.ACTIVE,
         trial_ends_at=datetime.now(UTC) + timedelta(days=14) if plan_key != "free" else None,
         max_users=limits["max_users"],
         max_agents=limits["max_agents"],

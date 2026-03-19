@@ -253,3 +253,41 @@ export async function updateEmbedSettings(
 
   return response.json();
 }
+
+// ---------------------------------------------------------------------------
+// Agent deployment
+// ---------------------------------------------------------------------------
+
+export interface AgentDeployment {
+  id: string;
+  agent_id: string;
+  container_id: string | null;
+  container_name: string | null;
+  container_url: string | null;
+  status: "pending" | "running" | "stopped" | "failed";
+  error_message: string | null;
+  backend: string | null;
+  updated_at: string;
+}
+
+export async function getDeploymentStatus(agentId: string): Promise<AgentDeployment> {
+  const response = await fetchWithTimeout(`${API_BASE}/api/v1/agents/${agentId}/deployment`);
+  if (response.status === 404) throw new Error("NOT_FOUND");
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail ?? "Failed to fetch deployment status");
+  }
+  return response.json();
+}
+
+export async function deployAgent(agentId: string): Promise<AgentDeployment> {
+  const response = await fetchWithTimeout(`${API_BASE}/api/v1/agents/${agentId}/deployment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail ?? "Failed to trigger deployment");
+  }
+  return response.json();
+}

@@ -275,7 +275,9 @@ function CollectionModal({
             <Label>Workspace (optional)</Label>
             <Select
               value={form.workspace_id}
-              onValueChange={(v) => setForm((f) => ({ ...f, workspace_id: v === "__none__" ? "" : v }))}
+              onValueChange={(v) =>
+                setForm((f) => ({ ...f, workspace_id: v === "__none__" ? "" : v }))
+              }
             >
               <SelectTrigger>
                 <SelectValue placeholder="No workspace (personal)" />
@@ -327,9 +329,7 @@ function RecordModal({
 }) {
   const isEdit = record !== null;
   const [title, setTitle] = useState(record?.title ?? "");
-  const [jsonText, setJsonText] = useState(
-    record ? JSON.stringify(record.data, null, 2) : "{}",
-  );
+  const [jsonText, setJsonText] = useState(record ? JSON.stringify(record.data, null, 2) : "{}");
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -417,7 +417,11 @@ function RecordModal({
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={() => void handleSave()} disabled={saving || !!jsonError} className="gap-2">
+          <Button
+            onClick={() => void handleSave()}
+            disabled={saving || !!jsonError}
+            className="gap-2"
+          >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             {isEdit ? "Save" : "Create"}
           </Button>
@@ -546,7 +550,13 @@ export default function LookupPage() {
         typeof detail === "string"
           ? detail
           : Array.isArray(detail)
-            ? detail.map((d) => (typeof d === "object" && d !== null && "msg" in d ? String((d as { msg: unknown }).msg) : String(d))).join("; ")
+            ? detail
+                .map((d) =>
+                  typeof d === "object" && d !== null && "msg" in d
+                    ? String((d as { msg: unknown }).msg)
+                    : String(d)
+                )
+                .join("; ")
             : "Import failed";
       toast.error(msg);
     } finally {
@@ -565,8 +575,7 @@ export default function LookupPage() {
   // ---------------------------------------------------------------------------
 
   async function handleExport(collectionId: string, format: "csv" | "json") {
-    const token =
-      typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
     const url = exportUrl(collectionId, format);
     try {
       const res = await fetch(url, {
@@ -857,8 +866,7 @@ export default function LookupPage() {
               {recordsPage && recordsPage.total > LIMIT && (
                 <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm">
                   <span className="text-muted-foreground">
-                    {skip + 1}–{Math.min(skip + LIMIT, recordsPage.total)} of{" "}
-                    {recordsPage.total}
+                    {skip + 1}–{Math.min(skip + LIMIT, recordsPage.total)} of {recordsPage.total}
                   </span>
                   <div className="flex gap-2">
                     <Button

@@ -87,11 +87,7 @@ def get_realtime_model_for_tier(pricing_tier: str) -> str:
         OpenAI Realtime model name
     """
     # Using latest production gpt-realtime models (updated Mar 2026)
-    return (
-        "gpt-realtime-mini-2025-12-15"
-        if pricing_tier == "premium-mini"
-        else "gpt-realtime-1.5"
-    )
+    return "gpt-realtime-mini-2025-12-15" if pricing_tier == "premium-mini" else "gpt-realtime-1.5"
 
 
 @router.websocket("/realtime/{agent_id}")
@@ -462,9 +458,7 @@ async def create_webrtc_session(  # noqa: PLR0915
         tool_configs=agent.tool_configs or {},
     )
     enabled_tools = agent.enabled_tools or []
-    tools = tool_registry.get_all_tool_definitions(
-        enabled_tools, agent.enabled_tool_ids
-    )
+    tools = tool_registry.get_all_tool_definitions(enabled_tools, agent.enabled_tool_ids)
 
     # Get workspace timezone
     from app.models.workspace import Workspace

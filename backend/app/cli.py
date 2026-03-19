@@ -250,9 +250,7 @@ async def verify_user_email() -> None:
 async def verify_all_superadmins() -> None:
     """Verify email for all super admin users."""
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(User).where(User.role == UserRole.SUPER_ADMIN)
-        )
+        result = await db.execute(select(User).where(User.role == UserRole.SUPER_ADMIN))
         superusers = result.scalars().all()
 
         if not superusers:

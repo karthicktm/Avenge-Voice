@@ -532,7 +532,9 @@ async def purchase_phone_number(
                 detail="Twilio credentials not configured. Please add them in Settings.",
             )
         number = await twilio_service.purchase_phone_number(purchase_request.phone_number)
-        await _configure_webhook_for_provider(twilio_service, number.id, "twilio", log, workspace_id)
+        await _configure_webhook_for_provider(
+            twilio_service, number.id, "twilio", log, workspace_id
+        )
 
     elif purchase_request.provider == "telnyx":
         telnyx_service = await get_telnyx_service(current_user.id, db, workspace_id=workspace_uuid)
@@ -542,7 +544,9 @@ async def purchase_phone_number(
                 detail="Telnyx credentials not configured. Please add them in Settings.",
             )
         number = await telnyx_service.purchase_phone_number(purchase_request.phone_number)
-        await _configure_webhook_for_provider(telnyx_service, number.id, "telnyx", log, workspace_id)
+        await _configure_webhook_for_provider(
+            telnyx_service, number.id, "telnyx", log, workspace_id
+        )
 
     else:
         raise HTTPException(status_code=400, detail="Invalid provider. Use 'twilio' or 'telnyx'.")

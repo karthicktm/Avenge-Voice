@@ -71,9 +71,7 @@ async def get_twilio_webhook_params(request: Request) -> dict[str, str]:
     return {key: str(value) for key, value in form_data.items()}
 
 
-async def verify_twilio_webhook(
-    request: Request, auth_token: str | None = None
-) -> bool:
+async def verify_twilio_webhook(request: Request, auth_token: str | None = None) -> bool:
     """Verify Twilio webhook signature from request.
 
     Args:
