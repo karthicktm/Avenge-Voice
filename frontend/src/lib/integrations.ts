@@ -319,6 +319,30 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
     ],
   },
 
+  {
+    id: "category_tree",
+    name: "Category Tree",
+    slug: "category-tree",
+    description:
+      "Classify caller input against a configured category tree using FTS and LLM-assisted matching",
+    category: "database",
+    authType: "none",
+    icon: "https://cdn.simpleicons.org/apachecassandra",
+    enabled: true,
+    isBuiltIn: true,
+    badge: "Avenge AI",
+    tools: [
+      {
+        id: "categorize",
+        name: "Categorize",
+        description:
+          "Classify the caller's input against a named category tree and return the matched category",
+        riskLevel: "safe",
+        defaultEnabled: true,
+      },
+    ],
+  },
+
   // External CRM
   {
     id: "salesforce",

@@ -398,9 +398,10 @@ class ToolRegistry:
             tools.extend(filter_tools("lookup", lookup_tool_defs))
 
         # Categorization tools (FTS + LLM category tree matching)
-        if "categorization" in enabled_tools:
+        if "categorization" in enabled_tools or "category_tree" in enabled_tools:
             categorize_tool_defs = CategorizeTools.get_tool_definitions()
-            tools.extend(filter_tools("categorization", categorize_tool_defs))
+            integration_id = "category_tree" if "category_tree" in enabled_tools else "categorization"
+            tools.extend(filter_tools(integration_id, categorize_tool_defs))
 
         # Site Search tools (requires site_url configured)
         if "site_search" in enabled_tools:
