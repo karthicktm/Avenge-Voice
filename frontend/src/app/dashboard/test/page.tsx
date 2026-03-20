@@ -871,11 +871,12 @@ export default function TestAgentPage() {
 
             try {
               // Execute tool via backend API
+              const currentToken = localStorage.getItem("access_token");
               const toolResponse = await fetch(`${apiBase}/api/v1/tools/execute`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
-                  ...(authToken && { Authorization: `Bearer ${authToken}` }),
+                  ...(currentToken && { Authorization: `Bearer ${currentToken}` }),
                 },
                 body: JSON.stringify({
                   tool_name: name,
