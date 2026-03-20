@@ -233,6 +233,12 @@ export function KnowledgeBaseTab({
           variant: "destructive" as const,
           label: "Failed",
         };
+      default:
+        return {
+          icon: <Clock className="h-4 w-4" />,
+          variant: "secondary" as const,
+          label: String(status),
+        };
     }
   };
 
