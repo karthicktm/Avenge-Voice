@@ -3,9 +3,11 @@
 import contextlib
 import hashlib
 import json
+import time
 import uuid
 from typing import TYPE_CHECKING, Any, cast
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.tools.calendly_tools import CalendlyTools
@@ -127,6 +129,11 @@ class ToolRegistry:
         self.campaign_context = campaign_context
         self._redis = redis
         self._tool_cache: dict[str, Any] = {}
+        self._log = structlog.get_logger().bind(
+            component="tool_registry",
+            agent_id=str(agent_id) if agent_id else None,
+            workspace_id=str(workspace_id) if workspace_id else None,
+        )
         # tree_name → flat list of node dicts (loaded at session start)
         self._prewarmed_trees: dict[str, list[dict[str, Any]]] = {}
         self.crm_tools = CRMTools(db, user_id, workspace_id=workspace_id)
@@ -273,22 +280,18 @@ class ToolRegistry:
         Translation settings come from agent's tool_configs (agent-specific).
         Falls back to OpenAI API key if no explicit knowledge_base config.
         """
-        import structlog
-
-        logger = structlog.get_logger()
-
         if self._rag_tools:
             return self._rag_tools
 
         if not self.agent_id:
-            logger.warning("rag_tools_skipped_no_agent_id")
+            self._log.warning("rag_tools_skipped_no_agent_id")
             return None
 
         # Get knowledge_base credentials from workspace integrations
         kb_creds = self.integrations.get("knowledge_base", {})
         api_key = kb_creds.get("api_key")
 
-        logger.info(
+        self._log.info(
             "rag_tools_credential_check",
             has_kb_creds=bool(kb_creds),
             has_kb_api_key=bool(api_key),
@@ -298,10 +301,10 @@ class ToolRegistry:
         # Fall back to OpenAI API key if no explicit knowledge_base config
         if not api_key and self.openai_api_key:
             api_key = self.openai_api_key
-            logger.info("rag_tools_using_openai_fallback")
+            self._log.info("rag_tools_using_openai_fallback")
 
         if not api_key:
-            logger.warning("rag_tools_skipped_no_api_key")
+            self._log.warning("rag_tools_skipped_no_api_key")
             return None
 
         # Get agent-specific translation settings from tool_configs
@@ -317,7 +320,7 @@ class ToolRegistry:
             "translation_model": agent_kb_config.get("translation_model", "gpt-4o-mini"),
         }
 
-        logger.info(
+        self._log.info(
             "rag_tools_initialized",
             agent_id=str(self.agent_id),
             embedding_model=embedding_config["embedding_model"],
@@ -360,7 +363,6 @@ class ToolRegistry:
         if not self.workspace_id:
             return
 
-        import structlog
         from sqlalchemy import select
 
         from app.models.category_tree import CategoryTree
@@ -492,13 +494,9 @@ class ToolRegistry:
 
         # Knowledge Base / RAG tools (requires agent_id) — register BEFORE site search
         # so we know whether KB exists when building site search tool description
-        import structlog
-
-        logger = structlog.get_logger()
-
         kb_in_enabled = "knowledge_base" in enabled_tools
         has_knowledge_base = False
-        logger.info(
+        self._log.info(
             "knowledge_base_tool_check",
             kb_in_enabled_tools=kb_in_enabled,
             enabled_tools=enabled_tools,
@@ -511,9 +509,9 @@ class ToolRegistry:
                 rag_tools = RAGTools.get_tool_definitions()
                 tools.extend(filter_tools("knowledge_base", rag_tools))
                 has_knowledge_base = True
-                logger.info("knowledge_base_tool_registered", tool_count=len(rag_tools))
+                self._log.info("knowledge_base_tool_registered", tool_count=len(rag_tools))
             else:
-                logger.warning("knowledge_base_tool_not_registered_no_instance")
+                self._log.warning("knowledge_base_tool_not_registered_no_instance")
 
         # Campaign tools - auto-registered when campaign_context is present
         if self.campaign_context:
@@ -549,7 +547,24 @@ class ToolRegistry:
 
         return tools
 
-    async def execute_tool(  # noqa: PLR0911, PLR0912, PLR0915
+    async def execute_tool(
+        self, tool_name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Execute a tool with structured logging of request and response."""
+        log = self._log.bind(tool=tool_name)
+        log.info("tool_call_start", arguments=arguments)
+        t0 = time.monotonic()
+        result = await self._execute_tool_impl(tool_name, arguments)
+        elapsed_ms = round((time.monotonic() - t0) * 1000, 1)
+        log.info(
+            "tool_call_done",
+            elapsed_ms=elapsed_ms,
+            success=result.get("success"),
+            result=result,
+        )
+        return result
+
+    async def _execute_tool_impl(  # noqa: PLR0911, PLR0912, PLR0915
         self, tool_name: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
         """Execute a tool by routing to appropriate handler.
