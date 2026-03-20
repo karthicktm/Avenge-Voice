@@ -17,12 +17,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.settings import get_user_api_keys
+from app.core.auth import user_id_to_uuid
 from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.call_record import CallRecord
 from app.models.campaign import Campaign, CampaignContact
 from app.models.workspace import AgentWorkspace
 from app.services.gpt_realtime import GPTRealtimeSession
+from app.services.telephony.telnyx_service import TelnyxService
+from app.services.telephony.twilio_service import TwilioService
 
 router = APIRouter(prefix="/ws/telephony", tags=["telephony-ws"])
 logger = structlog.get_logger()
@@ -38,6 +42,34 @@ async def get_agent_workspace_id(agent_id: uuid.UUID, db: AsyncSession) -> uuid.
     )
     row = result.scalar_one_or_none()
     return row
+
+
+async def _get_telnyx_service(
+    user_id: int, db: AsyncSession, workspace_id: uuid.UUID | None
+) -> TelnyxService | None:
+    user_settings = await get_user_api_keys(user_id_to_uuid(user_id), db, workspace_id=workspace_id)
+    if not user_settings or not user_settings.telnyx_api_key:
+        return None
+    return TelnyxService(
+        api_key=user_settings.telnyx_api_key,
+        public_key=user_settings.telnyx_public_key,
+    )
+
+
+async def _get_twilio_service(
+    user_id: int, db: AsyncSession, workspace_id: uuid.UUID | None
+) -> TwilioService | None:
+    user_settings = await get_user_api_keys(user_id_to_uuid(user_id), db, workspace_id=workspace_id)
+    if (
+        not user_settings
+        or not user_settings.twilio_account_sid
+        or not user_settings.twilio_auth_token
+    ):
+        return None
+    return TwilioService(
+        account_sid=user_settings.twilio_account_sid,
+        auth_token=user_settings.twilio_auth_token,
+    )
 
 
 async def save_transcript_to_call_record(
@@ -229,12 +261,22 @@ async def twilio_media_stream(
             workspace_id=workspace_id,
         ) as realtime_session:
             # Handle Twilio media stream and capture call_sid
-            call_sid = await _handle_twilio_stream(
+            call_sid, ended_by_agent = await _handle_twilio_stream(
                 websocket=websocket,
                 realtime_session=realtime_session,
                 log=log,
                 enable_transcript=agent.enable_transcript,
             )
+
+            # Hang up the phone call if the agent triggered end_call
+            if ended_by_agent and call_sid:
+                twilio_svc = await _get_twilio_service(user_id_int, db, workspace_id)
+                if twilio_svc:
+                    with contextlib.suppress(Exception):
+                        await twilio_svc.hangup_call(call_sid)
+                        log.info("twilio_call_hungup", call_sid=call_sid)
+                else:
+                    log.warning("twilio_service_unavailable_for_hangup", call_sid=call_sid)
 
             # Save transcript to call record if enabled
             if agent.enable_transcript and call_sid:
@@ -254,7 +296,7 @@ async def _handle_twilio_stream(  # noqa: PLR0915
     realtime_session: GPTRealtimeSession,
     log: Any,
     enable_transcript: bool = False,
-) -> str:
+) -> tuple[str, bool]:
     """Handle Twilio Media Stream messages.
 
     Args:
@@ -264,7 +306,7 @@ async def _handle_twilio_stream(  # noqa: PLR0915
         enable_transcript: Whether to capture transcript
 
     Returns:
-        The call_sid for transcript saving
+        Tuple of (call_sid, should_end_call)
     """
     stream_sid = ""
     call_sid = ""
@@ -470,7 +512,7 @@ async def _handle_twilio_stream(  # noqa: PLR0915
         with contextlib.suppress(Exception):
             await websocket.close(code=1000, reason="Call ended by agent")
 
-    return call_sid
+    return call_sid, should_end_call
 
 
 @router.websocket("/telnyx/{agent_id}")
@@ -568,12 +610,25 @@ async def telnyx_media_stream(
             workspace_id=workspace_id,
         ) as realtime_session:
             # Handle Telnyx media stream and capture call_control_id
-            call_control_id = await _handle_telnyx_stream(
+            call_control_id, ended_by_agent = await _handle_telnyx_stream(
                 websocket=websocket,
                 realtime_session=realtime_session,
                 log=log,
                 enable_transcript=agent.enable_transcript,
             )
+
+            # Hang up the phone call if the agent triggered end_call
+            if ended_by_agent and call_control_id:
+                telnyx_svc = await _get_telnyx_service(user_id_int, db, workspace_id)
+                if telnyx_svc:
+                    with contextlib.suppress(Exception):
+                        await telnyx_svc.hangup_call(call_control_id)
+                        log.info("telnyx_call_hungup", call_control_id=call_control_id)
+                else:
+                    log.warning(
+                        "telnyx_service_unavailable_for_hangup",
+                        call_control_id=call_control_id,
+                    )
 
             # Save transcript to call record if enabled
             if agent.enable_transcript and call_control_id:
@@ -593,7 +648,7 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
     realtime_session: GPTRealtimeSession,
     log: Any,
     enable_transcript: bool = False,
-) -> str:
+) -> tuple[str, bool]:
     """Handle Telnyx Media Stream messages.
 
     Args:
@@ -603,7 +658,7 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
         enable_transcript: Whether to capture transcript
 
     Returns:
-        The call_control_id for transcript saving
+        Tuple of (call_control_id, should_end_call)
     """
     stream_id = ""
     call_control_id = ""
@@ -760,4 +815,4 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
         with contextlib.suppress(Exception):
             await websocket.close(code=1000, reason="Call ended by agent")
 
-    return call_control_id
+    return call_control_id, should_end_call
