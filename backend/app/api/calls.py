@@ -1,7 +1,8 @@
 """Call history API routes."""
 
 import uuid
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.db.session import get_db
 from app.models.call_record import CallRecord
+from app.models.category_tree import CategoryResult
 
 router = APIRouter(prefix="/api/v1/calls", tags=["calls"])
 logger = structlog.get_logger()
@@ -45,6 +47,8 @@ class CallRecordResponse(BaseModel):
     started_at: datetime
     answered_at: datetime | None
     ended_at: datetime | None
+    category_path: list[str] | None = None
+    category_code: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -57,6 +61,57 @@ class CallRecordListResponse(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+# =============================================================================
+# Helpers
+# =============================================================================
+
+
+async def _fetch_category_results_for_calls(
+    db: AsyncSession,
+    records: list[CallRecord],
+) -> dict[uuid.UUID, CategoryResult]:
+    """Return a map of CallRecord.id -> best CategoryResult for each call.
+
+    Matches by agent_id + time window (started_at to ended_at + 5 min buffer).
+    """
+    agent_ids = [r.agent_id for r in records if r.agent_id]
+    if not agent_ids:
+        return {}
+
+    min_time = min(r.started_at for r in records)
+    max_ended = max((r.ended_at or r.started_at) for r in records)
+
+    result = await db.execute(
+        select(CategoryResult)
+        .where(
+            CategoryResult.agent_id.in_(agent_ids),
+            CategoryResult.created_at >= min_time,
+            CategoryResult.created_at <= max_ended + timedelta(minutes=5),
+            CategoryResult.matched_path.isnot(None),
+        )
+        .order_by(CategoryResult.created_at)
+    )
+    cat_results = result.scalars().all()
+
+    # Group by agent_id, then match to each call by time window
+    by_agent: dict[uuid.UUID, list[CategoryResult]] = defaultdict(list)
+    for cr in cat_results:
+        if cr.agent_id:
+            by_agent[cr.agent_id].append(cr)
+
+    matched: dict[uuid.UUID, CategoryResult] = {}
+    for record in records:
+        if not record.agent_id:
+            continue
+        call_end = (record.ended_at or record.started_at) + timedelta(minutes=5)
+        for cr in by_agent.get(record.agent_id, []):
+            if record.started_at <= cr.created_at <= call_end:
+                matched[record.id] = cr
+                break  # take first (earliest) match
+
+    return matched
 
 
 # =============================================================================
@@ -135,7 +190,10 @@ async def list_calls(
     query = query.order_by(desc(CallRecord.started_at)).offset(offset).limit(page_size)
 
     result = await db.execute(query)
-    records = result.scalars().all()
+    records = list(result.scalars().all())
+
+    # Batch-fetch category results for all calls on this page
+    cat_map = await _fetch_category_results_for_calls(db, records)
 
     # Build response with agent, contact, and workspace names
     calls = []
@@ -151,6 +209,7 @@ async def list_calls(
         if record.workspace:
             workspace_name = record.workspace.name
 
+        cat = cat_map.get(record.id)
         calls.append(
             CallRecordResponse(
                 id=str(record.id),
@@ -172,6 +231,8 @@ async def list_calls(
                 started_at=record.started_at,
                 answered_at=record.answered_at,
                 ended_at=record.ended_at,
+                category_path=cat.matched_path if cat else None,
+                category_code=cat.matched_code if cat else None,
             )
         )
 
@@ -228,6 +289,9 @@ async def get_call(
     if record.workspace:
         workspace_name = record.workspace.name
 
+    cat_map = await _fetch_category_results_for_calls(db, [record])
+    cat = cat_map.get(record.id)
+
     return CallRecordResponse(
         id=str(record.id),
         provider=record.provider,
@@ -248,6 +312,8 @@ async def get_call(
         started_at=record.started_at,
         answered_at=record.answered_at,
         ended_at=record.ended_at,
+        category_path=cat.matched_path if cat else None,
+        category_code=cat.matched_code if cat else None,
     )
 
 

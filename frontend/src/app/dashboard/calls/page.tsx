@@ -16,6 +16,7 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  Tag,
 } from "lucide-react";
 import {
   Table,
@@ -295,6 +296,7 @@ export default function CallHistoryPage() {
                     <TableHead>From/To</TableHead>
                     <TableHead>Duration</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Category</TableHead>
                     <TableHead className="w-[100px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -329,6 +331,26 @@ export default function CallHistoryPage() {
                         <Badge variant={getStatusBadgeVariant(call.status)}>
                           {call.status.replace("_", " ")}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {call.category_path && call.category_path.length > 0 ? (
+                          <div className="flex items-center gap-1">
+                            <Tag className="h-3 w-3 shrink-0 text-muted-foreground" />
+                            <span
+                              className="max-w-[180px] truncate text-xs text-muted-foreground"
+                              title={call.category_path.join(" › ")}
+                            >
+                              {call.category_path.join(" › ")}
+                            </span>
+                            {call.category_code && (
+                              <Badge variant="outline" className="ml-1 px-1 py-0 text-[10px]">
+                                {call.category_code}
+                              </Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/40">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">

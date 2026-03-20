@@ -28,6 +28,47 @@ def _short_hash(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()[:16]
 
 
+# Minimum word-overlap score to trust an in-memory match without hitting the DB.
+_IN_MEMORY_THRESHOLD = 0.5
+
+
+def _match_in_memory(text: str, nodes: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Score nodes by word overlap and return the best match above threshold.
+
+    Used as a fast Layer-0 check before touching the DB. Operates entirely on
+    the prewarmed node list so it completes in microseconds.
+    """
+    text_words = set(text.lower().split())
+    if not text_words:
+        return None
+
+    best_score = 0.0
+    best_node: dict[str, Any] | None = None
+
+    for node in nodes:
+        search_text = f"{node['label']} {node.get('code') or ''}".lower()
+        node_words = set(search_text.split())
+        if not node_words:
+            continue
+        score = len(text_words & node_words) / len(node_words)
+        if score > best_score:
+            best_score = score
+            best_node = node
+
+    if best_node and best_score >= _IN_MEMORY_THRESHOLD:
+        return {
+            "success": True,
+            "matched": True,
+            "code": best_node.get("code"),
+            "label": best_node["label"],
+            "path": best_node["path"],
+            "depth": best_node["depth"],
+            "confidence": round(best_score, 3),
+            "resolution_layer": "in_memory",
+        }
+    return None
+
+
 def _canonical_lookup_args(args: dict[str, Any]) -> str:
     return "|".join(
         [
@@ -85,6 +126,8 @@ class ToolRegistry:
         self.campaign_context = campaign_context
         self._redis = redis
         self._tool_cache: dict[str, Any] = {}
+        # tree_name → flat list of node dicts (loaded at session start)
+        self._prewarmed_trees: dict[str, list[dict[str, Any]]] = {}
         self.crm_tools = CRMTools(db, user_id, workspace_id=workspace_id)
         self.lookup_tools = LookupTools(db, user_id, workspace_id=workspace_id)
         self.categorize_tools = CategorizeTools(
@@ -289,6 +332,74 @@ class ToolRegistry:
             return
         await self.execute_tool("lookup_list_collections", {})
 
+    async def prewarm_category_trees(self) -> None:
+        """Pre-load all active category tree nodes for this workspace into memory.
+
+        Loads once per session from Redis (if warm) or the DB (cold start).
+        Subsequent categorize() calls use _match_in_memory() as Layer 0 and only
+        fall through to Postgres FTS / LLM when the in-memory score is too low.
+        Nodes are cached in Redis for 1 hour so restarts stay fast.
+        """
+        if not self.workspace_id:
+            return
+
+        import structlog
+        from sqlalchemy import select
+
+        from app.models.category_tree import CategoryTree
+
+        log = structlog.get_logger().bind(
+            component="prewarm_category_trees", workspace_id=str(self.workspace_id)
+        )
+
+        redis_key = f"category_nodes:{self.workspace_id}"
+        cached = await self._redis_get(redis_key)
+        if cached and isinstance(cached.get("trees"), dict):
+            self._prewarmed_trees = cached["trees"]
+            log.info("category_trees_prewarmed_from_redis", tree_count=len(self._prewarmed_trees))
+            return
+
+        # Load all active nodes for the workspace in one query
+        result = await self.db.execute(
+            select(CategoryTree).where(
+                CategoryTree.workspace_id == self.workspace_id,
+                CategoryTree.status == "active",
+            )
+        )
+        all_nodes = list(result.scalars().all())
+
+        # Build per-tree maps
+        node_map: dict[uuid.UUID, CategoryTree] = {n.id: n for n in all_nodes}
+        trees: dict[str, list[dict[str, Any]]] = {}
+
+        for node in all_nodes:
+            # Reconstruct label path from root to this node
+            path: list[str] = []
+            current: CategoryTree | None = node
+            while current is not None:
+                path.insert(0, current.label)
+                if current.parent_id is None:
+                    break
+                current = node_map.get(current.parent_id)
+
+            trees.setdefault(node.tree_name, []).append(
+                {
+                    "id": str(node.id),
+                    "label": node.label,
+                    "code": node.code,
+                    "depth": node.depth,
+                    "path": path,
+                }
+            )
+
+        self._prewarmed_trees = trees
+        await self._redis_set(redis_key, {"trees": trees}, ttl=3600)
+        log.info(
+            "category_trees_prewarmed_from_db",
+            tree_count=len(trees),
+            total_nodes=len(all_nodes),
+        )
+
     def get_all_tool_definitions(  # noqa: PLR0912, PLR0915
         self,
         enabled_tools: list[str],
@@ -400,7 +511,9 @@ class ToolRegistry:
         # Categorization tools (FTS + LLM category tree matching)
         if "categorization" in enabled_tools or "category_tree" in enabled_tools:
             categorize_tool_defs = CategorizeTools.get_tool_definitions()
-            integration_id = "category_tree" if "category_tree" in enabled_tools else "categorization"
+            integration_id = (
+                "category_tree" if "category_tree" in enabled_tools else "categorization"
+            )
             tools.extend(filter_tools(integration_id, categorize_tool_defs))
 
         # Site Search tools (requires site_url configured)
@@ -624,15 +737,26 @@ class ToolRegistry:
             text_norm = str(arguments.get("text", "")).lower().strip()
             session_key = f"categorize:{tree_name}:{text_norm}"
 
+            # Layer 0: session-level exact cache (within this call)
             if session_key in self._tool_cache:
                 return cast("dict[str, Any]", self._tool_cache[session_key])
 
+            # Layer 1: Redis result cache (cross-session, 24 h for LLM results)
             redis_key = f"categorize:{self.workspace_id}:{tree_name}:{_short_hash(text_norm)}"
             cached = await self._redis_get(redis_key)
             if cached:
                 self._tool_cache[session_key] = cached
                 return cached
 
+            # Layer 2: in-memory match against prewarmed tree nodes (sub-millisecond)
+            prewarmed_nodes = self._prewarmed_trees.get(tree_name)
+            if prewarmed_nodes:
+                in_mem = _match_in_memory(text_norm, prewarmed_nodes)
+                if in_mem:
+                    self._tool_cache[session_key] = in_mem
+                    return in_mem
+
+            # Layer 3: Postgres FTS + optional LLM fallback (existing path)
             result = await self.categorize_tools.execute_tool(tool_name, arguments)
             self._tool_cache[session_key] = result
             if result.get("success") and result.get("resolution_layer") == "llm":

@@ -1,5 +1,6 @@
 """Category matching logic — Postgres FTS (Layer 1) + LLM fallback (Layer 2)."""
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -86,12 +87,19 @@ async def match_category(
         log.info("no_candidates_for_llm")
         return None, None, "none"
 
-    llm_node = await _llm_select(
-        text=text,
-        candidates=candidates,
-        openai_api_key=openai_api_key,
-        log=log,
-    )
+    try:
+        llm_node = await asyncio.wait_for(
+            _llm_select(
+                text=text,
+                candidates=candidates,
+                openai_api_key=openai_api_key,
+                log=log,
+            ),
+            timeout=1.5,
+        )
+    except TimeoutError:
+        log.warning("llm_select_timeout")
+        return None, None, "none"
 
     if llm_node is not None:
         return llm_node, 0.8, "llm"

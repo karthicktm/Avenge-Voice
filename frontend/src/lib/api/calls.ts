@@ -30,6 +30,8 @@ export interface CallRecord {
   started_at: string;
   answered_at: string | null;
   ended_at: string | null;
+  category_path: string[] | null;
+  category_code: string | null;
 }
 
 export interface CallRecordListResponse {

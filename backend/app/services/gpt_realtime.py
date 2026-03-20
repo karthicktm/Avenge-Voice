@@ -53,7 +53,8 @@ BEST_PRACTICES: dict[str, str] = {
     "en": """- Keep responses to 1-2 sentences — voice is a conversation, not a lecture
 - Ask one question at a time, not multiple
 - If you don't know something, say so honestly
-- Before calling ANY tool, ALWAYS say a brief acknowledgment first (e.g., "Let me look that up for you")
+- Before calling ANY tool, ALWAYS say a brief acknowledgment out loud first (e.g., "Let me check that for you", "One moment") — the caller must hear your voice before you invoke any tool
+- For the categorize tool specifically: say "Let me note that down" or "One moment" BEFORE calling it — never call it silently
 - NEVER go silent while processing — always speak before using a tool
 - After a tool returns results, summarize them naturally — do NOT read raw data
 - ONLY answer from your configured sources — NEVER make up or guess information
@@ -491,7 +492,7 @@ class GPTRealtimeSession:
             redis=_redis,
         )
 
-        # Pre-warm lookup collections while WebSocket connection establishes
+        # Pre-warm tool data while WebSocket connection establishes
         enabled_tools = self.agent_config.get("enabled_tools", [])
         if "lookup" in enabled_tools:
             try:
@@ -499,6 +500,13 @@ class GPTRealtimeSession:
                 self.logger.info("lookup_collections_prewarmed")
             except Exception:
                 self.logger.warning("lookup_prewarm_failed_continuing")
+
+        if "categorization" in enabled_tools or "category_tree" in enabled_tools:
+            try:
+                await self.tool_registry.prewarm_category_trees()
+                self.logger.info("category_trees_prewarmed")
+            except Exception:
+                self.logger.warning("category_trees_prewarm_failed_continuing")
 
         # Connect to OpenAI Realtime API
         await self._connect_realtime_api()
@@ -767,6 +775,23 @@ class GPTRealtimeSession:
                     }
                 )
             return {"success": False, "error": "Invalid JSON arguments"}
+
+        # For slow tools like categorize, inject a brief spoken acknowledgment so the
+        # caller doesn't experience dead silence while we wait for the result.
+        # We inject it as an assistant text item — when response.create() fires after
+        # the tool result, the model's reply naturally follows this context.
+        if name == "categorize" and self.connection:
+            try:
+                await self.connection.conversation.item.create(
+                    item={
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Let me check that for you."}],
+                    }
+                )
+                await self.connection.response.create()
+            except Exception:
+                self.logger.debug("categorize_ack_inject_failed")
 
         # Execute tool via internal tool registry
         result = await self.handle_tool_call({"name": name, "arguments": arguments})
