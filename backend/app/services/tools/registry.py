@@ -13,6 +13,7 @@ from app.services.tools.call_control_tools import CallControlTools
 from app.services.tools.campaign_tools import CampaignTools
 from app.services.tools.categorize_tools import CategorizeTools
 from app.services.tools.crm_tools import CRMTools
+from app.services.tools.email_tools import ResendEmailTools
 from app.services.tools.gohighlevel_tools import GoHighLevelTools
 from app.services.tools.lookup_tools import LookupTools
 from app.services.tools.rag_tools import RAGTools
@@ -142,6 +143,7 @@ class ToolRegistry:
         self._shopify_tools: ShopifyTools | None = None
         self._twilio_sms_tools: TwilioSMSTools | None = None
         self._telnyx_sms_tools: TelnyxSMSTools | None = None
+        self._resend_email_tools: ResendEmailTools | None = None
         self._site_search_tools: SiteSearchTools | None = None
         self._rag_tools: RAGTools | None = None
 
@@ -223,6 +225,21 @@ class ToolRegistry:
                 messaging_profile_id=creds.get("messaging_profile_id"),
             )
             return self._telnyx_sms_tools
+
+        return None
+
+    def _get_resend_email_tools(self) -> ResendEmailTools | None:
+        """Get Resend email tools if credentials are available."""
+        if self._resend_email_tools:
+            return self._resend_email_tools
+
+        creds = self.integrations.get("resend")
+        if creds and creds.get("api_key") and creds.get("from_email"):
+            self._resend_email_tools = ResendEmailTools(
+                api_key=creds["api_key"],
+                from_email=creds["from_email"],
+            )
+            return self._resend_email_tools
 
         return None
 
@@ -516,6 +533,11 @@ class ToolRegistry:
             )
             tools.extend(filter_tools(integration_id, categorize_tool_defs))
 
+        # Resend email tools
+        if "resend" in enabled_tools and self._get_resend_email_tools():
+            resend_tools = ResendEmailTools.get_tool_definitions()
+            tools.extend(filter_tools("resend", resend_tools))
+
         # Site Search tools (requires site_url configured)
         if "site_search" in enabled_tools:
             site_search_instance = self._get_site_search_tools()
@@ -763,6 +785,16 @@ class ToolRegistry:
                 await self._redis_set(redis_key, result, ttl=86400)
             return result
 
+        # Resend email tools
+        if tool_name == "resend_send_email":
+            resend_tools = self._get_resend_email_tools()
+            if not resend_tools:
+                return {
+                    "success": False,
+                    "error": "Resend integration not configured. Please add your API key and from email.",
+                }
+            return await resend_tools.execute_tool(tool_name, arguments)
+
         # Campaign tools
         campaign_tool_names = {
             "set_call_disposition",
@@ -786,3 +818,5 @@ class ToolRegistry:
             await self._twilio_sms_tools.close()
         if self._telnyx_sms_tools:
             await self._telnyx_sms_tools.close()
+        if self._resend_email_tools:
+            await self._resend_email_tools.close()

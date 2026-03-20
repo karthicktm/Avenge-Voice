@@ -842,6 +842,15 @@ export const AVAILABLE_INTEGRATIONS: Integration[] = [
       },
     ],
     documentationUrl: "https://resend.com/docs/introduction",
+    tools: [
+      {
+        id: "resend_send_email",
+        name: "Send Email",
+        description: "Send a transactional email to the caller or any address",
+        riskLevel: "moderate",
+        defaultEnabled: true,
+      },
+    ],
   },
 
   // Other Tools
