@@ -96,6 +96,9 @@ class CategorizeTools:
         text: str = str(arguments.get("text", "")).strip()
         tree_name: str = str(arguments.get("tree_name", "")).strip()
         call_id_str: str | None = arguments.get("call_id")
+        # Injected by ToolRegistry from session-start prewarmed data.
+        # Avoids redundant DB queries for LLM traversal and path reconstruction.
+        prewarmed_nodes: list[dict[str, Any]] | None = arguments.get("_prewarmed_nodes")
 
         if not text:
             return {"success": False, "error": "text is required"}
@@ -114,8 +117,6 @@ class CategorizeTools:
         self.log.info("categorize_start", tree_name=tree_name, text_len=len(text))
 
         try:
-            from sqlalchemy import select
-
             from app.models.category_tree import CategoryResult, CategoryTree
             from app.services.category_matcher import match_category
 
@@ -127,6 +128,7 @@ class CategorizeTools:
                 user_id=self.user_id,
                 top_k=1,
                 openai_api_key=self.openai_api_key,
+                preloaded_nodes=prewarmed_nodes,
             )
 
             # Build path
@@ -140,23 +142,34 @@ class CategorizeTools:
                 label = matched_node.label
                 depth = matched_node.depth
 
-                # Load all nodes to reconstruct path
-                all_result = await self.db.execute(
-                    select(CategoryTree).where(
-                        CategoryTree.workspace_id == self.workspace_id,
-                        CategoryTree.tree_name == tree_name,
-                        CategoryTree.status == "active",
+                # Use prewarmed path if available (avoids DB round-trip)
+                if prewarmed_nodes:
+                    node_id_str = str(matched_node.id)
+                    prewarmed_by_id = {n["id"]: n for n in prewarmed_nodes}
+                    cached_node = prewarmed_by_id.get(node_id_str)
+                    if cached_node:
+                        path = list(cached_node["path"])
+
+                if not path:
+                    # Fallback: reconstruct path from DB
+                    from sqlalchemy import select
+
+                    all_result = await self.db.execute(
+                        select(CategoryTree).where(
+                            CategoryTree.workspace_id == self.workspace_id,
+                            CategoryTree.tree_name == tree_name,
+                            CategoryTree.status == "active",
+                        )
                     )
-                )
-                all_nodes: dict[uuid.UUID, CategoryTree] = {
-                    n.id: n for n in all_result.scalars().all()
-                }
-                current: CategoryTree | None = matched_node
-                while current is not None:
-                    path.insert(0, current.label)
-                    if current.parent_id is None:
-                        break
-                    current = all_nodes.get(current.parent_id)
+                    all_nodes: dict[uuid.UUID, CategoryTree] = {
+                        n.id: n for n in all_result.scalars().all()
+                    }
+                    current: CategoryTree | None = matched_node  # type: ignore[assignment]
+                    while current is not None:
+                        path.insert(0, current.label)
+                        if current.parent_id is None:
+                            break
+                        current = all_nodes.get(current.parent_id)
 
             # Write audit row
             result_row = CategoryResult(

@@ -408,6 +408,7 @@ class ToolRegistry:
                     "code": node.code,
                     "depth": node.depth,
                     "path": path,
+                    "parent_id": str(node.parent_id) if node.parent_id else None,
                 }
             )
 
@@ -547,9 +548,7 @@ class ToolRegistry:
 
         return tools
 
-    async def execute_tool(
-        self, tool_name: str, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def execute_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool with structured logging of request and response."""
         log = self._log.bind(tool=tool_name)
         log.info("tool_call_start", arguments=arguments)
@@ -794,6 +793,10 @@ class ToolRegistry:
                     return in_mem
 
             # Layer 3: Postgres FTS + optional LLM fallback (existing path)
+            # Pass prewarmed nodes so match_category() and categorize_tools skip
+            # redundant DB queries for LLM traversal and path reconstruction.
+            if prewarmed_nodes:
+                arguments = {**arguments, "_prewarmed_nodes": prewarmed_nodes}
             result = await self.categorize_tools.execute_tool(tool_name, arguments)
             self._tool_cache[session_key] = result
             if result.get("success") and result.get("resolution_layer") == "llm":

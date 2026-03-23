@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 import structlog
@@ -16,7 +17,22 @@ logger = structlog.get_logger()
 FTS_THRESHOLD = 0.05
 
 
-async def match_category(
+@dataclass
+class _NodeProxy:
+    """Lightweight stand-in for CategoryTree when matching from preloaded cache."""
+
+    id: uuid.UUID
+    label: str
+    code: str | None
+    depth: int
+    parent_id: uuid.UUID | None
+
+
+# Public type alias used by callers
+MatchedNode = CategoryTree | _NodeProxy
+
+
+async def match_category(  # noqa: PLR0911, PLR0912
     db: AsyncSession,
     workspace_id: uuid.UUID,
     tree_name: str,
@@ -24,7 +40,8 @@ async def match_category(
     user_id: int,
     top_k: int = 1,
     openai_api_key: str | None = None,
-) -> tuple[CategoryTree | None, float | None, str]:
+    preloaded_nodes: list[dict[str, Any]] | None = None,
+) -> tuple[MatchedNode | None, float | None, str]:
     """Match input text against an active category tree.
 
     Matching strategy:
@@ -82,28 +99,51 @@ async def match_category(
         log.info("llm_skipped_no_api_key")
         return None, None, "none"
 
-    # Load all active nodes for this tree once
-    all_result = await db.execute(
-        select(CategoryTree).where(
-            CategoryTree.workspace_id == workspace_id,
-            CategoryTree.tree_name == tree_name,
-            CategoryTree.status == "active",
-        )
-    )
-    all_nodes = list(all_result.scalars().all())
-    if not all_nodes:
-        return None, None, "none"
+    # Build children_map from preloaded cache when available — avoids DB query.
+    # Fall back to DB only when caller did not supply preloaded_nodes.
+    children_map: dict[uuid.UUID | None, list[_NodeProxy]] = {}
 
-    # Build parent→children map
-    children_map: dict[uuid.UUID | None, list[CategoryTree]] = {}
-    for node in all_nodes:
-        children_map.setdefault(node.parent_id, []).append(node)
+    if preloaded_nodes:
+        log.info("llm_using_preloaded_nodes", total_nodes=len(preloaded_nodes))
+        for nd in preloaded_nodes:
+            proxy = _NodeProxy(
+                id=uuid.UUID(nd["id"]),
+                label=nd["label"],
+                code=nd.get("code"),
+                depth=nd["depth"],
+                parent_id=uuid.UUID(nd["parent_id"]) if nd.get("parent_id") else None,
+            )
+            children_map.setdefault(proxy.parent_id, []).append(proxy)
+    else:
+        all_result = await db.execute(
+            select(CategoryTree).where(
+                CategoryTree.workspace_id == workspace_id,
+                CategoryTree.tree_name == tree_name,
+                CategoryTree.status == "active",
+            )
+        )
+        db_nodes = list(all_result.scalars().all())
+        if not db_nodes:
+            return None, None, "none"
+        for node in db_nodes:
+            proxy = _NodeProxy(
+                id=node.id,
+                label=node.label,
+                code=node.code,
+                depth=node.depth,
+                parent_id=node.parent_id,
+            )
+            children_map.setdefault(proxy.parent_id, []).append(proxy)
+
+    if not children_map:
+        return None, None, "none"
 
     # Sort each level alphabetically for stable LLM output
     for siblings in children_map.values():
         siblings.sort(key=lambda n: n.label)
 
-    log.info("llm_hierarchical_start", total_nodes=len(all_nodes))
+    total = sum(len(v) for v in children_map.values())
+    log.info("llm_hierarchical_start", total_nodes=total)
 
     try:
         matched = await asyncio.wait_for(
@@ -123,10 +163,10 @@ async def match_category(
 
 async def _llm_hierarchical_select(
     text: str,
-    children_map: dict[uuid.UUID | None, list[CategoryTree]],
+    children_map: dict[uuid.UUID | None, list[_NodeProxy]],
     log: Any,
     openai_api_key: str,
-) -> CategoryTree | None:
+) -> _NodeProxy | None:
     """Drill down the tree level by level using LLM at each step.
 
     At each level the LLM only sees sibling nodes (never parents), so it
@@ -137,7 +177,7 @@ async def _llm_hierarchical_select(
     client = AsyncOpenAI(api_key=openai_api_key)
 
     current_parent_id: uuid.UUID | None = None  # start from roots
-    last_picked: CategoryTree | None = None
+    last_picked: _NodeProxy | None = None
 
     for _level in range(5):  # max depth guard
         siblings = children_map.get(current_parent_id, [])
@@ -161,10 +201,10 @@ async def _llm_hierarchical_select(
 
 async def _llm_pick_from_siblings(
     text: str,
-    siblings: list[CategoryTree],
+    siblings: list[_NodeProxy],
     client: Any,
     log: Any,
-) -> CategoryTree | None:
+) -> _NodeProxy | None:
     """Ask LLM to pick the best sibling node for the given text.
 
     Returns the chosen node or None if no match.
