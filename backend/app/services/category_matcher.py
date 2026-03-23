@@ -170,12 +170,24 @@ async def _llm_pick_from_siblings(
     Returns the chosen node or None if no match.
     """
     candidate_list = "\n".join(f"{i + 1}. {s.label}" for i, s in enumerate(siblings))
+    sibling_labels = [s.label for s in siblings]
+
+    log.info(
+        "llm_pick_input",
+        text=text,
+        candidates=sibling_labels,
+        depth=siblings[0].depth if siblings else None,
+    )
 
     system_prompt = (
         "You are a category classifier. "
         "Given a description and a list of categories at the same level, "
         "pick the single best matching category number (1-based). "
         "Categories may be in a different language — match by meaning. "
+        "Pay close attention to severity and urgency indicators: "
+        "words like 'slow', 'drip', 'gradual', 'minor', 'small', 'manageable' indicate low severity; "
+        "words like 'flooding', 'burst', 'gushing', 'no water', 'acute', 'severe', 'major' indicate high severity. "
+        "Choose the category whose severity/urgency level best matches the description. "
         "Return 0 if none match. Respond with ONLY the number."
     )
     user_message = (
@@ -196,12 +208,28 @@ async def _llm_pick_from_siblings(
             raw = (response.choices[0].message.content or "").strip()
             idx = int(raw)
             if idx == 0:
+                log.info(
+                    "llm_pick_no_match",
+                    text=text,
+                    candidates=sibling_labels,
+                    depth=siblings[0].depth if siblings else None,
+                )
                 return None
             if 1 <= idx <= len(siblings):
                 chosen = siblings[idx - 1]
-                log.info("llm_level_pick", label=chosen.label, depth=chosen.depth)
+                log.info(
+                    "llm_level_pick",
+                    text=text,
+                    picked=chosen.label,
+                    picked_index=idx,
+                    candidates=sibling_labels,
+                    depth=chosen.depth,
+                )
                 return chosen
         except (ValueError, IndexError):
+            log.warning(
+                "llm_pick_bad_response", raw=raw if "raw" in dir() else None, attempt=attempt
+            )
             if attempt == 1:
                 return None
         except Exception:
