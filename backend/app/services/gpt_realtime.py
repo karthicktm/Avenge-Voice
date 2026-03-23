@@ -608,7 +608,6 @@ class GPTRealtimeSession:
         )
 
         # Use agent's VAD settings (from DB) instead of hardcoded values
-        vad_threshold = self.agent_config.get("turn_detection_threshold", 0.5)
         vad_prefix_padding_ms = self.agent_config.get("turn_detection_prefix_padding_ms", 300)
         vad_silence_duration_ms = self.agent_config.get("turn_detection_silence_duration_ms", 500)
 
@@ -624,7 +623,6 @@ class GPTRealtimeSession:
         else:
             turn_detection = {
                 "type": "server_vad",
-                "threshold": vad_threshold,
                 "prefix_padding_ms": vad_prefix_padding_ms,
                 "silence_duration_ms": vad_silence_duration_ms,
             }

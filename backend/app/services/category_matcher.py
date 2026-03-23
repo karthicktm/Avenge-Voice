@@ -84,8 +84,28 @@ async def match_category(
     candidates = [r[0] for r in rows[:5]]  # CategoryTree objects
 
     if not candidates:
-        log.info("no_candidates_for_llm")
-        return None, None, "none"
+        # FTS found nothing — likely a language mismatch (e.g. English input vs Swedish tree).
+        # Fall back to LLM with a sample of tree nodes fetched directly from DB.
+        if not openai_api_key:
+            log.info("no_candidates_for_llm")
+            return None, None, "none"
+
+        fallback_stmt = (
+            select(CategoryTree)
+            .where(
+                CategoryTree.workspace_id == workspace_id,
+                CategoryTree.tree_name == tree_name,
+                CategoryTree.status == "active",
+            )
+            .order_by(CategoryTree.depth.asc(), CategoryTree.label.asc())
+            .limit(30)
+        )
+        fallback_result = await db.execute(fallback_stmt)
+        candidates = list(fallback_result.scalars().all())
+        if not candidates:
+            log.info("no_candidates_for_llm")
+            return None, None, "none"
+        log.info("fts_fallback_to_tree_sample", sample_size=len(candidates))
 
     try:
         llm_node = await asyncio.wait_for(
