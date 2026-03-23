@@ -1,5 +1,6 @@
 """Tool registry for managing available tools for voice agents."""
 
+import asyncio
 import contextlib
 import hashlib
 import json
@@ -129,6 +130,7 @@ class ToolRegistry:
         self.campaign_context = campaign_context
         self._redis = redis
         self._tool_cache: dict[str, Any] = {}
+        self._background_tasks: set[asyncio.Task[Any]] = set()
         self._log = structlog.get_logger().bind(
             component="tool_registry",
             agent_id=str(agent_id) if agent_id else None,
@@ -803,7 +805,7 @@ class ToolRegistry:
                 await self._redis_set(redis_key, result, ttl=86400)
             return result
 
-        # Resend email tools
+        # Resend email tools — fire-and-forget so the agent doesn't wait for HTTP
         if tool_name == "resend_send_email":
             resend_tools = self._get_resend_email_tools()
             if not resend_tools:
@@ -811,7 +813,10 @@ class ToolRegistry:
                     "success": False,
                     "error": "Resend integration not configured. Please add your API key and from email.",
                 }
-            return await resend_tools.execute_tool(tool_name, arguments)
+            task = asyncio.create_task(resend_tools.execute_tool(tool_name, arguments))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+            return {"success": True, "queued": True, "message": "Email is being sent"}
 
         # Campaign tools
         campaign_tool_names = {
@@ -826,6 +831,9 @@ class ToolRegistry:
 
     async def close(self) -> None:
         """Clean up resources."""
+        # Wait for any background tasks (e.g. fire-and-forget emails) to finish
+        if self._background_tasks:
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
         if self._ghl_tools:
             await self._ghl_tools.close()
         if self._calendly_tools:
