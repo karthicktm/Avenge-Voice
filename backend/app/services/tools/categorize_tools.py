@@ -189,6 +189,7 @@ class CategorizeTools:
                 "code": code,
                 "label": label,
                 "path": path,
+                "path_string": " → ".join(path) if path else None,
                 "depth": depth,
                 "confidence": confidence,
                 "resolution_layer": layer,
