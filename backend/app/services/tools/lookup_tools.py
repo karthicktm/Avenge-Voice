@@ -126,7 +126,7 @@ class LookupTools:
     # Private handlers
     # ------------------------------------------------------------------
 
-    async def _lookup_search(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def _lookup_search(self, arguments: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0912, PLR0915
         """Full-text search over LookupRecords with optional filters."""
         query_str: str = arguments.get("query", "").strip()
         domain: str | None = arguments.get("domain")
@@ -182,7 +182,9 @@ class LookupTools:
                 stmt = stmt.where(LookupRecord.collection_id == collection_id)
 
             # FTS search — AND logic (all words must match)
-            tsquery_expr = func.plainto_tsquery("english", query_str)
+            # Use 'simple' dictionary (lowercase only, no stemming) so non-English
+            # content like Swedish is not mangled by English stemming rules.
+            tsquery_expr = func.plainto_tsquery("simple", query_str)
             fts_stmt = (
                 stmt.where(LookupRecord.search_vector.op("@@")(tsquery_expr))
                 .order_by(func.ts_rank(LookupRecord.search_vector, tsquery_expr).desc())
@@ -193,9 +195,9 @@ class LookupTools:
 
             # Fallback 1: FTS OR logic — any word in the query can match
             if not rows:
-                words = [w.strip(".,!?") for w in query_str.split() if len(w.strip(".,!?")) > 2]
+                words = [w.strip(".,!?") for w in query_str.split() if len(w.strip(".,!?")) > 2]  # noqa: PLR2004
                 for word in words:
-                    word_tsq = func.plainto_tsquery("english", word)
+                    word_tsq = func.plainto_tsquery("simple", word)
                     word_fts_stmt = (
                         stmt.where(LookupRecord.search_vector.op("@@")(word_tsq))
                         .order_by(func.ts_rank(LookupRecord.search_vector, word_tsq).desc())
@@ -213,7 +215,7 @@ class LookupTools:
                 rows = result.fetchall()
 
             if not rows:
-                words = [w.strip(".,!?") for w in query_str.split() if len(w.strip(".,!?")) > 2]
+                words = [w.strip(".,!?") for w in query_str.split() if len(w.strip(".,!?")) > 2]  # noqa: PLR2004
                 for word in words:
                     fallback_stmt = stmt.where(LookupRecord.title.ilike(f"%{word}%")).limit(limit)
                     result = await self.db.execute(fallback_stmt)

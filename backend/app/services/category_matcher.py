@@ -93,6 +93,33 @@ async def match_category(  # noqa: PLR0911, PLR0912
         log.info("fts_no_results")
 
     # ------------------------------------------------------------------
+    # Layer 1b — Word-by-word FTS fallback
+    # Full descriptions rarely match short category labels with AND logic.
+    # Try each significant word individually and take the deepest match.
+    # ------------------------------------------------------------------
+    min_word_len = 4
+    significant_words = [w.strip(".,!?-") for w in text.split() if len(w.strip(".,!?-")) > min_word_len]
+    for word in significant_words:
+        word_tsq = func.plainto_tsquery("simple", word)
+        word_stmt = (
+            select(CategoryTree, ts_rank_expr.label("score"))
+            .where(
+                CategoryTree.workspace_id == workspace_id,
+                CategoryTree.tree_name == tree_name,
+                CategoryTree.status == "active",
+                CategoryTree.search_vector.op("@@")(word_tsq),
+            )
+            .order_by(CategoryTree.depth.desc(), func.ts_rank(CategoryTree.search_vector, word_tsq).desc())
+            .limit(5)
+        )
+        word_result = await db.execute(word_stmt)
+        word_rows = word_result.fetchall()
+        for node, score in word_rows:
+            if score >= FTS_THRESHOLD:
+                log.info("fts_word_matched", word=word, score=score, label=node.label, depth=node.depth)
+                return node, float(score), "fts"
+
+    # ------------------------------------------------------------------
     # Layer 2 — Hierarchical LLM traversal
     # ------------------------------------------------------------------
     if not openai_api_key:
