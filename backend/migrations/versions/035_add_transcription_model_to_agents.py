@@ -25,7 +25,7 @@ def upgrade() -> None:
             "transcription_model",
             sa.String(50),
             nullable=False,
-            server_default="whisper-1",
+            server_default="gpt-4o-transcribe",
             comment="STT transcription model for OpenAI Realtime (whisper-1, gpt-4o-transcribe, gpt-4o-mini-transcribe)",
         ),
     )

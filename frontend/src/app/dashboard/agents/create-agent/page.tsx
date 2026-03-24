@@ -183,7 +183,7 @@ const agentFormSchema = z.object({
   enableTranscript: z.boolean().default(true),
   transcriptionModel: z
     .enum(["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"])
-    .default("whisper-1"),
+    .default("gpt-4o-transcribe"),
   selectedWorkspaces: z
     .array(z.string())
     .min(1, "Please select at least one workspace")
@@ -214,7 +214,7 @@ export default function CreateAgentPage() {
       phoneNumberId: "",
       enableRecording: true,
       enableTranscript: true,
-      transcriptionModel: "whisper-1",
+      transcriptionModel: "gpt-4o-transcribe",
       selectedWorkspaces: [],
     },
   });
@@ -1293,19 +1293,19 @@ Guidelines:
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="whisper-1">
-                                <div>
-                                  <span className="font-medium">Whisper</span>
-                                  <span className="ml-2 text-muted-foreground">
-                                    Fast & accurate (default)
-                                  </span>
-                                </div>
-                              </SelectItem>
                               <SelectItem value="gpt-4o-transcribe">
                                 <div>
                                   <span className="font-medium">GPT-4o Transcribe</span>
                                   <span className="ml-2 text-muted-foreground">
-                                    Highest accuracy
+                                    Most consistent (default)
+                                  </span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="whisper-1">
+                                <div>
+                                  <span className="font-medium">Whisper</span>
+                                  <span className="ml-2 text-muted-foreground">
+                                    Fast &amp; accurate
                                   </span>
                                 </div>
                               </SelectItem>

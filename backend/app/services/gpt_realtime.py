@@ -637,7 +637,7 @@ class GPTRealtimeSession:
             "input_audio_format": "g711_ulaw",
             "output_audio_format": "g711_ulaw",
             "input_audio_transcription": {
-                "model": self.agent_config.get("transcription_model", "whisper-1")
+                "model": self.agent_config.get("transcription_model", "gpt-4o-transcribe")
             },
             "tools": tools,
             "tool_choice": "auto",

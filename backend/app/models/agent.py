@@ -110,7 +110,7 @@ class Agent(Base):
     transcription_model: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        default="whisper-1",
+        default="gpt-4o-transcribe",
         comment="STT transcription model: whisper-1, gpt-4o-transcribe, gpt-4o-mini-transcribe",
     )
 

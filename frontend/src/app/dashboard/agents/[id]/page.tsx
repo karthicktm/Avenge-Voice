@@ -190,7 +190,7 @@ const agentFormSchema = z.object({
   enableTranscript: z.boolean().default(true),
   transcriptionModel: z
     .enum(["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"])
-    .default("whisper-1"),
+    .default("gpt-4o-transcribe"),
   turnDetectionMode: z.enum(["normal", "semantic", "disabled"]).default("normal"),
   turnDetectionThreshold: z.number().min(0).max(1).default(0.7),
   turnDetectionSilenceDurationMs: z.number().min(100).max(2000).default(700),
@@ -416,7 +416,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
           (agent.transcription_model as
             | "whisper-1"
             | "gpt-4o-transcribe"
-            | "gpt-4o-mini-transcribe") ?? "whisper-1",
+            | "gpt-4o-mini-transcribe") ?? "gpt-4o-transcribe",
         turnDetectionMode: agent.turn_detection_mode ?? "normal",
         turnDetectionThreshold: agent.turn_detection_threshold ?? 0.7,
         turnDetectionSilenceDurationMs: agent.turn_detection_silence_duration_ms ?? 700,
@@ -2059,11 +2059,11 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="whisper-1">
-                                Whisper — Fast &amp; accurate (default)
-                              </SelectItem>
                               <SelectItem value="gpt-4o-transcribe">
-                                GPT-4o Transcribe — Highest accuracy
+                                GPT-4o Transcribe — Most consistent (default)
+                              </SelectItem>
+                              <SelectItem value="whisper-1">
+                                Whisper — Fast &amp; accurate
                               </SelectItem>
                               <SelectItem value="gpt-4o-mini-transcribe">
                                 GPT-4o Mini Transcribe — Cost-effective

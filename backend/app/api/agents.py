@@ -57,7 +57,7 @@ class CreateAgentRequest(BaseModel):
     )
     # Transcription model (OpenAI Realtime tiers only)
     transcription_model: str = Field(
-        default="whisper-1",
+        default="gpt-4o-transcribe",
         pattern="^(whisper-1|gpt-4o-transcribe|gpt-4o-mini-transcribe)$",
         description="STT transcription model for OpenAI Realtime",
     )

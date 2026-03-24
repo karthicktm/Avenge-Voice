@@ -516,7 +516,7 @@ async def create_webrtc_session(  # noqa: PLR0915
         "temperature": agent.temperature
         if agent.temperature
         else 0.6,  # Lower for consistent delivery
-        "input_audio_transcription": {"model": "whisper-1"},
+        "input_audio_transcription": {"model": agent.transcription_model or "gpt-4o-transcribe"},
     }
 
     turn_mode = agent.turn_detection_mode or "normal"
