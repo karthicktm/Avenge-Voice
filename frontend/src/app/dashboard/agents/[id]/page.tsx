@@ -188,6 +188,9 @@ const agentFormSchema = z.object({
   // Advanced
   enableRecording: z.boolean().default(true),
   enableTranscript: z.boolean().default(true),
+  transcriptionModel: z
+    .enum(["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"])
+    .default("whisper-1"),
   turnDetectionMode: z.enum(["normal", "semantic", "disabled"]).default("normal"),
   turnDetectionThreshold: z.number().min(0).max(1).default(0.7),
   turnDetectionSilenceDurationMs: z.number().min(100).max(2000).default(700),
@@ -228,6 +231,7 @@ const TAB_FIELDS: Record<string, (keyof AgentFormValues)[]> = {
     "phoneNumberId",
     "enableRecording",
     "enableTranscript",
+    "transcriptionModel",
     "turnDetectionMode",
     "turnDetectionThreshold",
     "turnDetectionSilenceDurationMs",
@@ -408,6 +412,11 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
         phoneNumberId: agent.phone_number_id ?? undefined,
         enableRecording: agent.enable_recording,
         enableTranscript: agent.enable_transcript,
+        transcriptionModel:
+          (agent.transcription_model as
+            | "whisper-1"
+            | "gpt-4o-transcribe"
+            | "gpt-4o-mini-transcribe") ?? "whisper-1",
         turnDetectionMode: agent.turn_detection_mode ?? "normal",
         turnDetectionThreshold: agent.turn_detection_threshold ?? 0.7,
         turnDetectionSilenceDurationMs: agent.turn_detection_silence_duration_ms ?? 700,
@@ -687,6 +696,10 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
       phone_number_id: data.phoneNumberId,
       enable_recording: data.enableRecording,
       enable_transcript: data.enableTranscript,
+      transcription_model:
+        agent?.pricing_tier === "premium" || agent?.pricing_tier === "premium-mini"
+          ? data.transcriptionModel
+          : undefined,
       is_active: data.isActive,
       temperature: data.temperature,
       max_tokens: data.maxTokens,
@@ -2025,6 +2038,43 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                       </FormItem>
                     )}
                   />
+
+                  {(agent?.pricing_tier === "premium" ||
+                    agent?.pricing_tier === "premium-mini") && (
+                    <FormField
+                      control={form.control}
+                      name="transcriptionModel"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-1.5">
+                            Transcription Model
+                          </FormLabel>
+                          <FormDescription>
+                            Model used to transcribe speech to text during calls
+                          </FormDescription>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="whisper-1">
+                                Whisper — Fast &amp; accurate (default)
+                              </SelectItem>
+                              <SelectItem value="gpt-4o-transcribe">
+                                GPT-4o Transcribe — Highest accuracy
+                              </SelectItem>
+                              <SelectItem value="gpt-4o-mini-transcribe">
+                                GPT-4o Mini Transcribe — Cost-effective
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
 
                   <FormField
                     control={form.control}

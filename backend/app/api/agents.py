@@ -55,6 +55,12 @@ class CreateAgentRequest(BaseModel):
         default=None,
         description="Optional initial greeting the agent speaks when call starts",
     )
+    # Transcription model (OpenAI Realtime tiers only)
+    transcription_model: str = Field(
+        default="whisper-1",
+        pattern="^(whisper-1|gpt-4o-transcribe|gpt-4o-mini-transcribe)$",
+        description="STT transcription model for OpenAI Realtime",
+    )
 
 
 class UpdateAgentRequest(BaseModel):
@@ -93,6 +99,12 @@ class UpdateAgentRequest(BaseModel):
         default=None,
         description="Optional initial greeting the agent speaks when call starts",
     )
+    # Transcription model (OpenAI Realtime tiers only)
+    transcription_model: str | None = Field(
+        default=None,
+        pattern="^(whisper-1|gpt-4o-transcribe|gpt-4o-mini-transcribe)$",
+        description="STT transcription model for OpenAI Realtime",
+    )
 
 
 class AgentResponse(BaseModel):
@@ -120,6 +132,7 @@ class AgentResponse(BaseModel):
     temperature: float
     max_tokens: int
     initial_greeting: str | None
+    transcription_model: str
     is_active: bool
     is_published: bool
     total_calls: int
@@ -172,6 +185,7 @@ async def create_agent(
         temperature=agent_request.temperature,
         max_tokens=agent_request.max_tokens,
         initial_greeting=agent_request.initial_greeting,
+        transcription_model=agent_request.transcription_model,
         provider_config=provider_config,
         is_active=True,
         is_published=False,
@@ -385,6 +399,7 @@ def _apply_agent_updates(agent: Agent, request: UpdateAgentRequest) -> None:
         "temperature",
         "max_tokens",
         "initial_greeting",
+        "transcription_model",
     ]
 
     for field in simple_fields:
@@ -481,6 +496,7 @@ def _agent_to_response(agent: Agent) -> AgentResponse:
         temperature=agent.temperature,
         max_tokens=agent.max_tokens,
         initial_greeting=agent.initial_greeting,
+        transcription_model=agent.transcription_model,
         is_active=agent.is_active,
         is_published=agent.is_published,
         total_calls=agent.total_calls,

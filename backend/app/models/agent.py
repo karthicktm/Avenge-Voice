@@ -106,6 +106,14 @@ class Agent(Base):
         comment="Maximum response tokens",
     )
 
+    # Transcription model (for OpenAI Realtime tiers)
+    transcription_model: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="whisper-1",
+        comment="STT transcription model: whisper-1, gpt-4o-transcribe, gpt-4o-mini-transcribe",
+    )
+
     # Initial greeting (optional spoken greeting when call starts)
     initial_greeting: Mapped[str | None] = mapped_column(
         Text,

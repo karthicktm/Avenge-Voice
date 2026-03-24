@@ -67,6 +67,7 @@ export interface Agent {
   temperature: number;
   max_tokens: number;
   initial_greeting: string | null;
+  transcription_model: string;
   is_active: boolean;
   is_published: boolean;
   total_calls: number;
@@ -92,6 +93,7 @@ export interface CreateAgentRequest {
   initial_greeting?: string;
   temperature?: number;
   max_tokens?: number;
+  transcription_model?: string;
 }
 
 /**
@@ -159,6 +161,7 @@ export interface UpdateAgentRequest {
   temperature?: number;
   max_tokens?: number;
   initial_greeting?: string | null;
+  transcription_model?: string;
 }
 
 /**

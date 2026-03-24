@@ -636,7 +636,9 @@ class GPTRealtimeSession:
             # Use g711_ulaw for Twilio/Telnyx compatibility (mulaw at 8kHz)
             "input_audio_format": "g711_ulaw",
             "output_audio_format": "g711_ulaw",
-            "input_audio_transcription": {"model": "whisper-1"},
+            "input_audio_transcription": {
+                "model": self.agent_config.get("transcription_model", "whisper-1")
+            },
             "tools": tools,
             "tool_choice": "auto",
         }

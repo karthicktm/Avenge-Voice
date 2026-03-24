@@ -181,6 +181,9 @@ const agentFormSchema = z.object({
   phoneNumberId: z.string().optional(),
   enableRecording: z.boolean().default(true),
   enableTranscript: z.boolean().default(true),
+  transcriptionModel: z
+    .enum(["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"])
+    .default("whisper-1"),
   selectedWorkspaces: z
     .array(z.string())
     .min(1, "Please select at least one workspace")
@@ -211,6 +214,7 @@ export default function CreateAgentPage() {
       phoneNumberId: "",
       enableRecording: true,
       enableTranscript: true,
+      transcriptionModel: "whisper-1",
       selectedWorkspaces: [],
     },
   });
@@ -284,6 +288,10 @@ export default function CreateAgentPage() {
       enable_transcript: data.enableTranscript,
       temperature: data.temperature,
       max_tokens: data.maxTokens,
+      transcription_model:
+        data.pricingTier === "premium" || data.pricingTier === "premium-mini"
+          ? data.transcriptionModel
+          : undefined,
     };
 
     try {
@@ -1267,6 +1275,53 @@ Guidelines:
                       </FormItem>
                     )}
                   />
+
+                  {(pricingTier === "premium" || pricingTier === "premium-mini") && (
+                    <FormField
+                      control={form.control}
+                      name="transcriptionModel"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm font-medium">Transcription Model</FormLabel>
+                          <FormDescription className="text-xs">
+                            Model used to transcribe speech to text during calls
+                          </FormDescription>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="whisper-1">
+                                <div>
+                                  <span className="font-medium">Whisper</span>
+                                  <span className="ml-2 text-muted-foreground">
+                                    Fast & accurate (default)
+                                  </span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="gpt-4o-transcribe">
+                                <div>
+                                  <span className="font-medium">GPT-4o Transcribe</span>
+                                  <span className="ml-2 text-muted-foreground">
+                                    Highest accuracy
+                                  </span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="gpt-4o-mini-transcribe">
+                                <div>
+                                  <span className="font-medium">GPT-4o Mini Transcribe</span>
+                                  <span className="ml-2 text-muted-foreground">Cost-effective</span>
+                                </div>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                 </CardContent>
               </Card>
 
