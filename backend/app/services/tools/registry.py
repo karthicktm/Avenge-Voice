@@ -50,7 +50,9 @@ def _match_in_memory(text: str, nodes: list[dict[str, Any]]) -> dict[str, Any] |
     best_node: dict[str, Any] | None = None
 
     for node in nodes:
-        search_text = f"{node['label']} {node.get('code') or ''}".lower()
+        meta = node.get("metadata") or {}
+        example = meta.get("example_query") or ""
+        search_text = f"{node['label']} {node.get('code') or ''} {example}".lower()
         node_words = set(search_text.split())
         if not node_words:
             continue
@@ -60,6 +62,7 @@ def _match_in_memory(text: str, nodes: list[dict[str, Any]]) -> dict[str, Any] |
             best_node = node
 
     if best_node and best_score >= _IN_MEMORY_THRESHOLD:
+        meta = best_node.get("metadata") or {}
         return {
             "success": True,
             "matched": True,
@@ -69,6 +72,14 @@ def _match_in_memory(text: str, nodes: list[dict[str, Any]]) -> dict[str, Any] |
             "depth": best_node["depth"],
             "confidence": round(best_score, 3),
             "resolution_layer": "in_memory",
+            # Well-known metadata fields (flat for easy agent access)
+            "urgency_level": meta.get("urgency_level"),
+            "self_resolution": meta.get("self_resolution"),
+            "can_report_fault": meta.get("can_report_fault"),
+            "requires_manual_support": meta.get("requires_manual_support"),
+            "requires_property_info": meta.get("requires_property_info"),
+            "info_to_collect": meta.get("info_to_collect"),
+            "metadata": meta or None,
         }
     return None
 
@@ -411,6 +422,7 @@ class ToolRegistry:
                     "depth": node.depth,
                     "path": path,
                     "parent_id": str(node.parent_id) if node.parent_id else None,
+                    "metadata": node.node_metadata,
                 }
             )
 

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
-from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
@@ -100,6 +100,16 @@ class CategoryTree(Base, TimestampMixin):
 
     # Rebuilt by Postgres trigger on every INSERT / UPDATE
     search_vector: Mapped[Any] = mapped_column(TSVECTOR, nullable=True)
+
+    # Arbitrary per-leaf metadata from import (urgency_level, example_query, etc.)
+    # Intermediate (parent) nodes carry None. The search_vector trigger also
+    # indexes metadata->>'example_query' to improve FTS matching.
+    node_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        name="metadata",
+        comment="Arbitrary per-leaf metadata from import (urgency_level, example_query, etc.)",
+    )
 
     # Relationships
     workspace: Mapped["Workspace"] = relationship("Workspace", foreign_keys=[workspace_id])

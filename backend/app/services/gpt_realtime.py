@@ -2,6 +2,8 @@
 
 # ruff: noqa: RUF001 - Contains intentional non-ASCII characters for internationalization
 
+import asyncio
+import contextlib
 import json
 import types
 import uuid
@@ -212,6 +214,53 @@ BEST_PRACTICES: dict[str, str] = {
 - Yeni oluşturmadan önce mevcut kişileri arayın — diğer müşterilerin bilgilerini asla paylaşmayın
 - Çağrıyı yalnızca arayan açıkça talep ettiğinde aktarın veya sonlandırın""",
 }
+
+
+# Queries shorter than this are echoed back naturally; longer ones use a generic phrase.
+_ACK_QUERY_MAX_LEN = 35
+
+# Tools that can run long enough for the caller to feel forgotten.
+# Fast tools (lookup_search, search_knowledge_base) complete in <100ms so they
+# never need a follow-up — the stop event fires before the first message would play.
+_SLOW_LOOKUP_TOOLS = {"categorize", "search_site"}
+
+# Progressive updates injected while a slow tool runs.
+# Each tuple is (seconds_to_wait_after_previous, spoken_text).
+# The sequence starts after the initial ack; messages stop as soon as the tool returns.
+_PROGRESS_UPDATES: list[tuple[float, str]] = [
+    (5.0, "Still looking into that for you."),
+    (6.0, "Just a moment more, nearly there."),
+    (7.0, "Almost got it, bear with me."),
+    (8.0, "Still on it, thank you for your patience."),
+]
+
+
+def _build_lookup_ack(tool_name: str, arguments: dict[str, Any]) -> str:
+    """Build a contextual spoken acknowledgment for data-lookup tool calls.
+
+    Called BEFORE the tool executes so audio plays while the tool runs in parallel.
+    The message should feel natural and tell the caller *what* is being checked —
+    not just "one moment" — without sounding robotic.
+
+    Rules:
+    - categorize: generic acknowledgment (raw text may be long or domain-specific)
+    - lookup_search / search_knowledge_base / search_site: echo a trimmed query
+      when short enough to sound natural; fall back to generic phrase otherwise
+    """
+    if tool_name == "categorize":
+        return "Let me note that down and look it up."
+
+    query = str(arguments.get("query", "")).strip()
+
+    if tool_name == "search_site":
+        if query and len(query) <= _ACK_QUERY_MAX_LEN:
+            return f"Let me check our website for {query}."
+        return "Let me check our website for that."
+
+    # lookup_search and search_knowledge_base
+    if query and len(query) <= _ACK_QUERY_MAX_LEN:
+        return f"Let me look up {query} for you."
+    return "Let me look that up for you."
 
 
 def build_instructions_with_language(  # noqa: PLR0912, PLR0915
@@ -671,6 +720,36 @@ class GPTRealtimeSession:
             )
             raise
 
+    async def _run_progress_updates(self, stop: asyncio.Event) -> None:
+        """Inject spoken progress updates while a slow tool runs.
+
+        Fires each message in _PROGRESS_UPDATES after its delay, stopping
+        as soon as `stop` is set (i.e. the tool has returned a result).
+        Silently exits on any connection error — the tool result will follow
+        regardless, so we never want this helper to surface exceptions.
+        """
+        for delay, text in _PROGRESS_UPDATES:
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=delay)
+                return  # tool finished before next message was due
+            except TimeoutError:
+                pass
+
+            if stop.is_set() or not self.connection:
+                return
+
+            try:
+                await self.connection.conversation.item.create(
+                    item={
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": text}],
+                    }
+                )
+                await self.connection.response.create()
+            except Exception:
+                return  # connection gone, stop quietly
+
     async def handle_tool_call(self, tool_call: dict[str, Any]) -> dict[str, Any]:
         """Handle tool call from GPT Realtime by routing to internal tools.
 
@@ -776,25 +855,52 @@ class GPTRealtimeSession:
                 )
             return {"success": False, "error": "Invalid JSON arguments"}
 
-        # For slow tools like categorize, inject a brief spoken acknowledgment so the
-        # caller doesn't experience dead silence while we wait for the result.
-        # We inject it as an assistant text item — when response.create() fires after
-        # the tool result, the model's reply naturally follows this context.
-        if name == "categorize" and self.connection:
+        # Inject a contextual spoken acknowledgment for any tool that involves a data
+        # lookup, so the caller never experiences dead silence while the tool runs.
+        # Even sub-10ms tools cause 1-3s of silence because GPT stops generating audio
+        # the moment it decides to call a tool; TTS startup adds additional latency.
+        # We inject an assistant text item and fire response.create() immediately so
+        # audio starts playing while the tool executes in parallel.
+        # The ack is contextual — it echoes the query topic when short enough to
+        # sound natural (e.g. "Let me look up pool hours for you.").
+        lookup_tool_names = {
+            "categorize",
+            "lookup_search",
+            "search_knowledge_base",
+            "search_site",
+        }
+        if name in lookup_tool_names and self.connection:
+            ack_text = _build_lookup_ack(name, arguments)
             try:
                 await self.connection.conversation.item.create(
                     item={
                         "type": "message",
                         "role": "assistant",
-                        "content": [{"type": "text", "text": "Let me check that for you."}],
+                        "content": [{"type": "text", "text": ack_text}],
                     }
                 )
                 await self.connection.response.create()
             except Exception:
-                self.logger.debug("categorize_ack_inject_failed")
+                self.logger.debug("lookup_ack_inject_failed", tool=name)
+
+        # For slow tools, run a background task that injects spoken progress updates
+        # (e.g. "Still looking into that…") at increasing intervals so the caller
+        # always hears something while they wait.  The task is cancelled the moment
+        # the tool returns, so fast tools never trigger any extra messages.
+        progress_task: asyncio.Task[None] | None = None
+        tool_done = asyncio.Event()
+        if name in _SLOW_LOOKUP_TOOLS and self.connection:
+            progress_task = asyncio.create_task(self._run_progress_updates(tool_done))
 
         # Execute tool via internal tool registry
         result = await self.handle_tool_call({"name": name, "arguments": arguments})
+
+        # Signal the progress task that the tool has finished and cancel it.
+        tool_done.set()
+        if progress_task is not None:
+            progress_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await progress_task
 
         # Send result back using SDK
         if self.connection:

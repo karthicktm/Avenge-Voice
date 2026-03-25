@@ -54,7 +54,13 @@ class CategorizeTools:
                 "description": (
                     "Classify the caller's description or issue against the configured category tree. "
                     "Call this tool when the caller describes a problem, request, or topic that needs "
-                    "to be categorized. The agent system prompt specifies which tree_name to use."
+                    "to be categorized. The agent system prompt specifies which tree_name to use. "
+                    "The result includes 'info_to_collect' — a list of follow-up questions you MUST "
+                    "ask the caller to gather the information needed to action the issue. It also "
+                    "includes 'urgency_level' (communicate priority appropriately), 'self_resolution' "
+                    "(if true, you may offer safe self-help steps), 'can_report_fault' (if true, offer "
+                    "to submit a fault report), and 'requires_manual_support' (if true, flag that a "
+                    "human agent may need to follow up)."
                 ),
                 "parameters": {
                     "type": "object",
@@ -91,7 +97,7 @@ class CategorizeTools:
     # Private handler
     # ------------------------------------------------------------------
 
-    async def _categorize(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def _categorize(self, arguments: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0915
         """Classify caller input and return matched category info."""
         text: str = str(arguments.get("text", "")).strip()
         tree_name: str = str(arguments.get("tree_name", "")).strip()
@@ -131,24 +137,26 @@ class CategorizeTools:
                 preloaded_nodes=prewarmed_nodes,
             )
 
-            # Build path
+            # Build path and extract metadata
             path: list[str] = []
             code = None
             label = None
             depth = 0
+            node_metadata: dict[str, Any] | None = None
 
             if matched_node:
                 code = matched_node.code
                 label = matched_node.label
                 depth = matched_node.depth
 
-                # Use prewarmed path if available (avoids DB round-trip)
+                # Use prewarmed path + metadata if available (avoids DB round-trip)
                 if prewarmed_nodes:
                     node_id_str = str(matched_node.id)
                     prewarmed_by_id = {n["id"]: n for n in prewarmed_nodes}
                     cached_node = prewarmed_by_id.get(node_id_str)
                     if cached_node:
                         path = list(cached_node["path"])
+                        node_metadata = cached_node.get("metadata")
 
                 if not path:
                     # Fallback: reconstruct path from DB
@@ -170,6 +178,12 @@ class CategorizeTools:
                         if current.parent_id is None:
                             break
                         current = all_nodes.get(current.parent_id)
+
+                # Fall back to ORM attribute if not in prewarmed cache
+                if node_metadata is None and hasattr(matched_node, "node_metadata"):
+                    node_metadata = matched_node.node_metadata
+
+            meta = node_metadata or {}
 
             # Write audit row
             result_row = CategoryResult(
@@ -207,6 +221,15 @@ class CategorizeTools:
                 "confidence": confidence,
                 "resolution_layer": layer,
                 "result_id": str(result_row.id),
+                # Well-known metadata fields (flat for easy agent prompt access)
+                "urgency_level": meta.get("urgency_level"),
+                "self_resolution": meta.get("self_resolution"),
+                "can_report_fault": meta.get("can_report_fault"),
+                "requires_manual_support": meta.get("requires_manual_support"),
+                "requires_property_info": meta.get("requires_property_info"),
+                "info_to_collect": meta.get("info_to_collect"),
+                # Full metadata blob for arbitrary/custom fields
+                "metadata": node_metadata,
             }
 
         except Exception:

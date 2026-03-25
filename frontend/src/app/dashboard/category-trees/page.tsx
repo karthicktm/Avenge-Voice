@@ -20,6 +20,7 @@ import {
   FolderTree,
   ChevronDown,
   ChevronRight as ChevronRightIcon,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +59,7 @@ import {
   categorizeText,
   type TreeMeta,
   type CategoryNode,
+  type CategoryNodeMetadata,
   type DiscoverJobStatus,
   type StructuredImportPreview,
 } from "@/lib/api/category-trees";
@@ -129,7 +131,9 @@ function NodeRow({
   onDelete: (node: CategoryNode) => void;
 }) {
   const [open, setOpen] = useState(node.depth < 1);
+  const [metaOpen, setMetaOpen] = useState(false);
   const hasChildren = nodes.some((n) => n.parent_id === node.id);
+  const hasMetadata = !!node.metadata && Object.keys(node.metadata).length > 0;
 
   return (
     <li>
@@ -160,23 +164,40 @@ function NodeRow({
           )}
         </span>
 
-        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <button
-            onClick={() => onEdit(node)}
-            className="rounded p-1 hover:bg-muted"
-            title="Rename"
-          >
-            <Edit2 className="h-3 w-3" />
-          </button>
-          <button
-            onClick={() => onDelete(node)}
-            className="rounded p-1 hover:bg-muted"
-            title="Delete"
-          >
-            <Trash2 className="h-3 w-3 text-destructive" />
-          </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {hasMetadata && (
+            <button
+              onClick={() => setMetaOpen((o) => !o)}
+              className={`rounded p-1 transition-colors ${metaOpen ? "text-blue-400 hover:bg-blue-500/10" : "text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground"}`}
+              title={metaOpen ? "Hide details" : "Show details"}
+            >
+              <Info className="h-3 w-3" />
+            </button>
+          )}
+          <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              onClick={() => onEdit(node)}
+              className="rounded p-1 hover:bg-muted"
+              title="Rename"
+            >
+              <Edit2 className="h-3 w-3" />
+            </button>
+            <button
+              onClick={() => onDelete(node)}
+              className="rounded p-1 hover:bg-muted"
+              title="Delete"
+            >
+              <Trash2 className="h-3 w-3 text-destructive" />
+            </button>
+          </div>
         </div>
       </div>
+
+      {metaOpen && hasMetadata && node.metadata && (
+        <div style={{ paddingLeft: `${(node.depth + 2) * 16}px` }} className="pb-1 pr-2">
+          <NodeMetadataPanel metadata={node.metadata} />
+        </div>
+      )}
 
       {open && hasChildren && (
         <NodeTree nodes={nodes} parentId={node.id} onEdit={onEdit} onDelete={onDelete} />
@@ -542,6 +563,105 @@ function AiDiscoveryModal({
 }
 
 // ---------------------------------------------------------------------------
+// Node metadata panel (read-only display of imported metadata)
+// ---------------------------------------------------------------------------
+
+const URGENCY_COLORS: Record<string, string> = {
+  "prio 1": "bg-red-500/20 text-red-400 border-red-500/30",
+  "prio 2": "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  "prio 3": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  blandat: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+};
+
+function UrgencyChip({ value }: { value: string }) {
+  const key = value.toLowerCase();
+  const colorKey = Object.keys(URGENCY_COLORS).find((k) => key.includes(k));
+  const cls = colorKey ? URGENCY_COLORS[colorKey] : "bg-muted text-muted-foreground border-border";
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}>
+      {value}
+    </span>
+  );
+}
+
+function BoolBadge({ label, value }: { label: string; value: boolean }) {
+  return (
+    <span
+      className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${value ? "border-emerald-500/30 bg-emerald-500/20 text-emerald-400" : "border-border bg-slate-500/10 text-muted-foreground"}`}
+    >
+      {label}: {value ? "Yes" : "No"}
+    </span>
+  );
+}
+
+const KNOWN_KEYS = new Set([
+  "urgency_level",
+  "self_resolution",
+  "requires_property_info",
+  "can_report_fault",
+  "requires_manual_support",
+  "info_to_collect",
+  "example_query",
+]);
+
+function NodeMetadataPanel({ metadata }: { metadata: CategoryNodeMetadata }) {
+  const extraKeys = Object.keys(metadata).filter((k) => !KNOWN_KEYS.has(k));
+
+  return (
+    <div className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Metadata
+      </p>
+
+      {metadata.example_query && (
+        <p className="text-xs italic text-muted-foreground">
+          e.g. &ldquo;{metadata.example_query}&rdquo;
+        </p>
+      )}
+
+      {metadata.urgency_level && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground">Urgency:</span>
+          <UrgencyChip value={metadata.urgency_level} />
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-1.5">
+        {metadata.self_resolution !== undefined && (
+          <BoolBadge label="Self-resolve" value={metadata.self_resolution} />
+        )}
+        {metadata.can_report_fault !== undefined && (
+          <BoolBadge label="Can report fault" value={metadata.can_report_fault} />
+        )}
+        {metadata.requires_manual_support !== undefined && (
+          <BoolBadge label="Manual support" value={metadata.requires_manual_support} />
+        )}
+        {metadata.requires_property_info !== undefined && (
+          <BoolBadge label="Property info needed" value={metadata.requires_property_info} />
+        )}
+      </div>
+
+      {metadata.info_to_collect && (
+        <div className="space-y-0.5">
+          <p className="text-[10px] font-medium text-muted-foreground">Questions to ask caller:</p>
+          <p className="text-xs leading-relaxed text-foreground/80">{metadata.info_to_collect}</p>
+        </div>
+      )}
+
+      {extraKeys.length > 0 && (
+        <div className="space-y-0.5 border-t border-border/40 pt-2">
+          {extraKeys.map((k) => (
+            <p key={k} className="text-xs text-muted-foreground">
+              <span className="font-medium">{k}:</span> {String(metadata[k])}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Node edit modal
 // ---------------------------------------------------------------------------
 
@@ -610,6 +730,7 @@ function NodeEditModal({
             <Label>Code (optional)</Label>
             <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. W001" />
           </div>
+          {node?.metadata && <NodeMetadataPanel metadata={node.metadata} />}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
@@ -635,14 +756,9 @@ function NodeEditModal({
 
 function TestPanel({ workspaceId, treeName }: { workspaceId: string; treeName: string }) {
   const [text, setText] = useState("");
-  const [result, setResult] = useState<{
-    matched: boolean;
-    label: string | null;
-    path: string[];
-    code: string | null;
-    confidence: number | null;
-    resolution_layer?: string;
-  } | null>(null);
+  const [result, setResult] = useState<import("@/lib/api/category-trees").CategorizeResult | null>(
+    null
+  );
   const [loading, setLoading] = useState(false);
 
   async function handleTest() {
@@ -690,6 +806,11 @@ function TestPanel({ workspaceId, treeName }: { workspaceId: string; treeName: s
                 Layer: {result.resolution_layer} · Confidence:{" "}
                 {result.confidence != null ? result.confidence.toFixed(3) : "—"}
               </div>
+              {result.metadata && (
+                <div className="mt-2">
+                  <NodeMetadataPanel metadata={result.metadata} />
+                </div>
+              )}
             </>
           ) : (
             <div className="flex items-center gap-2 text-muted-foreground">

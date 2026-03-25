@@ -21,6 +21,18 @@ export interface TreeMeta {
   created_at: string;
 }
 
+export interface CategoryNodeMetadata {
+  example_query?: string;
+  urgency_level?: string;
+  self_resolution?: boolean;
+  requires_property_info?: boolean;
+  can_report_fault?: boolean;
+  requires_manual_support?: boolean;
+  info_to_collect?: string;
+  // Arbitrary additional fields from custom import columns
+  [key: string]: unknown;
+}
+
 export interface CategoryNode {
   id: string;
   tree_name: string;
@@ -32,6 +44,7 @@ export interface CategoryNode {
   parent_id: string | null;
   depth: number;
   position: number;
+  metadata: CategoryNodeMetadata | null;
 }
 
 export interface NodeAddRequest {
@@ -62,15 +75,21 @@ export interface DiscoverJobStatus {
   error?: string;
 }
 
+export interface ImportDataItem {
+  code: string | null;
+  path: string[];
+  metadata?: CategoryNodeMetadata | null;
+}
+
 export interface StructuredImportPreview {
   valid: boolean;
   node_count: number;
-  preview: Array<{ code: string | null; path: string[] }>;
-  import_data: Array<{ code: string | null; path: string[] }>;
+  preview: ImportDataItem[];
+  import_data: ImportDataItem[];
 }
 
 export interface ConfirmImportBody {
-  import_data: Array<{ code: string | null; path: string[] }>;
+  import_data: ImportDataItem[];
   agent_id?: string | null;
 }
 
@@ -82,6 +101,16 @@ export interface CategorizeResult {
   depth: number;
   confidence: number | null;
   result_id: string;
+  resolution_layer?: string;
+  // Well-known metadata fields (flat for easy access)
+  urgency_level: string | null;
+  self_resolution: boolean | null;
+  can_report_fault: boolean | null;
+  requires_manual_support: boolean | null;
+  requires_property_info: boolean | null;
+  info_to_collect: string | null;
+  // Full metadata blob
+  metadata: CategoryNodeMetadata | null;
 }
 
 // ---------------------------------------------------------------------------

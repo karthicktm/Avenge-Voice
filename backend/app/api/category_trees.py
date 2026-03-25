@@ -4,6 +4,7 @@ import asyncio
 import csv
 import io
 import json
+import re
 import uuid
 from typing import Any
 
@@ -58,6 +59,7 @@ class NodeResponse(BaseModel):
     parent_id: uuid.UUID | None = None
     depth: int
     position: int
+    metadata: dict[str, Any] | None = None
 
     model_config = {"from_attributes": True}
 
@@ -172,6 +174,7 @@ def _nodes_to_response(nodes: list[CategoryTree]) -> list[NodeResponse]:
             parent_id=n.parent_id,
             depth=n.depth,
             position=n.position,
+            metadata=n.node_metadata,
         )
         for n in nodes
     ]
@@ -335,19 +338,413 @@ async def download_template(
         def gen() -> Any:
             yield content_str
 
-    else:  # xlsx hint
-        content = "Excel template: columns code, level_1, level_2, level_3, level_4"
-        media = "text/plain"
-        filename = "category_template_readme.txt"
+    else:  # xlsx — real workbook with all metadata columns
+        try:
+            import openpyxl  # type: ignore[import-untyped]
+            from openpyxl.styles import Font, PatternFill  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=500, detail="openpyxl not installed — cannot generate Excel template"
+            ) from exc
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Category Template"
+
+        header_cols = [
+            "code",
+            "level_1",
+            "level_2",
+            "level_3",
+            "level_4",
+            "example_query",
+            "urgency_level",
+            "self_resolution",
+            "requires_property_info",
+            "can_report_fault",
+            "requires_manual_support",
+            "info_to_collect",
+        ]
+        ws.append(header_cols)
+
+        # Style header row
+        header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+
+        # Example rows with realistic data
+        example_data: list[list[str]] = [
+            [
+                "W001", "Water/leakage", "Bathroom", "Tap", "",
+                "The tap in my bathroom is dripping constantly",
+                "Prio 3", "JA", "NEJ", "JA", "NEJ",
+                "Ask how long it has been dripping and whether it is getting worse.",
+            ],
+            [
+                "W002", "Water/leakage", "Bathroom", "Ceiling", "",
+                "There is water dripping from my bathroom ceiling",
+                "Prio 1", "NEJ", "JA", "JA", "JA",
+                "Ask which floor they are on and whether the apartment above is aware.",
+            ],
+            [
+                "H001", "Heat/ventilation", "Radiator", "", "",
+                "The radiator in my living room is not working",
+                "Prio 2", "JA", "NEJ", "JA", "NEJ",
+                "Ask if all radiators are affected or just this one.",
+            ],
+        ]
+        for example_row in example_data:
+            ws.append(example_row)
+
+        # Auto-fit column widths
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or "")) for cell in col)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 55)
+
+        xlsx_buf = io.BytesIO()
+        wb.save(xlsx_buf)
+        xlsx_buf.seek(0)
+        xlsx_bytes = xlsx_buf.read()
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = "category_template.xlsx"
 
         def gen() -> Any:
-            yield content
+            yield xlsx_bytes
 
     return StreamingResponse(
         gen(),
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Metadata column handling — well-known header aliases + boolean normalization
+# ---------------------------------------------------------------------------
+
+# Maps raw column headers (lower-cased, parentheticals stripped) → canonical key names.
+# Covers both English and Swedish variants (including K2A-specific column names).
+_WELL_KNOWN_HEADER_ALIASES: dict[str, str] = {
+    # English
+    "example_query": "example_query",
+    "example query": "example_query",
+    "urgency_level": "urgency_level",
+    "urgency level": "urgency_level",
+    "priority": "urgency_level",
+    "self_resolution": "self_resolution",
+    "self resolution": "self_resolution",
+    "requires_property_info": "requires_property_info",
+    "requires property info": "requires_property_info",
+    "can_report_fault": "can_report_fault",
+    "can report fault": "can_report_fault",
+    "requires_manual_support": "requires_manual_support",
+    "requires manual support": "requires_manual_support",
+    "info_to_collect": "info_to_collect",
+    "info to collect": "info_to_collect",
+    "information to collect": "info_to_collect",
+    "questions to ask": "info_to_collect",
+    # Swedish (K2A column headers, lower-cased, parentheticals handled separately)
+    "exempel på användarfråga": "example_query",
+    "typisk urgency level": "urgency_level",
+    "self resolution möjlig": "self_resolution",
+    "kräver fastighetsspecifik information": "requires_property_info",
+    "kan felanmälas": "can_report_fault",
+    "kan kräva manuell support": "requires_manual_support",
+    "ytterligare information som behöver samlas in": "info_to_collect",
+}
+
+# Aliases for structural columns so files using Swedish/custom header names
+# import directly without any pre-processing.
+# Keys are lower-cased; parentheticals already stripped by _canonical_header logic.
+_STRUCTURAL_HEADER_ALIASES: dict[str, str] = {
+    # code column
+    "kategorikod": "code",
+    "category code": "code",
+    "kategori kod": "code",
+    "cat code": "code",
+    # level columns — Swedish "Nivå" and common English variants
+    "nivå 1": "level_1",
+    "niva 1": "level_1",
+    "level1": "level_1",
+    "l1": "level_1",
+    "nivå 2": "level_2",
+    "niva 2": "level_2",
+    "level2": "level_2",
+    "l2": "level_2",
+    "nivå 3": "level_3",
+    "niva 3": "level_3",
+    "level3": "level_3",
+    "l3": "level_3",
+    "nivå 4": "level_4",
+    "niva 4": "level_4",
+    "level4": "level_4",
+    "l4": "level_4",
+    "nivå 5": "level_5",
+    "niva 5": "level_5",
+    "level5": "level_5",
+    "l5": "level_5",
+}
+
+# Columns consumed as structural fields — never treated as metadata.
+_STRUCTURAL_COLUMNS = {"code", "level_1", "level_2", "level_3", "level_4", "level_5"}
+
+# Metadata keys whose raw JA/NEJ values should be coerced to booleans.
+_BOOLEAN_KEYS = {
+    "self_resolution",
+    "requires_property_info",
+    "can_report_fault",
+    "requires_manual_support",
+}
+
+_TRUTHY = {"ja", "yes", "true", "1", "j", "y"}
+_FALSY = {"nej", "no", "false", "0", "n"}
+
+
+def _canonical_header(raw: str) -> str | None:
+    """Return canonical metadata key for a column header, or None if structural.
+
+    Strips trailing parenthetical suffixes like "(JA / NEJ)" before lookup.
+    Also tries prefix matching for long Swedish/multilingual headers that start
+    with a known alias key (e.g. "ytterligare information som behöver samlas in
+    för att vi ska skapa en felanmälan..." → info_to_collect).
+    Unknown non-structural headers are kept as-is (arbitrary metadata support).
+    """
+    key = re.sub(r"\s*\([^)]*\)\s*$", "", raw.strip().lower()).strip()
+    if key in _STRUCTURAL_COLUMNS:
+        return None
+    if key in _WELL_KNOWN_HEADER_ALIASES:
+        return _WELL_KNOWN_HEADER_ALIASES[key]
+    # Prefix match for long headers (only check aliases ≥ 10 chars to avoid false hits)
+    for alias_key, canon in _WELL_KNOWN_HEADER_ALIASES.items():
+        if len(alias_key) >= 10 and key.startswith(alias_key):  # noqa: PLR2004
+            return canon
+    return key  # unknown — store as-is
+
+
+def _normalize_bool(value: str) -> bool | str:
+    """Normalize JA/NEJ/yes/no/1/0 → bool. Unknown values kept as raw string."""
+    s = value.strip().lower()
+    if s in _TRUTHY:
+        return True
+    if s in _FALSY:
+        return False
+    return value  # keep raw for unrecognized strings
+
+
+def _normalize_row_headers(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Rename headers to canonical names so files in any language import directly.
+
+    Strategy:
+    1. Known alias matching (Swedish/English hardcoded aliases).
+    2. Positional/data fallback for structural columns if level_1 not yet found.
+    3. Data-pattern detection for metadata columns not matched by alias — assigns
+       canonical keys (example_query, urgency_level, self_resolution, etc.) based
+       on the shape of the values, not the column name language.
+       This makes import fully language-agnostic.
+    """
+    if not rows:
+        return rows
+
+    original_keys = list(rows[0].keys())
+
+    # Step 1: alias matching for known structural headers
+    rename: dict[str, str] = {}
+    for raw in original_keys:
+        normalized = re.sub(r"\s*\([^)]*\)\s*$", "", raw.strip().lower()).strip()
+        if normalized in _STRUCTURAL_HEADER_ALIASES:
+            rename[raw] = _STRUCTURAL_HEADER_ALIASES[normalized]
+
+    renamed_keys = {rename.get(k, k) for k in original_keys}
+
+    # Step 2: positional fallback if level_1 not yet identified
+    if "level_1" not in renamed_keys:
+        rename.update(_detect_structural_columns_by_position(rows, original_keys))
+
+    # Step 3: alias matching for known metadata headers; for any remaining
+    # unrecognized metadata headers, infer canonical key by data pattern.
+    for raw in original_keys:
+        if raw in rename:
+            continue  # already mapped as structural
+        normalized = re.sub(r"\s*\([^)]*\)\s*$", "", raw.strip().lower()).strip()
+        if normalized in _WELL_KNOWN_HEADER_ALIASES:
+            rename[raw] = _WELL_KNOWN_HEADER_ALIASES[normalized]
+
+    # Collect remaining unrecognized metadata headers (not structural, not aliased)
+    canonical_structural = set(_STRUCTURAL_COLUMNS)
+    already_mapped_to = set(rename.values())
+    unrecognized_meta = [
+        raw for raw in original_keys
+        if raw not in rename and rename.get(raw, raw) not in canonical_structural
+    ]
+    if unrecognized_meta:
+        rename.update(
+            _detect_metadata_columns_by_pattern(rows, unrecognized_meta, already_mapped_to)
+        )
+
+    if not rename:
+        return rows
+
+    return [{rename.get(k, k): v for k, v in row.items()} for row in rows]
+
+
+def _detect_metadata_columns_by_pattern(
+    rows: list[dict[str, str]],
+    headers: list[str],
+    already_assigned: set[str],
+) -> dict[str, str]:
+    """Assign canonical metadata keys to unrecognized columns by data shape.
+
+    Patterns (language-agnostic, applied in column order):
+    - Boolean values (YES/NO/JA/NEJ/true/false): assigned left-to-right as
+      self_resolution → requires_property_info → can_report_fault →
+      requires_manual_support (the four standard flag fields).
+    - Short enum (≤ 5 distinct short values, not boolean): urgency_level.
+    - Prose columns (high unique ratio + medium-to-long text): the FIRST such
+      column is example_query (typical example question), the LAST is
+      info_to_collect (instructions for the agent).
+    - Anything else: stored as-is under the normalized header name.
+    """
+    if not rows:
+        return {}
+
+    sample = rows[: min(30, len(rows))]
+
+    def col_values(col: str) -> list[str]:
+        return [row.get(col, "") for row in sample if row.get(col, "")]
+
+    def avg_len(col: str) -> float:
+        vals = col_values(col)
+        return sum(len(v) for v in vals) / max(len(vals), 1)
+
+    def unique_ratio(col: str) -> float:
+        vals = col_values(col)
+        return len(set(vals)) / max(len(vals), 1) if vals else 1.0
+
+    def is_boolean_col(col: str) -> bool:
+        vals = {v.strip().lower() for v in col_values(col)}
+        return bool(vals) and vals <= (_TRUTHY | _FALSY)
+
+    def is_short_enum(col: str) -> bool:
+        vals = {v.strip().lower() for v in col_values(col)}
+        return 2 <= len(vals) <= 6 and not (vals <= (_TRUTHY | _FALSY)) and avg_len(col) <= 30  # noqa: PLR2004
+
+    bool_slots = [
+        k for k in ("self_resolution", "requires_property_info", "can_report_fault", "requires_manual_support")
+        if k not in already_assigned
+    ]
+    bool_idx = 0
+
+    rename: dict[str, str] = {}
+    prose_cols: list[str] = []
+
+    for header in headers:
+        al = avg_len(header)
+        ur = unique_ratio(header)
+
+        if is_boolean_col(header):
+            if bool_idx < len(bool_slots):
+                rename[header] = bool_slots[bool_idx]
+                bool_idx += 1
+        elif is_short_enum(header) and "urgency_level" not in already_assigned | set(rename.values()):
+            rename[header] = "urgency_level"
+        elif ur >= 0.6 and al > 15:  # noqa: PLR2004
+            prose_cols.append(header)
+        # else: store as-is (arbitrary metadata, left unaliased)
+
+    # Assign prose columns to canonical keys:
+    # - If example_query not yet taken: first prose = example_query, last (if >1) = info_to_collect
+    # - If example_query already aliased: any remaining prose column = info_to_collect
+    if prose_cols:
+        if "example_query" not in already_assigned:
+            rename[prose_cols[0]] = "example_query"
+            if len(prose_cols) > 1 and "info_to_collect" not in already_assigned:
+                rename[prose_cols[-1]] = "info_to_collect"
+        elif "info_to_collect" not in already_assigned:
+            rename[prose_cols[-1]] = "info_to_collect"
+
+    return rename
+
+
+def _detect_structural_columns_by_position(
+    rows: list[dict[str, str]],
+    headers: list[str],
+) -> dict[str, str]:
+    """Detect structural columns (code, level_1…N) by data pattern alone.
+
+    Heuristics (entirely data-driven, no language knowledge required):
+
+    Code column:
+      - Short values (avg ≤ 20 chars) with high uniqueness (≥ 0.7) — typically
+        dotted codes like "1.1.1" or alphanumeric like "W001".
+
+    Level columns:
+      - Values are short-to-medium category labels.
+      - Parent levels repeat across rows (unique ratio < 0.5).
+      - Leaf levels may be unique (unique ratio ≈ 1.0) but labels stay short
+        (avg ≤ 25 chars — distinguishes "Vatten läcker från tak" from a full
+        sentence like "Det droppar från taket i badrummet…").
+
+    Metadata boundary — stop assigning levels when:
+      - Boolean column (values match ja/nej/yes/no): clearly a flag field.
+      - High unique ratio (≥ 0.6) AND avg length > 25 chars: this is a prose
+        column (example queries, instructions) not a category label.
+      - Avg length > 80 chars: long free-text, definitely metadata.
+    """
+    if not rows:
+        return {}
+
+    sample = rows[: min(30, len(rows))]
+
+    def avg_len(col: str) -> float:
+        vals = [row.get(col, "") for row in sample if row.get(col, "")]
+        return sum(len(v) for v in vals) / max(len(vals), 1)
+
+    def unique_ratio(col: str) -> float:
+        vals = [row.get(col, "") for row in sample if row.get(col, "")]
+        return len(set(vals)) / max(len(vals), 1) if vals else 1.0
+
+    def looks_like_boolean(col: str) -> bool:
+        vals = {row.get(col, "").strip().lower() for row in sample if row.get(col, "")}
+        return bool(vals & (_TRUTHY | _FALSY))
+
+    # Detection thresholds
+    code_max_len = 20
+    code_min_unique = 0.7
+    level_max_len = 80
+    prose_min_len = 25   # avg_len above this + high unique = prose sentence, not a label
+    prose_min_unique = 0.6
+
+    rename: dict[str, str] = {}
+    level_idx = 0
+
+    for header in headers:
+        if header in rename:
+            continue
+
+        al = avg_len(header)
+        ur = unique_ratio(header)
+
+        # Boolean column → metadata, stop
+        if looks_like_boolean(header):
+            break
+
+        # Prose column (unique long text per row) → metadata, stop
+        if ur >= prose_min_unique and al > prose_min_len:
+            break
+
+        # Very long column → metadata, stop
+        if al > level_max_len:
+            break
+
+        if level_idx == 0 and al <= code_max_len and ur >= code_min_unique:
+            rename[header] = "code"
+        else:
+            level_idx += 1
+            rename[header] = f"level_{level_idx}"
+
+    return rename
 
 
 def _parse_structured_file(content: bytes, filename: str) -> list[dict[str, str]]:  # noqa: PLR0912
@@ -387,52 +784,80 @@ def _parse_structured_file(content: bytes, filename: str) -> list[dict[str, str]
 
     if fn.endswith(".xlsx"):
         try:
-            import openpyxl  # type: ignore[import-untyped]
+            import openpyxl
 
             wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
             ws = wb.active
             if ws is None:
                 raise HTTPException(status_code=400, detail="Empty Excel file")  # noqa: TRY301
             headers: list[str] = []
-            rows = []
-            for i, row in enumerate(ws.iter_rows(values_only=True)):
-                if i == 0:
-                    headers = [str(c) if c is not None else f"col{j}" for j, c in enumerate(row)]
+            xlsx_rows: list[dict[str, str]] = []
+            header_found = False
+            for row in ws.iter_rows(values_only=True):
+                # Skip entirely blank rows — handles K2A-style files where
+                # rows 1-3 are empty and the actual header is on row 4.
+                cells = [c for c in row if c is not None and str(c).strip()]
+                if not cells:
+                    continue
+                if not header_found:
+                    headers = [
+                        str(c).strip() if c is not None else f"col{j}"
+                        for j, c in enumerate(row)
+                    ]
+                    header_found = True
                 else:
-                    rows.append(
+                    xlsx_rows.append(
                         dict(
                             zip(
                                 headers,
-                                (str(v) if v is not None else "" for v in row),
+                                (str(v).strip() if v is not None else "" for v in row),
                                 strict=False,
                             )
                         )
                     )
-            return rows
+            return xlsx_rows
         except ImportError as exc:
             raise HTTPException(
                 status_code=500, detail="openpyxl not installed — cannot process Excel files"
             ) from exc
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Invalid Excel file: {exc}") from exc
 
     raise HTTPException(status_code=400, detail="Unsupported file type. Use .csv, .xlsx, or .json")
 
 
-def _validate_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
-    """Validate structured rows and return normalised node dicts. Raises on error."""
+def _validate_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:  # noqa: PLR0912
+    """Validate structured rows and return normalised node dicts. Raises on error.
+
+    Each returned dict has the shape:
+        {"code": str|None, "path": list[str], "metadata": dict|None}
+
+    Metadata is extracted from any column that is not a structural field (code,
+    level_1..5). Well-known headers are mapped to canonical key names; unknown
+    headers are stored as-is. Boolean fields (JA/NEJ) are coerced to Python bools.
+    """
     if len(rows) > MAX_NODES:
         raise HTTPException(
             status_code=400,
             detail=f"Too many rows ({len(rows)}). Maximum is {MAX_NODES}.",
         )
 
+    # Discover all metadata columns once from the first row's keys.
+    all_headers = list(rows[0].keys()) if rows else []
+    metadata_headers: list[tuple[str, str]] = []  # (raw_header, canonical_key)
+    for raw in all_headers:
+        canonical = _canonical_header(raw)
+        if canonical is not None:
+            metadata_headers.append((raw, canonical))
+
     errors: list[str] = []
     codes_seen: set[str] = set()
     nodes: list[dict[str, Any]] = []
 
     for i, row in enumerate(rows, start=2):  # row 1 is header
-        levels = [str(row.get(f"level_{j}", "") or "").strip() for j in range(1, 5)]
+        levels = [str(row.get(f"level_{j}", "") or "").strip() for j in range(1, 6)]
         # level_1 and level_2 are required
         if not levels[0]:
             errors.append(f"Row {i}: level_1 is required")
@@ -453,7 +878,18 @@ def _validate_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
             errors.append(f"Row {i}: depth {len(path)} exceeds maximum {MAX_DEPTH}")
             continue
 
-        nodes.append({"code": code, "path": path})
+        # Extract metadata from all non-structural columns
+        meta: dict[str, Any] = {}
+        for raw_header, canonical_key in metadata_headers:
+            raw_value = str(row.get(raw_header, "") or "").strip()
+            if not raw_value:
+                continue  # skip blank cells
+            if canonical_key in _BOOLEAN_KEYS:
+                meta[canonical_key] = _normalize_bool(raw_value)
+            else:
+                meta[canonical_key] = raw_value
+
+        nodes.append({"code": code, "path": path, "metadata": meta or None})
 
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
@@ -476,7 +912,7 @@ async def import_structured_validate(
     if len(content) > MAX_FILE_BYTES:
         raise HTTPException(status_code=400, detail="File exceeds 5 MB limit")
 
-    rows = _parse_structured_file(content, file.filename or "upload.csv")
+    rows = _normalize_row_headers(_parse_structured_file(content, file.filename or "upload.csv"))
     nodes = _validate_rows(rows)
 
     # Build a condensed tree preview (top 3 levels, first 50 nodes)
@@ -527,6 +963,7 @@ async def import_structured_confirm(
     for item in body.import_data:
         path: list[str] = item.get("path", [])
         code: str | None = item.get("code")
+        item_metadata: dict[str, Any] | None = item.get("metadata")
         if not path:
             continue
 
@@ -551,6 +988,8 @@ async def import_structured_confirm(
                 parent_id=parent_id,
                 depth=depth,
                 position=len([k for k in path_to_id if len(k) == depth + 1]),
+                # Metadata only on leaf nodes; intermediate ancestors carry None.
+                node_metadata=item_metadata if is_leaf else None,
             )
             path_to_id[seg] = node.id
             nodes_to_add.append(node)
@@ -758,6 +1197,7 @@ async def add_node(
         parent_id=node.parent_id,
         depth=node.depth,
         position=node.position,
+        metadata=node.node_metadata,
     )
 
 
@@ -799,6 +1239,7 @@ async def update_node(
         parent_id=node.parent_id,
         depth=node.depth,
         position=node.position,
+        metadata=node.node_metadata,
     )
 
 
