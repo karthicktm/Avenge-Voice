@@ -100,6 +100,12 @@ class LookupRecord(Base, TimestampMixin):
         Index("ix_lookup_records_data_gin", "data", postgresql_using="gin"),
         Index("ix_lookup_records_search_vector_gin", "search_vector", postgresql_using="gin"),
         Index("ix_lookup_records_tags_gin", "tags", postgresql_using="gin"),
+        Index(
+            "ix_lookup_records_title_trgm",
+            "title",
+            postgresql_using="gist",
+            postgresql_ops={"title": "gist_trgm_ops"},
+        ),
     )
 
     def __repr__(self) -> str:

@@ -11,6 +11,8 @@ from app.models.lookup import LookupCollection, LookupRecord
 
 logger = structlog.get_logger()
 
+_TRGM_THRESHOLD = 0.35  # pg_trgm similarity threshold for ASR error tolerance
+
 
 class LookupTools:
     """Query structured data collections (properties, FAQs, products, staff, etc.).
@@ -222,6 +224,20 @@ class LookupTools:
                     rows = result.fetchall()
                     if rows:
                         break
+
+            # Fallback 3: Trigram similarity on title — handles ASR 1-2 char
+            # transcription errors (e.g. "Hindebanan" → "Hinderbanan", similarity ≈ 0.77).
+            # Requires pg_trgm extension (migration 038). Threshold 0.35 tolerates
+            # short strings with up to ~2 char differences without false positives;
+            # workspace/user scoping already narrows the candidate set significantly.
+            if not rows:
+                trgm_stmt = (
+                    stmt.where(func.similarity(LookupRecord.title, query_str) >= _TRGM_THRESHOLD)
+                    .order_by(func.similarity(LookupRecord.title, query_str).desc())
+                    .limit(limit)
+                )
+                result = await self.db.execute(trgm_stmt)
+                rows = result.fetchall()
 
             if not rows:
                 return {

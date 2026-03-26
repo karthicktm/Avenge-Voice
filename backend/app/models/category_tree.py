@@ -140,6 +140,12 @@ class CategoryTree(Base, TimestampMixin):
             "search_vector",
             postgresql_using="gin",
         ),
+        Index(
+            "ix_category_trees_label_trgm",
+            "label",
+            postgresql_using="gist",
+            postgresql_ops={"label": "gist_trgm_ops"},
+        ),
     )
 
     def __repr__(self) -> str:

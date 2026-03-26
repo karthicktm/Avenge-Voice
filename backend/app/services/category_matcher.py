@@ -15,6 +15,7 @@ logger = structlog.get_logger()
 
 # ts_rank score below this threshold triggers LLM fallback
 FTS_THRESHOLD = 0.05
+TRGM_THRESHOLD = 0.35
 
 
 @dataclass
@@ -98,7 +99,9 @@ async def match_category(  # noqa: PLR0911, PLR0912
     # Try each significant word individually and take the deepest match.
     # ------------------------------------------------------------------
     min_word_len = 4
-    significant_words = [w.strip(".,!?-") for w in text.split() if len(w.strip(".,!?-")) > min_word_len]
+    significant_words = [
+        w.strip(".,!?-") for w in text.split() if len(w.strip(".,!?-")) > min_word_len
+    ]
     for word in significant_words:
         word_tsq = func.plainto_tsquery("simple", word)
         word_stmt = (
@@ -109,15 +112,47 @@ async def match_category(  # noqa: PLR0911, PLR0912
                 CategoryTree.status == "active",
                 CategoryTree.search_vector.op("@@")(word_tsq),
             )
-            .order_by(CategoryTree.depth.desc(), func.ts_rank(CategoryTree.search_vector, word_tsq).desc())
+            .order_by(
+                CategoryTree.depth.desc(), func.ts_rank(CategoryTree.search_vector, word_tsq).desc()
+            )
             .limit(5)
         )
         word_result = await db.execute(word_stmt)
         word_rows = word_result.fetchall()
         for node, score in word_rows:
             if score >= FTS_THRESHOLD:
-                log.info("fts_word_matched", word=word, score=score, label=node.label, depth=node.depth)
+                log.info(
+                    "fts_word_matched", word=word, score=score, label=node.label, depth=node.depth
+                )
                 return node, float(score), "fts"
+
+    # ------------------------------------------------------------------
+    # Layer 1c — Trigram similarity on label (pg_trgm)
+    # Catches spelling variants / ASR errors that share trigrams with
+    # category labels (e.g. "ventilasjon" → "ventilation").
+    # Does NOT resolve semantic gaps (rat vs mice share zero trigrams —
+    # the LLM layer below handles those). Zero API cost.
+    # Requires pg_trgm extension (migration 038).
+    # ------------------------------------------------------------------
+    if text.strip():
+        trgm_stmt = (
+            select(CategoryTree, func.similarity(CategoryTree.label, text).label("trgm_score"))
+            .where(
+                CategoryTree.workspace_id == workspace_id,
+                CategoryTree.tree_name == tree_name,
+                CategoryTree.status == "active",
+                func.similarity(CategoryTree.label, text) >= TRGM_THRESHOLD,
+            )
+            .order_by(
+                CategoryTree.depth.desc(),
+                func.similarity(CategoryTree.label, text).desc(),
+            )
+            .limit(5)
+        )
+        trgm_result = await db.execute(trgm_stmt)
+        for node, trgm_score in trgm_result.fetchall():
+            log.info("trgm_matched", score=trgm_score, label=node.label, depth=node.depth)
+            return node, float(trgm_score), "fts"
 
     # ------------------------------------------------------------------
     # Layer 2 — Hierarchical LLM traversal
@@ -248,14 +283,21 @@ async def _llm_pick_from_siblings(
 
     system_prompt = (
         "You are a category classifier. "
-        "Given a description and a list of categories at the same level, "
+        "Given a description and a numbered list of categories at the same level, "
         "pick the single best matching category number (1-based). "
-        "Categories may be in a different language — match by meaning. "
-        "Pay close attention to severity and urgency indicators: "
-        "words like 'slow', 'drip', 'gradual', 'minor', 'small', 'manageable' indicate low severity; "
-        "words like 'flooding', 'burst', 'gushing', 'no water', 'acute', 'severe', 'major' indicate high severity. "
-        "Choose the category whose severity/urgency level best matches the description. "
-        "Return 0 if none match. Respond with ONLY the number."
+        "Categories may be in a different language — always match by meaning, not spelling. "
+        "\n\n"
+        "SEMANTIC MATCHING RULES:\n"
+        "- Pick the closest semantic match even when the exact term differs. "
+        "Examples: 'råtta'/'råttor' (rat/rats) → 'Möss' (mice) because both are rodents; "
+        "'kackerlacka' (cockroach) → 'Skadedjur' (pests); "
+        "'myror' (ants) → 'Insekter' (insects) if no closer match exists.\n"
+        "- Prefer the most specific available match over a generic parent.\n"
+        "- Use severity as a tiebreaker only: 'läcker sakta'/'droppar' = low severity; "
+        "'översvämning'/'sprutar'/'inget vatten' = high severity.\n"
+        "- Return 0 ONLY if no category is even remotely related. "
+        "If in doubt between 0 and a plausible match, pick the match.\n"
+        "\nRespond with ONLY the number."
     )
     user_message = (
         f"Description: {text!r}\n\nCategories:\n{candidate_list}\n\nBest match number (0 if none):"
