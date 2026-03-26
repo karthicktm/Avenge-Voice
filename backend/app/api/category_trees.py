@@ -377,21 +377,45 @@ async def download_template(
         # Example rows with realistic data
         example_data: list[list[str]] = [
             [
-                "W001", "Water/leakage", "Bathroom", "Tap", "",
+                "W001",
+                "Water/leakage",
+                "Bathroom",
+                "Tap",
+                "",
                 "The tap in my bathroom is dripping constantly",
-                "Prio 3", "JA", "NEJ", "JA", "NEJ",
+                "Prio 3",
+                "JA",
+                "NEJ",
+                "JA",
+                "NEJ",
                 "Ask how long it has been dripping and whether it is getting worse.",
             ],
             [
-                "W002", "Water/leakage", "Bathroom", "Ceiling", "",
+                "W002",
+                "Water/leakage",
+                "Bathroom",
+                "Ceiling",
+                "",
                 "There is water dripping from my bathroom ceiling",
-                "Prio 1", "NEJ", "JA", "JA", "JA",
+                "Prio 1",
+                "NEJ",
+                "JA",
+                "JA",
+                "JA",
                 "Ask which floor they are on and whether the apartment above is aware.",
             ],
             [
-                "H001", "Heat/ventilation", "Radiator", "", "",
+                "H001",
+                "Heat/ventilation",
+                "Radiator",
+                "",
+                "",
                 "The radiator in my living room is not working",
-                "Prio 2", "JA", "NEJ", "JA", "NEJ",
+                "Prio 2",
+                "JA",
+                "NEJ",
+                "JA",
+                "NEJ",
                 "Ask if all radiators are affected or just this one.",
             ],
         ]
@@ -575,7 +599,8 @@ def _normalize_row_headers(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     canonical_structural = set(_STRUCTURAL_COLUMNS)
     already_mapped_to = set(rename.values())
     unrecognized_meta = [
-        raw for raw in original_keys
+        raw
+        for raw in original_keys
         if raw not in rename and rename.get(raw, raw) not in canonical_structural
     ]
     if unrecognized_meta:
@@ -631,7 +656,13 @@ def _detect_metadata_columns_by_pattern(
         return 2 <= len(vals) <= 6 and not (vals <= (_TRUTHY | _FALSY)) and avg_len(col) <= 30  # noqa: PLR2004
 
     bool_slots = [
-        k for k in ("self_resolution", "requires_property_info", "can_report_fault", "requires_manual_support")
+        k
+        for k in (
+            "self_resolution",
+            "requires_property_info",
+            "can_report_fault",
+            "requires_manual_support",
+        )
         if k not in already_assigned
     ]
     bool_idx = 0
@@ -647,7 +678,9 @@ def _detect_metadata_columns_by_pattern(
             if bool_idx < len(bool_slots):
                 rename[header] = bool_slots[bool_idx]
                 bool_idx += 1
-        elif is_short_enum(header) and "urgency_level" not in already_assigned | set(rename.values()):
+        elif is_short_enum(header) and "urgency_level" not in already_assigned | set(
+            rename.values()
+        ):
             rename[header] = "urgency_level"
         elif ur >= 0.6 and al > 15:  # noqa: PLR2004
             prose_cols.append(header)
@@ -713,7 +746,7 @@ def _detect_structural_columns_by_position(
     code_max_len = 20
     code_min_unique = 0.7
     level_max_len = 80
-    prose_min_len = 25   # avg_len above this + high unique = prose sentence, not a label
+    prose_min_len = 25  # avg_len above this + high unique = prose sentence, not a label
     prose_min_unique = 0.6
 
     rename: dict[str, str] = {}
@@ -801,8 +834,7 @@ def _parse_structured_file(content: bytes, filename: str) -> list[dict[str, str]
                     continue
                 if not header_found:
                     headers = [
-                        str(c).strip() if c is not None else f"col{j}"
-                        for j, c in enumerate(row)
+                        str(c).strip() if c is not None else f"col{j}" for j, c in enumerate(row)
                     ]
                     header_found = True
                 else:
@@ -1004,7 +1036,67 @@ async def import_structured_confirm(
         tree_name=tree_name,
         node_count=len(nodes_to_add),
     )
+
+    # Auto-enrich example_query in the background so FTS + LLM matching
+    # benefit from representative caller terms without blocking the response.
+    asyncio.create_task(  # noqa: RUF006
+        _run_enrichment(workspace_id, tree_name, user.id)
+    )
+
     return {"imported": len(nodes_to_add), "tree_name": tree_name, "status": "active"}
+
+
+async def _run_enrichment(
+    workspace_id: uuid.UUID, tree_name: str, user_id: int, overwrite: bool = False
+) -> None:
+    """Fetch the OpenAI key and run example_query enrichment as a background task."""
+    from app.services.category_discovery_worker import _get_openai_key
+    from app.services.category_enrichment import enrich_example_queries
+
+    openai_api_key = await _get_openai_key(user_id, workspace_id)
+    if not openai_api_key:
+        logger.warning(
+            "enrich_skipped_no_openai_key",
+            workspace_id=str(workspace_id),
+            tree_name=tree_name,
+        )
+        return
+    await enrich_example_queries(
+        workspace_id=workspace_id,
+        tree_name=tree_name,
+        user_id=user_id,
+        openai_api_key=openai_api_key,
+        overwrite=overwrite,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Example query enrichment — enrich existing trees on demand
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{workspace_id}/{tree_name}/enrich-examples", status_code=202)
+@limiter.limit("10/minute")
+async def enrich_examples(
+    request: Request,
+    workspace_id: uuid.UUID,
+    tree_name: str,
+    user: VerifiedUser,
+    overwrite: bool = Query(
+        False, description="Re-generate even for nodes that already have example_query"
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Generate example_query for every node in the tree that is missing one.
+
+    Runs as a background task — returns immediately.  Use overwrite=true to
+    regenerate all nodes (e.g. after renaming labels or changing the tree language).
+    """
+    await _require_tree_access(workspace_id, tree_name, user, db)
+    asyncio.create_task(  # noqa: RUF006
+        _run_enrichment(workspace_id, tree_name, user.id, overwrite=overwrite)
+    )
+    return {"status": "enriching", "tree_name": tree_name}
 
 
 # ---------------------------------------------------------------------------
@@ -1352,7 +1444,7 @@ async def categorize(
             )
         )
         all_nodes = {n.id: n for n in all_result.scalars().all()}
-        path = _build_path(matched_node, all_nodes)
+        path = _build_path(matched_node, all_nodes)  # type: ignore[arg-type]
 
     # Write audit record
     result_row = CategoryResult(

@@ -27,6 +27,7 @@ class _NodeProxy:
     code: str | None
     depth: int
     parent_id: uuid.UUID | None
+    example_query: str | None = None
 
 
 # Public type alias used by callers
@@ -168,12 +169,14 @@ async def match_category(  # noqa: PLR0911, PLR0912
     if preloaded_nodes:
         log.info("llm_using_preloaded_nodes", total_nodes=len(preloaded_nodes))
         for nd in preloaded_nodes:
+            meta = nd.get("metadata") or {}
             proxy = _NodeProxy(
                 id=uuid.UUID(nd["id"]),
                 label=nd["label"],
                 code=nd.get("code"),
                 depth=nd["depth"],
                 parent_id=uuid.UUID(nd["parent_id"]) if nd.get("parent_id") else None,
+                example_query=meta.get("example_query"),
             )
             children_map.setdefault(proxy.parent_id, []).append(proxy)
     else:
@@ -194,6 +197,7 @@ async def match_category(  # noqa: PLR0911, PLR0912
                 code=node.code,
                 depth=node.depth,
                 parent_id=node.parent_id,
+                example_query=(node.node_metadata or {}).get("example_query"),
             )
             children_map.setdefault(proxy.parent_id, []).append(proxy)
 
@@ -271,7 +275,16 @@ async def _llm_pick_from_siblings(
 
     Returns the chosen node or None if no match.
     """
-    candidate_list = "\n".join(f"{i + 1}. {s.label}" for i, s in enumerate(siblings))
+    # Build candidate list — include example_query hints when present so the
+    # LLM understands what each category covers without hardcoded examples.
+    # e.g. "2. VVS  [värme uppvärmning kallt ventilation vatten avlopp]"
+    candidate_lines = []
+    for i, s in enumerate(siblings):
+        line = f"{i + 1}. {s.label}"
+        if s.example_query:
+            line += f"  [{s.example_query}]"
+        candidate_lines.append(line)
+    candidate_list = "\n".join(candidate_lines)
     sibling_labels = [s.label for s in siblings]
 
     log.info(
@@ -283,21 +296,14 @@ async def _llm_pick_from_siblings(
 
     system_prompt = (
         "You are a category classifier. "
-        "Given a description and a numbered list of categories at the same level, "
+        "Given a description and a numbered list of categories, "
         "pick the single best matching category number (1-based). "
-        "Categories may be in a different language — always match by meaning, not spelling. "
-        "\n\n"
-        "SEMANTIC MATCHING RULES:\n"
-        "- Pick the closest semantic match even when the exact term differs. "
-        "Examples: 'råtta'/'råttor' (rat/rats) → 'Möss' (mice) because both are rodents; "
-        "'kackerlacka' (cockroach) → 'Skadedjur' (pests); "
-        "'myror' (ants) → 'Insekter' (insects) if no closer match exists.\n"
-        "- Prefer the most specific available match over a generic parent.\n"
-        "- Use severity as a tiebreaker only: 'läcker sakta'/'droppar' = low severity; "
-        "'översvämning'/'sprutar'/'inget vatten' = high severity.\n"
-        "- Return 0 ONLY if no category is even remotely related. "
-        "If in doubt between 0 and a plausible match, pick the match.\n"
-        "\nRespond with ONLY the number."
+        "Each category may include hint terms in brackets showing what it covers. "
+        "Categories and hints may be in a different language than the description — match by meaning. "
+        "Prefer the most specific available match. "
+        "Return 0 only if no category is even remotely related — "
+        "if in doubt between 0 and a plausible match, pick the match. "
+        "Respond with ONLY the number."
     )
     user_message = (
         f"Description: {text!r}\n\nCategories:\n{candidate_list}\n\nBest match number (0 if none):"
