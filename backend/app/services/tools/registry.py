@@ -36,13 +36,21 @@ def _short_hash(s: str) -> str:
 _IN_MEMORY_THRESHOLD = 0.5
 
 
+_IN_MEMORY_MIN_WORD_LEN = 4  # consistent with FTS layer's significant-word threshold
+
+
 def _match_in_memory(text: str, nodes: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Score nodes by word overlap and return the best match above threshold.
 
     Used as a fast Layer-0 check before touching the DB. Operates entirely on
     the prewarmed node list so it completes in microseconds.
+
+    Scoring uses max(|text_words|, |node_words|) as the denominator so that
+    short category labels cannot reach the threshold via a single common word.
+    Short words (< _IN_MEMORY_MIN_WORD_LEN chars) are excluded to avoid
+    stop-word false positives (e.g. Swedish "i", "en", "av", "med").
     """
-    text_words = set(text.lower().split())
+    text_words = {w for w in text.lower().split() if len(w) >= _IN_MEMORY_MIN_WORD_LEN}
     if not text_words:
         return None
 
@@ -53,10 +61,11 @@ def _match_in_memory(text: str, nodes: list[dict[str, Any]]) -> dict[str, Any] |
         meta = node.get("metadata") or {}
         example = meta.get("example_query") or ""
         search_text = f"{node['label']} {node.get('code') or ''} {example}".lower()
-        node_words = set(search_text.split())
+        node_words = {w for w in search_text.split() if len(w) >= _IN_MEMORY_MIN_WORD_LEN}
         if not node_words:
             continue
-        score = len(text_words & node_words) / len(node_words)
+        intersection = len(text_words & node_words)
+        score = intersection / max(len(text_words), len(node_words))
         if score > best_score:
             best_score = score
             best_node = node
