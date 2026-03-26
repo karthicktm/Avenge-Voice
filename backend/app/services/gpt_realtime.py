@@ -359,6 +359,17 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
         if practices:
             best_practices_section = f"\n[BEST PRACTICES]\n{practices}\n"
 
+    # Build email tool section when Resend is enabled
+    email_section = ""
+    if "resend" in enabled_tools:
+        email_section = """\n[EMAIL]
+- You can send emails during the call using the resend_send_email tool.
+- Offer to send a summary, confirmation, or follow-up email when relevant.
+- Always ask the caller for their email address before sending — never assume it.
+- Call resend_send_email with the recipient address, a clear subject, and a concise plain-text body.
+- After calling the tool, confirm verbally that the email is on its way (e.g. "I've sent that to your inbox").
+"""
+
     # Build campaign context section if this is an outbound campaign call
     campaign_section = ""
     if campaign_context:
@@ -411,7 +422,7 @@ Current: {current_datetime}
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses to 1-2 sentences maximum - voice is conversational, not a monologue
 - Summarize tool results naturally
-{info_retrieval_section}{best_practices_section}
+{info_retrieval_section}{best_practices_section}{email_section}
 [YOUR ROLE]
 {system_prompt}{campaign_section}"""
 
