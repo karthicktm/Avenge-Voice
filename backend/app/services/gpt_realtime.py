@@ -373,11 +373,10 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
     email_section = ""
     if "resend" in enabled_tools:
         email_section = """\n[EMAIL]
-- You can send emails during the call using the resend_send_email tool.
-- Offer to send a summary, confirmation, or follow-up email when relevant.
-- Always ask the caller for their email address before sending — never assume it.
-- Call resend_send_email with the recipient address, a clear subject, and a concise plain-text body.
-- After calling the tool, confirm verbally that the email is on its way (e.g. "I've sent that to your inbox").
+- You can send emails using the resend_send_email tool.
+- Call resend_send_email with: to (recipient address), subject, and body (plain-text).
+- Follow the instructions in [YOUR ROLE] for when to send, to whom, and what to include.
+- If [YOUR ROLE] does not specify a recipient, ask the caller for their email address before sending.
 """
 
     # Build campaign context section if this is an outbound campaign call
