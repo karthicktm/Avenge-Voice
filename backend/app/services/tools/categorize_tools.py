@@ -97,7 +97,7 @@ class CategorizeTools:
     # Private handler
     # ------------------------------------------------------------------
 
-    async def _categorize(self, arguments: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0915
+    async def _categorize(self, arguments: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0912, PLR0915
         """Classify caller input and return matched category info."""
         text: str = str(arguments.get("text", "")).strip()
         tree_name: str = str(arguments.get("tree_name", "")).strip()
@@ -182,6 +182,19 @@ class CategorizeTools:
                 # Fall back to ORM attribute if not in prewarmed cache
                 if node_metadata is None and hasattr(matched_node, "node_metadata"):
                     node_metadata = matched_node.node_metadata
+
+                # Final fallback: re-query specific node from DB.
+                # Needed when matched_node is a _NodeProxy (LLM traversal) and the
+                # prewarmed cache was stale or the node never had metadata stored.
+                if node_metadata is None:
+                    from sqlalchemy import select
+
+                    node_result = await self.db.execute(
+                        select(CategoryTree).where(CategoryTree.id == matched_node.id)
+                    )
+                    db_node = node_result.scalar_one_or_none()
+                    if db_node:
+                        node_metadata = db_node.node_metadata
 
             meta = node_metadata or {}
 

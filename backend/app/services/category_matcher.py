@@ -99,7 +99,9 @@ async def match_category(  # noqa: PLR0911, PLR0912
     # Full descriptions rarely match short category labels with AND logic.
     # Try each significant word individually and take the deepest match.
     # ------------------------------------------------------------------
-    min_word_len = 4
+    min_word_len = (
+        2  # include 3+ char words so English short terms like "rat", "cold", "lock" are tried
+    )
     significant_words = [
         w.strip(".,!?-") for w in text.split() if len(w.strip(".,!?-")) > min_word_len
     ]

@@ -366,6 +366,7 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
 - If a lookup returns multiple records (e.g. several buildings at the same address), present the options to the caller and ask which one applies — do NOT say there is a technical problem.
 - If a lookup returns no results, say clearly that you could not find the information and offer to help in another way.
 - Never invent or guess property details that were not returned by the lookup tool.
+- Never say a city, area, or street name that the caller did not explicitly mention. If the caller gives a city use it exactly; if they did not, do not invent one.
 """
 
     # Build email tool section when Resend is enabled
@@ -431,6 +432,8 @@ Current: {current_datetime}
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses to 1-2 sentences maximum - voice is conversational, not a monologue
 - Summarize tool results naturally
+- When the caller confirms a name spelling letter-by-letter, treat those exact letters as the permanent canonical form. Never normalise or convert it to a more familiar variant — use the confirmed letter sequence verbatim for the rest of the call.
+- If the caller repeats or corrects the same thing twice without you understanding, stop building on your previous assumption. Ask: "I want to make sure I understand — could you describe the issue in a different way?" Do not ask follow-up questions based on what you thought you heard until the caller confirms you understood correctly.
 {info_retrieval_section}{best_practices_section}{lookup_section}{email_section}
 [YOUR ROLE]
 {system_prompt}{campaign_section}"""

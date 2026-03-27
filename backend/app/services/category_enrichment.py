@@ -102,6 +102,15 @@ async def enrich_example_queries(
 
         if enriched:
             await db.commit()
+            # Invalidate the prewarmed tree cache so the next session sees the
+            # updated example_query values instead of the stale 1-hour Redis copy.
+            try:
+                from app.db.redis import get_redis
+
+                redis = await get_redis()
+                await redis.delete(f"category_nodes:{workspace_id}")
+            except Exception:
+                log.warning("cache_invalidation_failed", workspace_id=str(workspace_id))
 
     log.info("enrich_complete", enriched=enriched, skipped=skipped, failed=failed)
     return {"enriched": enriched, "skipped": skipped, "failed": failed}

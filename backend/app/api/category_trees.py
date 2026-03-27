@@ -1,6 +1,7 @@
 """Category Trees API — admin CRUD, structured upload, AI discovery, and categorize endpoint."""
 
 import asyncio
+import contextlib
 import csv
 import io
 import json
@@ -1030,6 +1031,7 @@ async def import_structured_confirm(
         db.add(node)
 
     await db.commit()
+    await _invalidate_tree_cache(workspace_id)
     logger.info(
         "category_tree_imported",
         workspace_id=str(workspace_id),
@@ -1044,6 +1046,19 @@ async def import_structured_confirm(
     )
 
     return {"imported": len(nodes_to_add), "tree_name": tree_name, "status": "active"}
+
+
+async def _invalidate_tree_cache(workspace_id: uuid.UUID) -> None:
+    """Delete the prewarmed category tree Redis cache for a workspace.
+
+    Called after any operation that changes the category tree so that the next
+    session gets fresh node data (example_query, metadata, etc.) from the DB.
+    """
+    with contextlib.suppress(Exception):
+        from app.db.redis import get_redis
+
+        redis = await get_redis()
+        await redis.delete(f"category_nodes:{workspace_id}")
 
 
 async def _run_enrichment(
@@ -1205,6 +1220,7 @@ async def approve_draft(
         node.status = "active"
 
     await db.commit()
+    await _invalidate_tree_cache(workspace_id)
     return {"activated": len(nodes), "tree_name": tree_name}
 
 
@@ -1227,6 +1243,7 @@ async def discard_draft(
         )
     )
     await db.commit()
+    await _invalidate_tree_cache(workspace_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1319,6 +1336,7 @@ async def update_node(
         node.depth = parent.depth + 1
 
     await db.commit()
+    await _invalidate_tree_cache(workspace_id)
     await db.refresh(node)
     return NodeResponse(
         id=node.id,
@@ -1362,6 +1380,7 @@ async def delete_node(
 
     await db.delete(node)
     await db.commit()
+    await _invalidate_tree_cache(workspace_id)
 
 
 # ---------------------------------------------------------------------------
