@@ -56,7 +56,7 @@ class ResendEmailTools:
                     "properties": {
                         "to": {
                             "type": "string",
-                            "description": "Recipient email address",
+                            "description": "Recipient email address or comma-separated list of addresses",
                         },
                         "subject": {
                             "type": "string",
@@ -85,14 +85,15 @@ class ResendEmailTools:
         if not to or not subject or not body:
             return {"success": False, "error": "to, subject, and body are required"}
 
-        log = logger.bind(component="resend_email_tools", to=to, subject=subject)
+        recipients = [addr.strip() for addr in to.split(",") if addr.strip()]
+        log = logger.bind(component="resend_email_tools", to=recipients, subject=subject)
 
         try:
             response = await self.client.post(
                 self.RESEND_API_URL,
                 json={
                     "from": self.from_email,
-                    "to": [to],
+                    "to": recipients,
                     "subject": subject,
                     "text": body,
                 },
