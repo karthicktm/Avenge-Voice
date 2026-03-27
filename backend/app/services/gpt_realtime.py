@@ -359,6 +359,15 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
         if practices:
             best_practices_section = f"\n[BEST PRACTICES]\n{practices}\n"
 
+    # Build lookup guidance section when lookup is enabled
+    lookup_section = ""
+    if "lookup" in enabled_tools or any(t.startswith("lookup") for t in (enabled_tools or [])):
+        lookup_section = """\n[LOOKUP RESULTS]
+- If a lookup returns multiple records (e.g. several buildings at the same address), present the options to the caller and ask which one applies — do NOT say there is a technical problem.
+- If a lookup returns no results, say clearly that you could not find the information and offer to help in another way.
+- Never invent or guess property details that were not returned by the lookup tool.
+"""
+
     # Build email tool section when Resend is enabled
     email_section = ""
     if "resend" in enabled_tools:
@@ -422,7 +431,7 @@ Current: {current_datetime}
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses to 1-2 sentences maximum - voice is conversational, not a monologue
 - Summarize tool results naturally
-{info_retrieval_section}{best_practices_section}{email_section}
+{info_retrieval_section}{best_practices_section}{lookup_section}{email_section}
 [YOUR ROLE]
 {system_prompt}{campaign_section}"""
 
