@@ -350,8 +350,13 @@ async def update_agent(
             detail="Agent not found",
         )
 
-    # If assigning a phone number, unassign it from any other agent first
+    # If assigning a phone number, sync the PhoneNumber record so the number
+    # appears in the correct workspace and shows the correct assigned agent.
     if update_request.phone_number_id is not None:
+        from app.models.phone_number import PhoneNumber
+        from app.models.workspace import AgentWorkspace
+
+        # 1. Unassign the phone number string from any other agent
         await db.execute(
             update(Agent)
             .where(
@@ -359,6 +364,30 @@ async def update_agent(
                 Agent.id != agent.id,
             )
             .values(phone_number_id=None)
+        )
+
+        # 2. Clear assigned_agent_id on any phone number previously owned by
+        #    this agent (handles re-assignment away from old number)
+        if agent.phone_number_id and agent.phone_number_id != update_request.phone_number_id:
+            await db.execute(
+                update(PhoneNumber)
+                .where(PhoneNumber.phone_number == agent.phone_number_id)
+                .values(assigned_agent_id=None)
+            )
+
+        # 3. Update the PhoneNumber record: point to this agent and move it
+        #    into the agent's primary workspace so it appears in the dropdown.
+        ws_result = await db.execute(
+            select(AgentWorkspace.workspace_id).where(AgentWorkspace.agent_id == agent.id).limit(1)
+        )
+        agent_workspace_id = ws_result.scalar_one_or_none()
+        pn_values: dict[str, Any] = {"assigned_agent_id": agent.id}
+        if agent_workspace_id:
+            pn_values["workspace_id"] = agent_workspace_id
+        await db.execute(
+            update(PhoneNumber)
+            .where(PhoneNumber.phone_number == update_request.phone_number_id)
+            .values(**pn_values)
         )
 
     # Apply updates from request
