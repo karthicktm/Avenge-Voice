@@ -225,19 +225,30 @@ class LookupTools:
                     if rows:
                         break
 
-            # Fallback 3: Trigram similarity on title — handles ASR 1-2 char
-            # transcription errors (e.g. "Hindebanan" → "Hinderbanan", similarity ≈ 0.77).
-            # Requires pg_trgm extension (migration 038). Threshold 0.35 tolerates
-            # short strings with up to ~2 char differences without false positives;
-            # workspace/user scoping already narrows the candidate set significantly.
+            # Fallback 3: Trigram word_similarity — handles ASR errors even when
+            # the agent appends extra context words (e.g. "Hindbanan in Gävle
+            # stage 1"). word_similarity(word, title) finds the best-matching
+            # portion of the title for each query word, so "Hindbanan" ≈
+            # "Hinderbanan" (~0.57) regardless of what else is in the query.
+            # Requires pg_trgm extension (migration 038).
             if not rows:
-                trgm_stmt = (
-                    stmt.where(func.similarity(LookupRecord.title, query_str) >= _TRGM_THRESHOLD)
-                    .order_by(func.similarity(LookupRecord.title, query_str).desc())
-                    .limit(limit)
-                )
-                result = await self.db.execute(trgm_stmt)
-                rows = result.fetchall()
+                trgm_words = [
+                    w.strip(".,!?-")
+                    for w in query_str.split()
+                    if len(w.strip(".,!?-")) > 2  # noqa: PLR2004
+                ]
+                for trgm_word in trgm_words:
+                    trgm_stmt = (
+                        stmt.where(
+                            func.word_similarity(trgm_word, LookupRecord.title) >= _TRGM_THRESHOLD
+                        )
+                        .order_by(func.word_similarity(trgm_word, LookupRecord.title).desc())
+                        .limit(limit)
+                    )
+                    result = await self.db.execute(trgm_stmt)
+                    rows = result.fetchall()
+                    if rows:
+                        break
 
             if not rows:
                 return {
