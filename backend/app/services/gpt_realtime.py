@@ -680,6 +680,17 @@ class GPTRealtimeSession:
             campaign_context=campaign_context,
         )
 
+        # Prepend the initial greeting instruction so it is part of the
+        # session instructions — this means response.create() needs no
+        # override and the full system prompt stays active from the first turn.
+        initial_greeting = self.agent_config.get("initial_greeting")
+        if initial_greeting:
+            instructions = (
+                f'CALL OPENING: Begin this call by saying exactly: "{initial_greeting}"\n\n'
+                f"{instructions}"
+            )
+            self.logger.info("initial_greeting_added_to_instructions")
+
         # Use agent's VAD settings (from DB) instead of hardcoded values
         vad_prefix_padding_ms = self.agent_config.get("turn_detection_prefix_padding_ms", 300)
         vad_silence_duration_ms = self.agent_config.get("turn_detection_silence_duration_ms", 500)
@@ -976,17 +987,12 @@ class GPTRealtimeSession:
             # triggering VAD and cancelling the greeting response
             await self.connection.input_audio_buffer.clear()
 
-            # Trigger the greeting using response-level instructions so no
-            # synthetic user/assistant item is injected into the conversation
-            # history. Injecting a message would confuse the model about the
-            # conversation context and cause it to ignore the session system
-            # prompt for all subsequent turns.
-            await self.connection.response.create(
-                response={
-                    "instructions": f"Say exactly this greeting to open the call: {greeting}",
-                    "modalities": ["text", "audio"],
-                }
-            )
+            # Trigger the first response with no override — the greeting text
+            # is already embedded in the session instructions via
+            # _configure_session(), so the model says it using the full
+            # system prompt context. This ensures K2A flow is active from
+            # the very first turn.
+            await self.connection.response.create()
             return True
         except Exception as e:
             self.logger.exception("initial_greeting_failed", error=str(e))
