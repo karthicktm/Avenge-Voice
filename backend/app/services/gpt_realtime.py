@@ -363,6 +363,7 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
     lookup_section = ""
     if "lookup" in enabled_tools or any(t.startswith("lookup") for t in (enabled_tools or [])):
         lookup_section = """\n[LOOKUP RESULTS]
+- As soon as the caller confirms their property or location name, call lookup_search immediately — before asking what they need help with. Do not skip or defer this step.
 - If a lookup returns multiple records (e.g. several buildings at the same address), present the options to the caller and ask which one applies — do NOT say there is a technical problem.
 - If a lookup returns no results, say clearly that you could not find the information and offer to help in another way.
 - Never invent or guess property details that were not returned by the lookup tool.
