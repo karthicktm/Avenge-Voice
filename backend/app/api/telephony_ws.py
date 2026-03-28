@@ -284,11 +284,11 @@ async def twilio_media_stream(
                 await save_transcript_to_call_record(call_sid, transcript, db, log)
 
     except WebSocketDisconnect:
-        log.info("twilio_websocket_disconnected")
+        log.warning("twilio_websocket_disconnected")
     except Exception as e:
         log.exception("twilio_websocket_error", error=str(e))
     finally:
-        log.info("twilio_websocket_closed", stream_sid=stream_sid, call_sid=call_sid)
+        log.warning("twilio_websocket_closed", stream_sid=stream_sid, call_sid=call_sid)
 
 
 async def _handle_twilio_stream(  # noqa: PLR0915
@@ -352,7 +352,7 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     log.debug("twilio_mark_event", name=data.get("mark", {}).get("name"))
 
         except WebSocketDisconnect:
-            log.info("twilio_to_realtime_disconnected")
+            log.warning("twilio_to_realtime_disconnected")
         except Exception as e:
             log.exception("twilio_to_realtime_error", error=str(e))
 
@@ -365,7 +365,7 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                 log.error("no_realtime_connection")
                 return
 
-            log.info("realtime_to_twilio_started", waiting_for_events=True)
+            log.warning("realtime_to_twilio_started", waiting_for_events=True)
             event_count = 0
             pending_end_call = False  # True when end_call requested but waiting for AI to finish
             greeting_triggered = False  # Track if we've triggered the greeting
@@ -490,8 +490,17 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                 ]:
                     log.debug("realtime_event", event_type=event_type)
 
+        except WebSocketDisconnect:
+            log.warning("realtime_to_twilio_disconnected")
         except Exception as e:
             log.exception("realtime_to_twilio_error", error=str(e))
+        else:
+            # Loop exited normally (OpenAI connection closed without exception)
+            log.warning(
+                "realtime_to_twilio_exited",
+                event_count=event_count,
+                greeting_triggered=greeting_triggered,
+            )
 
     # Run both directions concurrently with timeout to prevent hung tasks
     try:
