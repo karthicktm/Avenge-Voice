@@ -26,6 +26,7 @@ class LookupTools:
         db: AsyncSession,
         user_id: int,
         workspace_id: uuid.UUID | None = None,
+        openai_api_key: str | None = None,
     ) -> None:
         """Initialise LookupTools.
 
@@ -33,10 +34,12 @@ class LookupTools:
             db: Async database session.
             user_id: Owner user ID (integer matching users.id).
             workspace_id: Workspace UUID for multi-tenant scoping.
+            openai_api_key: Optional OpenAI key for the LLM fallback layer.
         """
         self.db = db
         self.user_id = user_id
         self.workspace_id = workspace_id
+        self.openai_api_key = openai_api_key
         self.log = logger.bind(
             component="lookup_tools",
             user_id=user_id,
@@ -250,6 +253,13 @@ class LookupTools:
                     if rows:
                         break
 
+            # Fallback 4: LLM-based selection — last resort when FTS and trigram
+            # all return nothing. Fetches all titles from the collection, asks
+            # gpt-4o-mini to pick the best match. Handles any ASR garbling that
+            # the lexical/trigram layers cannot bridge.
+            if not rows and self.openai_api_key:
+                rows = await self._llm_select(stmt, query_str, limit)
+
             if not rows:
                 return {
                     "success": True,
@@ -276,6 +286,68 @@ class LookupTools:
         except Exception:
             self.log.exception("lookup_search_error", query=query_str)
             return {"success": False, "error": "Lookup search failed due to an internal error"}
+
+    async def _llm_select(
+        self,
+        base_stmt: Any,
+        query_str: str,
+        limit: int,
+    ) -> list[Any]:
+        """Ask gpt-4o-mini to pick the best-matching record from all available titles.
+
+        Called when every other fallback returns nothing. Fetches up to 200 titles
+        from the scoped collection and uses the LLM to identify the closest match.
+        """
+        from openai import AsyncOpenAI
+
+        title_result = await self.db.execute(
+            base_stmt.with_only_columns(LookupRecord.id, LookupRecord.title).limit(200)
+        )
+        all_records = title_result.fetchall()
+        if not all_records:
+            return []
+
+        candidate_list = "\n".join(f"{i + 1}. {r.title}" for i, r in enumerate(all_records))
+        self.log.info("llm_select", query=query_str, candidates=len(all_records))
+
+        try:
+            client = AsyncOpenAI(api_key=self.openai_api_key)
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a property lookup assistant. "
+                            "Given a caller's description and a numbered list of property records, "
+                            "return the single best matching record number (1-based). "
+                            "Return 0 if none match. Respond with ONLY the number."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Caller description: {query_str!r}\n\n"
+                            f"Records:\n{candidate_list}\n\n"
+                            "Best match number (0 if none):"
+                        ),
+                    },
+                ],
+                max_tokens=5,
+                temperature=0,
+            )
+            raw = (response.choices[0].message.content or "").strip()
+            idx = int(raw) - 1
+            if 0 <= idx < len(all_records):
+                chosen_id = all_records[idx].id
+                self.log.info("llm_select_matched", title=all_records[idx].title)
+                full_result = await self.db.execute(
+                    base_stmt.where(LookupRecord.id == chosen_id).limit(limit)
+                )
+                return list(full_result.fetchall())
+        except Exception:
+            self.log.exception("llm_select_error", query=query_str)
+        return []
 
     async def _lookup_list_collections(self) -> dict[str, Any]:
         """Return all active collections for the current workspace."""

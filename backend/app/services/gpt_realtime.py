@@ -367,6 +367,7 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
 - If a lookup returns no results, say clearly that you could not find the information and offer to help in another way.
 - Never invent or guess property details that were not returned by the lookup tool.
 - Never say a city, area, or street name that the caller did not explicitly mention. If the caller gives a city use it exactly; if they did not, do not invent one.
+- Apartment/building unit codes are a letter followed by a digit (E1, E2, E3, E4). Copy them exactly as stated. Never convert a digit to a letter or vice versa (E2 is not EF, not EF2, not E-F).
 """
 
     # Build email tool section when Resend is enabled
@@ -431,7 +432,7 @@ Current: {current_datetime}
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses to 1-2 sentences maximum - voice is conversational, not a monologue
 - Summarize tool results naturally
-- When the caller confirms a name spelling letter-by-letter, treat those exact letters as the permanent canonical form. Never normalise or convert it to a more familiar variant — use the confirmed letter sequence verbatim for the rest of the call.
+- When the caller spells out a name or code letter-by-letter, echo back the EXACT same letters in the EXACT same order. Never substitute, add, or remove any character — M and N are different letters, a digit (1, 2, 3) is never a letter (F, L, Z). Do not map spelled characters to a "known" word or name. Only move on when the caller explicitly confirms the sequence is correct.
 - If the caller repeats or corrects the same thing twice without you understanding, stop building on your previous assumption. Ask: "I want to make sure I understand — could you describe the issue in a different way?" Do not ask follow-up questions based on what you thought you heard until the caller confirms you understood correctly.
 {info_retrieval_section}{best_practices_section}{lookup_section}{email_section}
 [YOUR ROLE]

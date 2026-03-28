@@ -159,7 +159,9 @@ class ToolRegistry:
         # tree_name → flat list of node dicts (loaded at session start)
         self._prewarmed_trees: dict[str, list[dict[str, Any]]] = {}
         self.crm_tools = CRMTools(db, user_id, workspace_id=workspace_id)
-        self.lookup_tools = LookupTools(db, user_id, workspace_id=workspace_id)
+        self.lookup_tools = LookupTools(
+            db, user_id, workspace_id=workspace_id, openai_api_key=openai_api_key
+        )
         self.categorize_tools = CategorizeTools(
             db,
             user_id,
