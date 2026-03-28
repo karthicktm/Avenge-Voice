@@ -428,7 +428,7 @@ Timezone: {tz_name}
 Current: {current_datetime}
 
 [RULES]
-- Default language is {language_name}. If the caller requests to speak in a different language, switch immediately and continue the conversation in that language. Never say you will transfer them or connect them to a different speaker — you handle all languages yourself.
+- Default language is {language_name}. If the caller requests to speak in a different language, switch immediately and MAINTAIN that language for the rest of the call — do not revert to {language_name} unless the caller explicitly asks again. You handle all languages yourself without transferring.
 - All times are in {tz_name} timezone
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses to 1-2 sentences maximum - voice is conversational, not a monologue
@@ -708,7 +708,7 @@ class GPTRealtimeSession:
             "modalities": ["text", "audio"],
             "instructions": instructions,
             "voice": voice,
-            "speed": 1.1,  # Slightly faster speech (1.0 = normal, range: 0.25-1.5)
+            "speed": 1.0,  # Natural pace for telephony (1.1 sounds rushed over mulaw)
             "temperature": temperature,  # Lower for consistent, natural delivery
             # Both input and output use pcm16 (OpenAI native 24kHz format).
             # Conversion between mulaw 8kHz (Twilio) and PCM16 24kHz (OpenAI)
