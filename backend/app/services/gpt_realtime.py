@@ -976,24 +976,17 @@ class GPTRealtimeSession:
             # triggering VAD and cancelling the greeting response
             await self.connection.input_audio_buffer.clear()
 
-            # Standard OpenAI Realtime pattern:
-            # 1. Create a conversation item with the prompt
-            # 2. Call response.create() to trigger the response
-            # This follows the official OpenAI examples
-            await self.connection.conversation.item.create(
-                item={
-                    "type": "message",
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": f"[Call connected. Respond in the same language as your system instructions. Say this greeting now: {greeting}]",
-                        }
-                    ],
+            # Trigger the greeting using response-level instructions so no
+            # synthetic user/assistant item is injected into the conversation
+            # history. Injecting a message would confuse the model about the
+            # conversation context and cause it to ignore the session system
+            # prompt for all subsequent turns.
+            await self.connection.response.create(
+                response={
+                    "instructions": f"Say exactly this greeting to open the call: {greeting}",
+                    "modalities": ["text", "audio"],
                 }
             )
-            # Trigger response generation (no parameters needed)
-            await self.connection.response.create()
             return True
         except Exception as e:
             self.logger.exception("initial_greeting_failed", error=str(e))
