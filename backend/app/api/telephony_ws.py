@@ -383,8 +383,11 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                 if event_type == "session.updated" and not greeting_triggered:
                     greeting_triggered = True
                     triggered = await realtime_session.trigger_initial_greeting()
-                    if triggered:
-                        log.info("initial_greeting_triggered_after_session_update")
+                    log.warning(
+                        "greeting_trigger_result",
+                        triggered=triggered,
+                        stream_sid_at_trigger=stream_sid or "EMPTY",
+                    )
 
                 # Handle audio output
                 elif event_type == "response.audio.delta":
@@ -404,10 +407,10 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                         audio_bytes = base64.b64decode(delta_data)
                         # Encode for Twilio (already in g711_ulaw format now)
                         payload = base64.b64encode(audio_bytes).decode("utf-8")
-                        log.info(
+                        log.warning(
                             "sending_audio_to_twilio",
                             audio_size=len(audio_bytes),
-                            stream_sid=stream_sid,
+                            stream_sid=stream_sid or "EMPTY",
                         )
                         await websocket.send_text(
                             json.dumps(
