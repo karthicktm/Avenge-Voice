@@ -611,7 +611,7 @@ class GPTRealtimeSession:
             )
             raise
 
-    async def _configure_session(self) -> None:  # noqa: PLR0915
+    async def _configure_session(self) -> None:  # noqa: PLR0912, PLR0915
         """Configure Realtime API session with agent settings and internal tools."""
         if not self.connection or not self.tool_registry:
             self.logger.warning(
@@ -740,13 +740,34 @@ class GPTRealtimeSession:
         )
 
         try:
-            # Build session configuration using SDK
-            await self.connection.session.update(session=session_config)
+            # Send instructions + tools + voice in ONE dedicated update so they
+            # are always applied together and not overshadowed by audio-format
+            # or speed fields that may not be supported by every model variant.
+            # The audio format fields (input/output_audio_format) are sent
+            # separately because they are telephony-specific and may cause some
+            # SDK versions to silently ignore other fields.
+            core_config = {
+                k: v
+                for k, v in session_config.items()
+                if k not in ("input_audio_format", "output_audio_format", "speed")
+            }
+            await self.connection.session.update(session=core_config)
+
+            # Now apply audio format and speed as a separate update so they
+            # do not interfere with the instructions/tools application.
+            audio_config = {
+                k: v
+                for k, v in session_config.items()
+                if k in ("input_audio_format", "output_audio_format", "speed", "modalities")
+            }
+            if audio_config:
+                await self.connection.session.update(session=audio_config)
 
             self.logger.warning(
                 "session_configured",
                 tool_count=len(tools),
                 instructions_applied=True,
+                core_keys=list(core_config.keys()),
             )
 
             # Store initial greeting for later - triggered after event loop starts
