@@ -731,15 +731,22 @@ class GPTRealtimeSession:
         if turn_detection is not None:
             session_config["turn_detection"] = turn_detection
 
-        self.logger.info("configuring_session", tool_count=len(tools), enabled_tools=enabled_tools)
+        self.logger.warning(
+            "configuring_session",
+            tool_count=len(tools),
+            enabled_tools=enabled_tools,
+            instructions_len=len(instructions),
+            instructions_preview=instructions[:150],
+        )
 
         try:
             # Build session configuration using SDK
             await self.connection.session.update(session=session_config)
 
-            self.logger.info(
+            self.logger.warning(
                 "session_configured",
                 tool_count=len(tools),
+                instructions_applied=True,
             )
 
             # Store initial greeting for later - triggered after event loop starts
