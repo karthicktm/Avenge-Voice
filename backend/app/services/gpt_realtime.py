@@ -592,7 +592,7 @@ class GPTRealtimeSession:
             raise ValueError("OpenAI client not initialized")
 
         model = self.agent_config.get("llm_model", "gpt-realtime-1.5")
-        self.logger.info("connecting_to_openai_realtime", model=model)
+        self.logger.warning("connecting_to_openai_realtime", model=model)
 
         try:
             # Use official SDK's realtime.connect() method
@@ -611,7 +611,7 @@ class GPTRealtimeSession:
             )
             raise
 
-    async def _configure_session(self) -> None:  # noqa: PLR0912, PLR0915
+    async def _configure_session(self) -> None:  # noqa: PLR0915
         """Configure Realtime API session with agent settings and internal tools."""
         if not self.connection or not self.tool_registry:
             self.logger.warning(
@@ -680,16 +680,9 @@ class GPTRealtimeSession:
             campaign_context=campaign_context,
         )
 
-        # Prepend the initial greeting instruction so it is part of the
-        # session instructions — this means response.create() needs no
-        # override and the full system prompt stays active from the first turn.
-        initial_greeting = self.agent_config.get("initial_greeting")
-        if initial_greeting:
-            instructions = (
-                f'CALL OPENING: Begin this call by saying exactly: "{initial_greeting}"\n\n'
-                f"{instructions}"
-            )
-            self.logger.info("initial_greeting_added_to_instructions")
+        # Store instructions so trigger_initial_greeting() can inject them
+        # directly into the conversation history (the reliable path).
+        self._session_instructions = instructions
 
         # Use agent's VAD settings (from DB) instead of hardcoded values
         vad_prefix_padding_ms = self.agent_config.get("turn_detection_prefix_padding_ms", 300)
@@ -1015,11 +1008,23 @@ class GPTRealtimeSession:
             # triggering VAD and cancelling the greeting response
             await self.connection.input_audio_buffer.clear()
 
-            # Trigger the first response with no override — the greeting text
-            # is already embedded in the session instructions via
-            # _configure_session(), so the model says it using the full
-            # system prompt context. This ensures K2A flow is active from
-            # the very first turn.
+            # Inject the full system instructions + greeting command directly
+            # into the conversation history as a user message. This is the
+            # reliable approach for server-side telephony: the model always
+            # sees the instructions in context, not just via session.update()
+            # which gpt-realtime models may not apply consistently across turns.
+            context_text = (
+                f"{getattr(self, '_session_instructions', '')}\n\n"
+                f'Now begin the call by saying exactly: "{greeting}"'
+            ).strip()
+
+            await self.connection.conversation.item.create(
+                item={
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": context_text}],
+                }
+            )
             await self.connection.response.create()
             return True
         except Exception as e:
