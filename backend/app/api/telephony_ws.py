@@ -30,6 +30,13 @@ from app.services.telephony.telnyx_service import TelnyxService
 from app.services.telephony.twilio_service import TwilioService
 
 router = APIRouter(prefix="/ws/telephony", tags=["telephony-ws"])
+
+# Models optimised for WebRTC/REST that don't reliably apply session.update()
+# instructions over WebSocket. Map to telephony-compatible equivalents so the
+# same agent config works for both web (WebRTC) and telephony (WebSocket).
+_TELEPHONY_MODEL_MAP: dict[str, str] = {
+    "gpt-realtime-1.5": "gpt-realtime-2025-08-28",
+}
 logger = structlog.get_logger()
 
 # Constants for event logging
@@ -242,7 +249,10 @@ async def twilio_media_stream(
             "use_best_practices": agent.use_best_practices,
             "transcription_model": agent.transcription_model,
             "initial_greeting": agent.initial_greeting,
-            "llm_model": agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
+            "llm_model": _TELEPHONY_MODEL_MAP.get(
+                agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
+                agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
+            ),
             "turn_detection_mode": agent.turn_detection_mode,
             "turn_detection_threshold": agent.turn_detection_threshold,
             "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
@@ -615,7 +625,10 @@ async def telnyx_media_stream(
             "use_best_practices": agent.use_best_practices,
             "transcription_model": agent.transcription_model,
             "initial_greeting": agent.initial_greeting,
-            "llm_model": agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
+            "llm_model": _TELEPHONY_MODEL_MAP.get(
+                agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
+                agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
+            ),
             "turn_detection_mode": agent.turn_detection_mode,
             "turn_detection_threshold": agent.turn_detection_threshold,
             "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
