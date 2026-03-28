@@ -5,6 +5,7 @@ connecting them to our AI voice agent pipeline.
 """
 
 import asyncio
+import audioop
 import base64
 import contextlib
 import json
@@ -409,11 +410,14 @@ async def _handle_twilio_stream(  # noqa: PLR0915
 
                     try:
                         audio_bytes = base64.b64decode(delta_data)
-                        # Encode for Twilio (already in g711_ulaw format now)
-                        payload = base64.b64encode(audio_bytes).decode("utf-8")
+                        # OpenAI outputs PCM16 at 24kHz; Twilio expects mulaw at 8kHz.
+                        # Downsample 24kHz → 8kHz then convert PCM16 → mulaw.
+                        audio_8k, _ = audioop.ratecv(audio_bytes, 2, 1, 24000, 8000, None)
+                        audio_mulaw = audioop.lin2ulaw(audio_8k, 2)
+                        payload = base64.b64encode(audio_mulaw).decode("utf-8")
                         log.warning(
                             "sending_audio_to_twilio",
-                            audio_size=len(audio_bytes),
+                            audio_size=len(audio_mulaw),
                             stream_sid=stream_sid or "EMPTY",
                         )
                         await websocket.send_text(

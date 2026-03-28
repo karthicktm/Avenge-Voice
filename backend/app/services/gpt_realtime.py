@@ -706,9 +706,11 @@ class GPTRealtimeSession:
             "voice": voice,
             "speed": 1.1,  # Slightly faster speech (1.0 = normal, range: 0.25-1.5)
             "temperature": temperature,  # Lower for consistent, natural delivery
-            # Use g711_ulaw for Twilio/Telnyx compatibility (mulaw at 8kHz)
+            # Twilio/Telnyx sends mulaw to us, so input must be g711_ulaw.
+            # Output stays as pcm16 (OpenAI default 24kHz) — we convert to
+            # mulaw in the telephony WebSocket handler before forwarding to Twilio.
             "input_audio_format": "g711_ulaw",
-            "output_audio_format": "g711_ulaw",
+            "output_audio_format": "pcm16",
             "input_audio_transcription": {
                 "model": self.agent_config.get("transcription_model", "gpt-4o-transcribe")
             },
