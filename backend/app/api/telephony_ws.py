@@ -337,12 +337,15 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     )
 
                 elif event == "media":
-                    # Decode base64 mulaw audio and forward to Realtime
+                    # Twilio sends mulaw 8kHz; OpenAI expects PCM16 24kHz.
+                    # Convert: mulaw 8kHz → PCM16 8kHz → PCM16 24kHz
                     media = data.get("media", {})
                     payload = media.get("payload", "")
                     if payload:
-                        audio_bytes = base64.b64decode(payload)
-                        await realtime_session.send_audio(audio_bytes)
+                        audio_mulaw = base64.b64decode(payload)
+                        audio_pcm16_8k = audioop.ulaw2lin(audio_mulaw, 2)
+                        audio_pcm16_24k, _ = audioop.ratecv(audio_pcm16_8k, 2, 1, 8000, 24000, None)
+                        await realtime_session.send_audio(audio_pcm16_24k)
 
                 elif event == "stop":
                     log.info("twilio_stream_stopped")
