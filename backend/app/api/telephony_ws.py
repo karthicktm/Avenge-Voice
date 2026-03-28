@@ -370,6 +370,21 @@ async def _handle_twilio_stream(  # noqa: PLR0915
             pending_end_call = False  # True when end_call requested but waiting for AI to finish
             greeting_triggered = False  # Track if we've triggered the greeting
 
+            # Trigger the initial greeting immediately — session.updated is consumed
+            # internally by the OpenAI SDK's session.update() call and never arrives
+            # in our event loop, so we cannot rely on that event as a trigger.
+            # The greeting is sent before the loop; the SDK buffers the resulting
+            # audio events so realtime_to_twilio will receive them as soon as the
+            # loop starts.
+            if not greeting_triggered:
+                greeting_triggered = True
+                triggered = await realtime_session.trigger_initial_greeting()
+                log.warning(
+                    "greeting_triggered_before_loop",
+                    triggered=triggered,
+                    stream_sid_at_trigger=stream_sid or "EMPTY",
+                )
+
             async for event in realtime_session.connection:
                 event_type = event.type
                 event_count += 1
@@ -378,19 +393,8 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                 if event_count <= EVENT_LOG_THRESHOLD or event_count % 100 == 0:
                     log.info("realtime_event_received", event_type=event_type, count=event_count)
 
-                # Trigger initial greeting after session is configured
-                # This avoids race condition where audio events arrive before listener is ready
-                if event_type == "session.updated" and not greeting_triggered:
-                    greeting_triggered = True
-                    triggered = await realtime_session.trigger_initial_greeting()
-                    log.warning(
-                        "greeting_trigger_result",
-                        triggered=triggered,
-                        stream_sid_at_trigger=stream_sid or "EMPTY",
-                    )
-
                 # Handle audio output
-                elif event_type == "response.audio.delta":
+                if event_type == "response.audio.delta":
                     # Get audio delta and send to Twilio
                     # Check various possible attribute names for the audio data
                     delta_data = getattr(event, "delta", None)
