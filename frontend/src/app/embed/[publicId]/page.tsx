@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Mic, MicOff, X, Phone } from "lucide-react";
 import { useParams, useSearchParams } from "next/navigation";
+import { useGeminiLiveCall } from "@/hooks/use-gemini-live-call";
 
 interface AgentConfig {
   public_id: string;
@@ -14,6 +15,9 @@ interface AgentConfig {
   primary_color: string;
   language: string;
   voice: string;
+  provider?: string;
+  workspace_id?: string;
+  agent_id?: string;
 }
 
 interface ToolDefinition {
@@ -108,6 +112,12 @@ export default function EmbedPage() {
 
   // Autostart tracking (prevent multiple starts)
   const autostartTriggeredRef = useRef(false);
+
+  // Gemini Live via LiveKit
+  const geminiCall = useGeminiLiveCall();
+
+  // Detect if this agent uses Gemini Live provider
+  const isGeminiAgent = config?.provider === "gemini-live";
 
   // Detect system theme
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
@@ -362,6 +372,16 @@ export default function EmbedPage() {
 
   // End voice session
   const endSession = useCallback(() => {
+    if (isGeminiAgent) {
+      geminiCall.stopCall();
+      setStatus("idle");
+      setIsExpanded(false);
+      if (window.parent !== window) {
+        window.parent.postMessage({ type: "voice-agent:close" }, "*");
+      }
+      return;
+    }
+
     // Abort any in-progress connection
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -379,11 +399,20 @@ export default function EmbedPage() {
     if (window.parent !== window) {
       window.parent.postMessage({ type: "voice-agent:close" }, "*");
     }
-  }, [cleanup, saveTranscript]);
+  }, [cleanup, saveTranscript, isGeminiAgent, geminiCall]);
 
   // Start voice session using manual WebRTC
   const startSession = useCallback(async () => {
     if (!config) return;
+
+    // Route Gemini agents through LiveKit
+    if (isGeminiAgent && config.agent_id && config.workspace_id) {
+      setStatus("connecting");
+      setIsExpanded(true);
+      await geminiCall.startCall(config.agent_id, config.workspace_id);
+      setStatus(geminiCall.status === "connected" ? "connected" : "idle");
+      return;
+    }
 
     // Create AbortController for this connection attempt
     const abortController = new AbortController();
@@ -759,7 +788,7 @@ export default function EmbedPage() {
       setStatus("error");
       cleanup();
     }
-  }, [config, publicId, cleanup, setupAudioAnalysis, endSession]);
+  }, [config, publicId, cleanup, setupAudioAnalysis, endSession, isGeminiAgent, geminiCall]);
 
   // Auto-start session when in widget mode
   useEffect(() => {

@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { updateAgent } from "@/lib/api/agents";
 import { api } from "@/lib/api";
+import { useGeminiLiveCall } from "@/hooks/use-gemini-live-call";
 import { getWhisperCode, getLanguagesForTier } from "@/lib/languages";
 import { Button } from "@/components/ui/button";
 import { Play, Square, Loader2, Save, FolderOpen } from "lucide-react";
@@ -299,6 +300,9 @@ export default function TestAgentPage() {
   const sessionStartTimeRef = useRef<number>(0);
   const activeResponseRef = useRef<boolean>(false);
 
+  // Gemini Live via LiveKit
+  const geminiCall = useGeminiLiveCall();
+
   // Auto-scroll to bottom when transcript updates
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -314,6 +318,11 @@ export default function TestAgentPage() {
     },
     enabled: !!selectedAgentId,
   });
+
+  // Detect if selected agent uses Gemini Live provider
+  const isGeminiAgent =
+    (selectedAgent?.provider_config as Record<string, string> | undefined)?.provider ===
+    "gemini-live";
 
   // Clear agent selection when workspace changes
   useEffect(() => {
@@ -576,7 +585,14 @@ export default function TestAgentPage() {
   const addTranscript = addTranscriptBatched;
 
   const handleConnect = async () => {
-    if (connectionStatus === "connected") {
+    if (connectionStatus === "connected" || geminiCall.status === "connected") {
+      if (isGeminiAgent) {
+        geminiCall.stopCall();
+        setConnectionStatus("idle");
+        setCallDuration(0);
+        return;
+      }
+
       // Save transcript before cleanup (fire and forget)
       void saveTranscript();
 
@@ -601,6 +617,19 @@ export default function TestAgentPage() {
 
     if (!selectedWorkspaceId) {
       toast.error("Please select a workspace first");
+      return;
+    }
+
+    // Route Gemini agents through LiveKit
+    if (isGeminiAgent) {
+      await geminiCall.startCall(selectedAgentId, selectedWorkspaceId);
+      if (geminiCall.status !== "idle") {
+        setConnectionStatus("connected");
+        setCallDuration(0);
+        callTimerRef.current = setInterval(() => {
+          setCallDuration((prev) => prev + 1);
+        }, 1000);
+      }
       return;
     }
 
@@ -985,11 +1014,23 @@ export default function TestAgentPage() {
     void handleConnect();
   };
 
+  // For Gemini agents, reflect LiveKit status in the UI
+  const displayStatus: ConnectionStatus = isGeminiAgent
+    ? geminiCall.status === "connected"
+      ? "connected"
+      : geminiCall.status === "connecting"
+        ? "connecting"
+        : "idle"
+    : connectionStatus;
+
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
+
+  // Show Gemini transcript for Gemini agents, OpenAI transcript otherwise
+  const displayTranscript = isGeminiAgent ? geminiCall.transcript : transcript;
 
   return (
     <div className="-m-4 flex min-h-0 flex-1 md:-m-6 lg:-m-8">
@@ -998,13 +1039,13 @@ export default function TestAgentPage() {
         {/* Left - Transcript with floating controls */}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <ScrollArea className="min-h-0 flex-1 p-4 pb-16">
-            {transcript.length === 0 ? (
+            {displayTranscript.length === 0 ? (
               <div className="flex h-[calc(100vh-14rem)] items-center justify-center text-muted-foreground">
                 Start a session to see the conversation
               </div>
             ) : (
               <div className="space-y-4">
-                {transcript.map((item) => (
+                {displayTranscript.map((item) => (
                   <div key={item.id}>
                     {item.speaker === "system" ? (
                       <div className="flex justify-center">
@@ -1058,34 +1099,33 @@ export default function TestAgentPage() {
                 <span>{formatDuration(callDuration)}</span>
                 <AudioVisualizer
                   stream={audioStream}
-                  isActive={connectionStatus === "connected"}
+                  isActive={displayStatus === "connected"}
                   barCount={12}
                 />
               </div>
 
               <Button
                 onClick={handleConnectClick}
-                variant={connectionStatus === "connected" ? "destructive" : "default"}
+                variant={displayStatus === "connected" ? "destructive" : "default"}
                 size="sm"
                 className="gap-2 rounded-full"
                 disabled={
-                  (!selectedAgentId && connectionStatus === "idle") ||
-                  connectionStatus === "connecting"
+                  (!selectedAgentId && displayStatus === "idle") || displayStatus === "connecting"
                 }
               >
-                {connectionStatus === "idle" && (
+                {displayStatus === "idle" && (
                   <>
                     <Play className="h-4 w-4" />
                     Start session
                   </>
                 )}
-                {connectionStatus === "connecting" && (
+                {displayStatus === "connecting" && (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Connecting...
                   </>
                 )}
-                {connectionStatus === "connected" && (
+                {displayStatus === "connected" && (
                   <>
                     <Square className="h-3 w-3 fill-current" />
                     Stop
