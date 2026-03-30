@@ -139,7 +139,7 @@ async def get_gemini_token(
             "google_api_key": google_api_key,
             "instructions": instructions,
             "voice": agent.voice or "Puck",
-            "model": (agent.provider_config or {}).get("model", "gemini-2.0-flash-live-001"),
+            "model": (agent.provider_config or {}).get("model", "gemini-3.1-flash-live-preview"),
             "temperature": agent.temperature,
             "tools": tools,
         }

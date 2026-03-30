@@ -51,7 +51,7 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     google_api_key = config.get("google_api_key", "")
     instructions = config.get("instructions", "You are a helpful voice assistant.")
     voice = config.get("voice", "Puck")
-    model_name = config.get("model", "gemini-2.0-flash-live-001")
+    model_name = config.get("model", "gemini-3.1-flash-live-preview")
     tool_defs: list[dict] = config.get("tools", [])
 
     if not google_api_key:
@@ -71,6 +71,7 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         voice=voice,
         instructions=instructions,
         api_key=google_api_key,
+        api_version="v1alpha",
         temperature=config.get("temperature", 0.7),
     )
 
