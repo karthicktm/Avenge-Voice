@@ -52,7 +52,13 @@ def build_tools(
             log = logger.bind(tool=_name)
             try:
                 import json as _json
-                arguments = _json.loads(raw_arguments) if raw_arguments else {}
+                # In livekit-agents 1.x, raw_arguments may be a dict or a JSON string
+                if isinstance(raw_arguments, dict):
+                    arguments = raw_arguments
+                elif raw_arguments:
+                    arguments = _json.loads(raw_arguments)
+                else:
+                    arguments = {}
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     resp = await client.post(
                         f"{_backend_url}/internal/tools/{_agent_id}/execute",
