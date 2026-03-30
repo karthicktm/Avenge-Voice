@@ -1,11 +1,12 @@
 """Gemini Live voice agent using livekit-agents 1.x API."""
 
+import asyncio
 import json
 from typing import Any
 
 import httpx
 import structlog
-from livekit.agents import Agent, AgentSession, JobContext, RoomInputOptions, RoomOutputOptions
+from livekit.agents import Agent, AgentSession, JobContext
 from livekit.plugins.google import realtime
 
 from config import settings
@@ -53,7 +54,10 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     model_name = config.get("model", "gemini-2.0-flash-live-001")
     tool_defs: list[dict] = config.get("tools", [])
 
-    # Build tool list for livekit-agents 1.x
+    if not google_api_key:
+        log.error("missing_google_api_key")
+        return
+
     tools = build_tools(
         tools=tool_defs,
         agent_id=agent_id,
@@ -75,12 +79,13 @@ async def run_gemini_agent(ctx: JobContext) -> None:
 
     log.info("gemini_agent_running", model=model_name, voice=voice, tools=len(tools))
 
-    await session.start(
-        agent=agent,
-        room=ctx.room,
-        room_input_options=RoomInputOptions(audio_enabled=True, video_enabled=False, text_enabled=False),
-        room_output_options=RoomOutputOptions(audio_enabled=True),
-    )
+    await session.start(agent=agent, room=ctx.room)
 
-    await ctx.wait_for_disconnect()
+    # Wait until the room disconnects
+    disconnected = asyncio.Event()
+    ctx.room.on("disconnected", lambda _: disconnected.set())
+    # Also handle participant_disconnected for the case where the user leaves
+    ctx.room.on("participant_disconnected", lambda p: disconnected.set())
+
+    await disconnected.wait()
     log.info("agent_job_completed")
