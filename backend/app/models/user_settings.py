@@ -41,6 +41,9 @@ class UserSettings(Base):
     elevenlabs_api_key: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="ElevenLabs API key for TTS"
     )
+    google_api_key: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Google API key for Gemini Live"
+    )
 
     # Telephony API Keys
     telnyx_api_key: Mapped[str | None] = mapped_column(
