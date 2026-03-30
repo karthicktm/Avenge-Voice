@@ -118,16 +118,22 @@ async def run_gemini_agent(ctx: JobContext) -> None:
             log.info("agent_said", text=text)
             asyncio.ensure_future(_publish_transcript(ctx.room, "assistant", text))
 
+    # Wait for the user participant to join before starting — ensures audio
+    # subscription is established so the greeting is actually heard
+    log.info("waiting_for_participant")
+    await ctx.wait_for_participant()
+    log.info("participant_joined")
+
     t_start = time.monotonic()
     await session.start(agent=agent, room=ctx.room)
     log.info("gemini_agent_running", model=model_name, voice=voice, tools=len(tools),
              session_start_ms=round((time.monotonic() - t_start) * 1000))
 
-    # Issue 1: Initiate the conversation immediately
-    # NOTE: Do NOT use generate_reply(user_input=text) — Gemini Live v1alpha
-    # only accepts audio user turns; text input causes 1007 error.
+    # Give the audio track subscription a moment to complete before speaking
+    await asyncio.sleep(1.5)
+
+    # Initiate the conversation — speak greeting so agent starts, not the user
     if initial_greeting:
-        # Speak the configured greeting directly via TTS (no LLM call needed)
         await session.say(initial_greeting)
 
     # Wait for either: room disconnect OR end_call tool invoked
