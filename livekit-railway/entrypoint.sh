@@ -1,24 +1,20 @@
 #!/bin/sh
 set -e
 
-# Parse REDIS_URL if provided (redis://user:pass@host:port)
+# Extract components from REDIS_URL (redis://user:pass@host:port)
 if [ -n "$REDIS_URL" ]; then
-  # Strip scheme
-  _rest="${REDIS_URL#redis://}"
-  # Extract userinfo (before @)
-  _userinfo="${_rest%@*}"
-  # Extract host:port (after @)
-  _hostport="${_rest##*@}"
-  # Extract username and password
+  _no_scheme="${REDIS_URL#redis://}"
+  REDIS_ADDR="${_no_scheme##*@}"
+  _userinfo="${_no_scheme%@*}"
   REDIS_USERNAME="${_userinfo%%:*}"
   REDIS_PASSWORD="${_userinfo#*:}"
-  REDIS_ADDR="$_hostport"
 else
-  REDIS_ADDR="${REDIS_HOST:-redis.railway.internal}:6379"
+  REDIS_ADDR="${REDIS_HOST:-redis.railway.internal}:${REDIS_PORT:-6379}"
   REDIS_USERNAME="${REDIS_USERNAME:-default}"
+  REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 fi
 
-cat > /etc/livekit.yaml << EOF
+cat > /etc/livekit.yaml << LIVEKIT_YAML
 port: ${PORT:-7880}
 bind_addresses:
   - ""
@@ -34,6 +30,6 @@ keys:
 logging:
   json: true
   level: info
-EOF
+LIVEKIT_YAML
 
 exec /livekit-server --config /etc/livekit.yaml
