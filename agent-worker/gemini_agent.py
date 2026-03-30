@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 import structlog
-from livekit.agents import Agent, AgentSession, AutoSubscribe, JobContext, RoomInputOptions
+from livekit.agents import Agent, AgentSession, JobContext, RoomInputOptions, RoomOutputOptions
 from livekit.plugins.google import realtime
 
 from config import settings
@@ -19,7 +19,7 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     log = logger.bind(room=ctx.room.name)
     log.info("agent_job_started")
 
-    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+    await ctx.connect()
 
     config: dict[str, Any] = {}
     metadata_str = ctx.room.metadata or "{}"
@@ -78,7 +78,8 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     await session.start(
         agent=agent,
         room=ctx.room,
-        room_input_options=RoomInputOptions(auto_subscribe=AutoSubscribe.AUDIO_ONLY),
+        room_input_options=RoomInputOptions(audio_enabled=True, video_enabled=False, text_enabled=False),
+        room_output_options=RoomOutputOptions(audio_enabled=True),
     )
 
     await ctx.wait_for_disconnect()
