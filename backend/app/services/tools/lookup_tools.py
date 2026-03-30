@@ -320,9 +320,12 @@ class LookupTools:
                     {
                         "role": "system",
                         "content": (
-                            "You are a property lookup assistant. "
-                            "Given a caller's description and a numbered list of property records, "
+                            "You are a multilingual data lookup assistant. "
+                            "Given a caller's description and a numbered list of records, "
                             "return the single best matching record number (1-based). "
+                            "The caller's query and the records may be in different languages "
+                            "(e.g. English query against Swedish records, or vice versa) — "
+                            "match by meaning across languages. "
                             "Return 0 if none match. Respond with ONLY the number."
                         ),
                     },

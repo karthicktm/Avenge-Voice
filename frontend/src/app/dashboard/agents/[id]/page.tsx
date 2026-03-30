@@ -1800,7 +1800,8 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                                           </label>
                                           <Select
                                             value={
-                                              form.watch("toolConfigs.categorize.tree_name") || ""
+                                              form.watch("toolConfigs.categorize.tree_name") ||
+                                              undefined
                                             }
                                             onValueChange={(val) => {
                                               const currentConfigs =
@@ -1867,7 +1868,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                                             value={
                                               form.watch(
                                                 "toolConfigs.lookup_search.collection_id"
-                                              ) || ""
+                                              ) || "_all"
                                             }
                                             onValueChange={(val) => {
                                               const currentConfigs =
