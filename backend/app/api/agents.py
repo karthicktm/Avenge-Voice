@@ -61,6 +61,11 @@ class CreateAgentRequest(BaseModel):
         pattern="^(whisper-1|gpt-4o-transcribe|gpt-4o-mini-transcribe)$",
         description="STT transcription model for OpenAI Realtime",
     )
+    # Optional provider config override (e.g. {"provider": "gemini-live"})
+    provider_config: dict[str, Any] | None = Field(
+        default=None,
+        description="Override provider configuration (merged with tier defaults)",
+    )
 
 
 class UpdateAgentRequest(BaseModel):
@@ -105,6 +110,11 @@ class UpdateAgentRequest(BaseModel):
         pattern="^(whisper-1|gpt-4o-transcribe|gpt-4o-mini-transcribe)$",
         description="STT transcription model for OpenAI Realtime",
     )
+    # Provider config override (e.g. {"provider": "gemini-live"})
+    provider_config: dict[str, Any] | None = Field(
+        default=None,
+        description="Override provider configuration (merged with tier defaults)",
+    )
 
 
 class AgentResponse(BaseModel):
@@ -133,6 +143,7 @@ class AgentResponse(BaseModel):
     max_tokens: int
     initial_greeting: str | None
     transcription_model: str
+    provider_config: dict[str, Any]
     is_active: bool
     is_published: bool
     total_calls: int
@@ -161,8 +172,10 @@ async def create_agent(
     Returns:
         Created agent
     """
-    # Build provider config based on tier (from pricing-tiers.ts)
+    # Build provider config based on tier, then apply any overrides
     provider_config = _get_provider_config(agent_request.pricing_tier)
+    if agent_request.provider_config:
+        provider_config = {**provider_config, **agent_request.provider_config}
 
     agent = Agent(
         user_id=current_user.id,
@@ -441,6 +454,10 @@ def _apply_agent_updates(agent: Agent, request: UpdateAgentRequest) -> None:
         agent.pricing_tier = request.pricing_tier
         agent.provider_config = _get_provider_config(request.pricing_tier)
 
+    # Allow partial provider_config override (e.g. switching to gemini-live)
+    if request.provider_config is not None:
+        agent.provider_config = {**agent.provider_config, **request.provider_config}
+
 
 def _get_provider_config(tier: str) -> dict[str, Any]:
     """Get provider configuration for pricing tier.
@@ -526,6 +543,7 @@ def _agent_to_response(agent: Agent) -> AgentResponse:
         max_tokens=agent.max_tokens,
         initial_greeting=agent.initial_greeting,
         transcription_model=agent.transcription_model,
+        provider_config=agent.provider_config,
         is_active=agent.is_active,
         is_published=agent.is_published,
         total_calls=agent.total_calls,

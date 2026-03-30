@@ -191,6 +191,23 @@ const API_KEY_PROVIDERS: ApiKeyProvider[] = [
       },
     ],
   },
+  {
+    id: "google",
+    name: "Google (Gemini Live)",
+    description:
+      "Powers Gemini Live voice agents with ultra-low latency native audio via Google AI Studio.",
+    category: "voice-ai",
+    icon: Sparkles,
+    documentationUrl: "https://aistudio.google.com/app/apikey",
+    fields: [
+      {
+        name: "google_api_key",
+        label: "API Key",
+        placeholder: "AIza...",
+        settingsKey: "google_api_key_set",
+      },
+    ],
+  },
 ];
 
 export default function SettingsPage() {

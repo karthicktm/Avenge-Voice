@@ -50,6 +50,7 @@ export interface SettingsResponse {
   elevenlabs_api_key_set: boolean;
   telnyx_api_key_set: boolean;
   twilio_account_sid_set: boolean;
+  google_api_key_set: boolean;
   workspace_id: string | null;
 }
 
@@ -61,6 +62,7 @@ export interface UpdateSettingsRequest {
   telnyx_public_key?: string;
   twilio_account_sid?: string;
   twilio_auth_token?: string;
+  google_api_key?: string;
 }
 
 export async function fetchSettings(workspaceId?: string): Promise<SettingsResponse> {

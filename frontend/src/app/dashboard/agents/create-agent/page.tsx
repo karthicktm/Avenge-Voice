@@ -170,6 +170,8 @@ const agentFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   description: z.string().optional(),
   language: z.string().default("en-US"),
+  // AI Provider for premium tier (controls provider_config.provider)
+  aiProvider: z.enum(["openai", "gemini-live"]).default("openai"),
   voice: z.string().default("marin"), // marin is the most natural & professional voice
   systemPrompt: z.string().min(10, "System prompt is required"),
   initialGreeting: z.string().optional(),
@@ -205,6 +207,7 @@ export default function CreateAgentPage() {
       initialGreeting: "",
       pricingTier: "premium",
       language: "en-US",
+      aiProvider: "openai",
       voice: "marin",
       temperature: 0.7,
       maxTokens: 2000,
@@ -225,6 +228,8 @@ export default function CreateAgentPage() {
   const agentName = useWatch({ control: form.control, name: "name" });
   const systemPrompt = useWatch({ control: form.control, name: "systemPrompt" });
   const currentLanguage = useWatch({ control: form.control, name: "language" });
+  const aiProvider = useWatch({ control: form.control, name: "aiProvider" });
+  const isGeminiLive = aiProvider === "gemini-live";
 
   const selectedTier = useMemo(
     () => PRICING_TIERS.find((t) => t.id === pricingTier),
@@ -291,6 +296,11 @@ export default function CreateAgentPage() {
       transcription_model:
         data.pricingTier === "premium" || data.pricingTier === "premium-mini"
           ? data.transcriptionModel
+          : undefined,
+      // For premium tier, propagate AI provider choice into provider_config
+      provider_config:
+        data.pricingTier === "premium" || data.pricingTier === "premium-mini"
+          ? { provider: data.aiProvider }
           : undefined,
     };
 
@@ -669,6 +679,30 @@ export default function CreateAgentPage() {
                   {(pricingTier === "premium" || pricingTier === "premium-mini") && (
                     <FormField
                       control={form.control}
+                      name="aiProvider"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>AI Provider</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="openai">GPT Realtime</SelectItem>
+                              <SelectItem value="gemini-live">Gemini Live</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  {(pricingTier === "premium" || pricingTier === "premium-mini") && (
+                    <FormField
+                      control={form.control}
                       name="voice"
                       render={({ field }) => (
                         <FormItem>
@@ -680,11 +714,21 @@ export default function CreateAgentPage() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {REALTIME_VOICES.map((voice) => (
-                                <SelectItem key={voice.id} value={voice.id}>
-                                  {voice.name} - {voice.description}
-                                </SelectItem>
-                              ))}
+                              {isGeminiLive ? (
+                                <>
+                                  <SelectItem value="Puck">Puck</SelectItem>
+                                  <SelectItem value="Charon">Charon</SelectItem>
+                                  <SelectItem value="Kore">Kore</SelectItem>
+                                  <SelectItem value="Fenrir">Fenrir</SelectItem>
+                                  <SelectItem value="Aoede">Aoede</SelectItem>
+                                </>
+                              ) : (
+                                REALTIME_VOICES.map((voice) => (
+                                  <SelectItem key={voice.id} value={voice.id}>
+                                    {voice.name} - {voice.description}
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                           <FormMessage />

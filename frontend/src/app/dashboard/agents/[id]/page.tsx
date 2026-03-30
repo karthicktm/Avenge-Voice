@@ -175,6 +175,8 @@ const agentFormSchema = z.object({
   // LLM Settings
   llmProvider: z.enum(["openai", "openai-realtime", "anthropic", "google"]),
   llmModel: z.string().default("gpt-4o"),
+  // AI Provider for premium tier (controls provider_config.provider)
+  aiProvider: z.enum(["openai", "gemini-live"]).default("openai"),
   voice: z.string().default("marin"),
   systemPrompt: z.string().min(10, "System prompt is required"),
   initialGreeting: z.string().optional(),
@@ -224,7 +226,15 @@ const TAB_FIELDS: Record<string, (keyof AgentFormValues)[]> = {
     "sttProvider",
     "deepgramModel",
   ],
-  llm: ["llmProvider", "llmModel", "voice", "systemPrompt", "temperature", "maxTokens"],
+  llm: [
+    "llmProvider",
+    "llmModel",
+    "aiProvider",
+    "voice",
+    "systemPrompt",
+    "temperature",
+    "maxTokens",
+  ],
   tools: ["enabledTools", "enabledToolIds"],
   advanced: [
     "telephonyProvider",
@@ -348,6 +358,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
       deepgramModel: "nova-3",
       llmProvider: "openai-realtime",
       llmModel: "gpt-realtime-2025-08-28",
+      aiProvider: "openai",
       systemPrompt: "",
       initialGreeting: "",
       temperature: 0.7,
@@ -403,6 +414,11 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
         deepgramModel: "nova-3",
         llmProvider: agent.pricing_tier === "premium" ? "openai-realtime" : "openai",
         llmModel: agent.pricing_tier === "premium" ? "gpt-realtime-2025-08-28" : "gpt-4o",
+        aiProvider:
+          (agent.provider_config?.provider as "openai" | "gemini-live" | undefined) ===
+          "gemini-live"
+            ? "gemini-live"
+            : "openai",
         voice: agent.voice ?? "marin",
         systemPrompt: agent.system_prompt,
         initialGreeting: agent.initial_greeting ?? "",
@@ -537,6 +553,10 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
   // Watch the LLM provider to conditionally show/hide Voice tab
   const llmProvider = form.watch("llmProvider");
   const isRealtimeProvider = llmProvider === "openai-realtime";
+
+  // Watch AI provider for premium tier (Gemini Live vs OpenAI)
+  const aiProvider = form.watch("aiProvider");
+  const isGeminiLive = aiProvider === "gemini-live";
 
   // Check if Knowledge Base is enabled
   const enabledTools = form.watch("enabledTools");
@@ -706,6 +726,13 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
       turn_detection_mode: data.turnDetectionMode,
       turn_detection_threshold: data.turnDetectionThreshold,
       turn_detection_silence_duration_ms: data.turnDetectionSilenceDurationMs,
+      // For premium tier, propagate AI provider choice into provider_config
+      provider_config:
+        pricingTier === "premium" ||
+        agent?.pricing_tier === "premium" ||
+        agent?.pricing_tier === "premium-mini"
+          ? { provider: data.aiProvider }
+          : undefined,
     };
 
     // Update agent, workspaces, and embed settings
@@ -1309,6 +1336,34 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                     />
                   </div>
 
+                  {(agent?.pricing_tier === "premium" ||
+                    agent?.pricing_tier === "premium-mini") && (
+                    <FormField
+                      control={form.control}
+                      name="aiProvider"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>AI Provider</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="openai">GPT Realtime</SelectItem>
+                              <SelectItem value="gemini-live">Gemini Live</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            The AI provider powering this agent&apos;s voice conversation
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
                   {isRealtimeProvider && (
                     <FormField
                       control={form.control}
@@ -1323,16 +1378,28 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="marin">Marin (Conversational)</SelectItem>
-                              <SelectItem value="cedar">Cedar (Friendly)</SelectItem>
-                              <SelectItem value="coral">Coral (Expressive)</SelectItem>
-                              <SelectItem value="sage">Sage (Calm)</SelectItem>
-                              <SelectItem value="alloy">Alloy (Neutral)</SelectItem>
-                              <SelectItem value="ash">Ash (Professional)</SelectItem>
-                              <SelectItem value="ballad">Ballad (Warm)</SelectItem>
-                              <SelectItem value="shimmer">Shimmer (Bright)</SelectItem>
-                              <SelectItem value="echo">Echo (Clear)</SelectItem>
-                              <SelectItem value="verse">Verse (Melodic)</SelectItem>
+                              {isGeminiLive ? (
+                                <>
+                                  <SelectItem value="Puck">Puck</SelectItem>
+                                  <SelectItem value="Charon">Charon</SelectItem>
+                                  <SelectItem value="Kore">Kore</SelectItem>
+                                  <SelectItem value="Fenrir">Fenrir</SelectItem>
+                                  <SelectItem value="Aoede">Aoede</SelectItem>
+                                </>
+                              ) : (
+                                <>
+                                  <SelectItem value="marin">Marin (Conversational)</SelectItem>
+                                  <SelectItem value="cedar">Cedar (Friendly)</SelectItem>
+                                  <SelectItem value="coral">Coral (Expressive)</SelectItem>
+                                  <SelectItem value="sage">Sage (Calm)</SelectItem>
+                                  <SelectItem value="alloy">Alloy (Neutral)</SelectItem>
+                                  <SelectItem value="ash">Ash (Professional)</SelectItem>
+                                  <SelectItem value="ballad">Ballad (Warm)</SelectItem>
+                                  <SelectItem value="shimmer">Shimmer (Bright)</SelectItem>
+                                  <SelectItem value="echo">Echo (Clear)</SelectItem>
+                                  <SelectItem value="verse">Verse (Melodic)</SelectItem>
+                                </>
+                              )}
                             </SelectContent>
                           </Select>
                           <FormDescription>

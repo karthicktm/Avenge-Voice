@@ -68,6 +68,7 @@ export interface Agent {
   max_tokens: number;
   initial_greeting: string | null;
   transcription_model: string;
+  provider_config: Record<string, string>;
   is_active: boolean;
   is_published: boolean;
   total_calls: number;
@@ -94,6 +95,7 @@ export interface CreateAgentRequest {
   temperature?: number;
   max_tokens?: number;
   transcription_model?: string;
+  provider_config?: Record<string, string>;
 }
 
 /**
@@ -162,6 +164,7 @@ export interface UpdateAgentRequest {
   max_tokens?: number;
   initial_greeting?: string | null;
   transcription_model?: string;
+  provider_config?: Record<string, string>;
 }
 
 /**
