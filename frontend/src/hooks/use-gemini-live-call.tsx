@@ -39,8 +39,9 @@ export function useGeminiLiveCall({ onTranscriptUpdate }: UseGeminiLiveCallOptio
   );
 
   const startCall = useCallback(
-    async (agentId: string, workspaceId: string) => {
-      if (!agentId || !workspaceId) return;
+    async (agentId: string, workspaceId: string): Promise<boolean> => {
+      if (!agentId || !workspaceId) return false;
+      if (roomRef.current) return false; // double-connect guard
       setStatus("connecting");
       setTranscript([]);
 
@@ -105,10 +106,12 @@ export function useGeminiLiveCall({ onTranscriptUpdate }: UseGeminiLiveCallOptio
         if (data.agent.initial_greeting) {
           addItem({ speaker: "assistant", text: data.agent.initial_greeting });
         }
+        return true;
       } catch (err) {
         console.error("Gemini call failed:", err);
         setStatus("idle");
         addItem({ speaker: "system", text: "Failed to connect to Gemini agent" });
+        return false;
       }
     },
     [addItem]

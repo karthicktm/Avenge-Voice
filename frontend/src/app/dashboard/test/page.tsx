@@ -622,8 +622,8 @@ export default function TestAgentPage() {
 
     // Route Gemini agents through LiveKit
     if (isGeminiAgent) {
-      await geminiCall.startCall(selectedAgentId, selectedWorkspaceId);
-      if (geminiCall.status !== "idle") {
+      const geminiSuccess = await geminiCall.startCall(selectedAgentId, selectedWorkspaceId);
+      if (geminiSuccess) {
         setConnectionStatus("connected");
         setCallDuration(0);
         callTimerRef.current = setInterval(() => {

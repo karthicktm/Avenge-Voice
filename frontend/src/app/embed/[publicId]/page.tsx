@@ -409,8 +409,8 @@ export default function EmbedPage() {
     if (isGeminiAgent && config.agent_id && config.workspace_id) {
       setStatus("connecting");
       setIsExpanded(true);
-      await geminiCall.startCall(config.agent_id, config.workspace_id);
-      setStatus(geminiCall.status === "connected" ? "connected" : "idle");
+      const geminiSuccess = await geminiCall.startCall(config.agent_id, config.workspace_id);
+      setStatus(geminiSuccess ? "connected" : "idle");
       return;
     }
 
