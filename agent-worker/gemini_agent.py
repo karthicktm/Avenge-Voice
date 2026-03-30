@@ -81,16 +81,25 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         end_call_event=end_call_event,
     ) if tool_defs else []
 
+    # Append call-initiation directive so Gemini speaks first without needing a user trigger
+    effective_instructions = instructions
+    if not initial_greeting:
+        effective_instructions = (
+            instructions.rstrip()
+            + "\n\nIMPORTANT: When the call connects, immediately greet the customer "
+            "with a warm, brief opening message. Do not wait for them to speak first."
+        )
+
     model = realtime.RealtimeModel(
         model=model_name,
         voice=voice,
-        instructions=instructions,
+        instructions=effective_instructions,
         api_key=google_api_key,
         api_version="v1alpha",
         temperature=config.get("temperature", 0.7),
     )
 
-    agent = Agent(instructions=instructions, tools=tools)
+    agent = Agent(instructions=effective_instructions, tools=tools)
     session = AgentSession(llm=model)
 
     # Issue 2 & 3: Transcript — async publish to frontend via data channel
@@ -115,15 +124,11 @@ async def run_gemini_agent(ctx: JobContext) -> None:
              session_start_ms=round((time.monotonic() - t_start) * 1000))
 
     # Issue 1: Initiate the conversation immediately
+    # NOTE: Do NOT use generate_reply(user_input=text) — Gemini Live v1alpha
+    # only accepts audio user turns; text input causes 1007 error.
     if initial_greeting:
-        # Speak the configured greeting directly
+        # Speak the configured greeting directly via TTS (no LLM call needed)
         await session.say(initial_greeting)
-    else:
-        # Trigger Gemini to open the conversation — small delay ensures session is ready
-        await asyncio.sleep(0.5)
-        await session.generate_reply(
-            user_input="[Call connected. Please start with your opening greeting now.]"
-        )
 
     # Wait for either: room disconnect OR end_call tool invoked
     disconnected = asyncio.Event()
