@@ -12,5 +12,3 @@ keys:
 logging:
   json: false
   level: info
-sip:
-  enabled: false
