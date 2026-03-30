@@ -88,21 +88,23 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         end_call_event=end_call_event,
     ) if tool_defs else []
 
-    # Inject greeting directive into instructions.
-    # session.say() does NOT work with native audio models (Gemini Live has no separate TTS).
-    # Instead, embed the greeting into instructions and use generate_reply() to trigger it.
-    if initial_greeting:
-        effective_instructions = (
-            instructions.rstrip()
-            + f'\n\nIMPORTANT: Begin this call by saying EXACTLY: "{initial_greeting}" — '
-            "say this as your very first utterance. Do not wait for the caller to speak."
-        )
-    else:
-        effective_instructions = (
-            instructions.rstrip()
-            + "\n\nIMPORTANT: When the call connects, immediately greet the customer "
-            "with a warm, brief opening message. Do not wait for them to speak first."
-        )
+    # Build effective instructions: tool-use rules FIRST (highest priority for Gemini),
+    # then system prompt, then greeting directive.
+    greeting_directive = (
+        f'Your FIRST utterance must be exactly: "{initial_greeting}"'
+        if initial_greeting
+        else "Begin immediately with a warm greeting. Do not wait for the caller to speak."
+    )
+
+    effective_instructions = (
+        "## CRITICAL TOOL RULES — FOLLOW BEFORE ANYTHING ELSE\n"
+        "1. NEVER say 'I wasn't able to find' or 'I couldn't find' without FIRST calling a tool.\n"
+        "2. When a caller gives a property name, address, or location: IMMEDIATELY call lookup_search. No exceptions.\n"
+        "3. When a caller describes an issue to categorize: IMMEDIATELY call categorize. No exceptions.\n"
+        "4. Always call the tool FIRST, then speak based on the result.\n"
+        "5. " + greeting_directive + "\n\n"
+        + instructions
+    )
 
     model = realtime.RealtimeModel(
         model=model_name,
