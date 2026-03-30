@@ -2,17 +2,27 @@
 
 import asyncio
 import json
+import time
 from typing import Any
 
 import httpx
 import structlog
-from livekit.agents import Agent, AgentSession, JobContext
+from livekit.agents import Agent, AgentSession, ConversationItemAddedEvent, JobContext, UserInputTranscribedEvent
 from livekit.plugins.google import realtime
 
 from config import settings
 from tool_bridge import build_tools
 
 logger = structlog.get_logger()
+
+
+def _publish_transcript(room: Any, speaker: str, text: str) -> None:
+    """Send a transcript event to frontend via LiveKit data channel."""
+    try:
+        payload = json.dumps({"type": "transcript", "speaker": speaker, "text": text}).encode()
+        room.local_participant.publish_data(payload, reliable=True)
+    except Exception as e:
+        logger.warning("transcript_publish_failed", error=str(e))
 
 
 async def run_gemini_agent(ctx: JobContext) -> None:
@@ -53,6 +63,7 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     voice = config.get("voice", "Puck")
     model_name = config.get("model", "gemini-3.1-flash-live-preview")
     tool_defs: list[dict] = config.get("tools", [])
+    initial_greeting = config.get("initial_greeting")
 
     if not google_api_key:
         log.error("missing_google_api_key")
@@ -78,15 +89,37 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     agent = Agent(instructions=instructions, tools=tools)
     session = AgentSession(llm=model)
 
-    log.info("gemini_agent_running", model=model_name, voice=voice, tools=len(tools))
+    # Issue 2 & 3: Transcript + visibility into what is said
+    @session.on("user_input_transcribed")
+    def on_user_transcribed(ev: UserInputTranscribedEvent) -> None:
+        if ev.is_final and ev.transcript.strip():
+            log.info("user_said", text=ev.transcript)
+            _publish_transcript(ctx.room, "user", ev.transcript)
 
+    @session.on("conversation_item_added")
+    def on_item_added(ev: ConversationItemAddedEvent) -> None:
+        msg = ev.item
+        role = getattr(msg, "role", None)
+        text = getattr(msg, "text_content", None) or ""
+        if role == "assistant" and text.strip():
+            log.info("agent_said", text=text)
+            _publish_transcript(ctx.room, "assistant", text)
+
+    t_start = time.monotonic()
     await session.start(agent=agent, room=ctx.room)
+    log.info("gemini_agent_running", model=model_name, voice=voice, tools=len(tools),
+             session_start_ms=round((time.monotonic() - t_start) * 1000))
 
-    # Wait until the room disconnects
+    # Issue 1: Speak immediately to reduce perceived latency
+    if initial_greeting:
+        await session.say(initial_greeting)
+    else:
+        # Trigger an immediate greeting to warm up the audio path
+        await session.generate_reply()
+
+    # Issue 4: Wait for room disconnect (session close_on_disconnect=True handles cleanup)
     disconnected = asyncio.Event()
-    ctx.room.on("disconnected", lambda _: disconnected.set())
-    # Also handle participant_disconnected for the case where the user leaves
-    ctx.room.on("participant_disconnected", lambda p: disconnected.set())
-
+    ctx.room.on("disconnected", lambda *_: disconnected.set())
     await disconnected.wait()
+
     log.info("agent_job_completed")

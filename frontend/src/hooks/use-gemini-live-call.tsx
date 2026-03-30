@@ -22,6 +22,8 @@ export function useGeminiLiveCall({ onTranscriptUpdate }: UseGeminiLiveCallOptio
   const [transcript, setTranscript] = useState<GeminiTranscriptItem[]>([]);
   const roomRef = useRef<Room | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Track whether disconnect was user-initiated so we don't flicker to "disconnected"
+  const intentionalDisconnectRef = useRef(false);
 
   const addItem = useCallback(
     (item: Omit<GeminiTranscriptItem, "id" | "timestamp">) => {
@@ -86,7 +88,18 @@ export function useGeminiLiveCall({ onTranscriptUpdate }: UseGeminiLiveCallOptio
           }
         });
 
-        room.on(RoomEvent.Disconnected, () => setStatus("disconnected"));
+        room.on(RoomEvent.Disconnected, () => {
+          // Only mark as disconnected if the server dropped us unexpectedly
+          if (!intentionalDisconnectRef.current) {
+            setStatus("idle");
+            addItem({ speaker: "system", text: "Call ended" });
+          }
+          roomRef.current = null;
+          if (audioRef.current) {
+            audioRef.current.remove();
+            audioRef.current = null;
+          }
+        });
 
         await room.connect(data.livekit_url, data.token);
         await room.localParticipant.setMicrophoneEnabled(true);
@@ -108,12 +121,14 @@ export function useGeminiLiveCall({ onTranscriptUpdate }: UseGeminiLiveCallOptio
   );
 
   const stopCall = useCallback(() => {
+    intentionalDisconnectRef.current = true;
     void roomRef.current?.disconnect();
     roomRef.current = null;
     if (audioRef.current) {
       audioRef.current.remove();
       audioRef.current = null;
     }
+    intentionalDisconnectRef.current = false;
     setStatus("idle");
     addItem({ speaker: "system", text: "Call ended" });
   }, [addItem]);

@@ -59,6 +59,7 @@ def build_tools(
                     arguments = _json.loads(raw_arguments)
                 else:
                     arguments = {}
+                log.info("tool_call_input", arguments=arguments)
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     resp = await client.post(
                         f"{_backend_url}/internal/tools/{_agent_id}/execute",
@@ -70,7 +71,9 @@ def build_tools(
                         headers=_headers,
                     )
                     resp.raise_for_status()
-                    return str(resp.json().get("result", "Done"))
+                    result = str(resp.json().get("result", "Done"))
+                    log.info("tool_call_result", result=result[:300])
+                    return result
             except Exception as e:
                 log.exception("tool_call_failed", error=str(e))
                 return f"Tool {_name} failed: {e}"
