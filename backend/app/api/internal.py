@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.integrations import get_workspace_integrations
 from app.api.settings import get_user_api_keys
+from app.core.auth import user_id_to_uuid
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.agent import Agent
@@ -80,9 +81,10 @@ async def execute_tool(
 
     integrations = await get_workspace_integrations(_SYSTEM_USER_UUID, workspace_uuid, db)
 
-    # Fetch workspace OpenAI key — needed for embedding-based tools (lookup, categorize)
+    # Fetch OpenAI key using the agent owner's user_id — needed for LLM-based tools (categorize, lookup LLM layer)
+    agent_user_uuid = user_id_to_uuid(agent.user_id)
     openai_api_key: str | None = None
-    ws_settings = await get_user_api_keys(_SYSTEM_USER_UUID, db, workspace_id=workspace_uuid)
+    ws_settings = await get_user_api_keys(agent_user_uuid, db, workspace_id=workspace_uuid)
     if ws_settings:
         openai_api_key = ws_settings.openai_api_key or settings.OPENAI_API_KEY
     else:

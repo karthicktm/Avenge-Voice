@@ -145,11 +145,13 @@ async def run_gemini_agent(ctx: JobContext) -> None:
              session_start_ms=round((time.monotonic() - t_start) * 1000))
 
     # Give the audio track subscription a moment to complete before speaking
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2.5)
 
     # Initiate the conversation — speak greeting so agent starts, not the user
     if initial_greeting:
+        log.info("saying_greeting", text=initial_greeting[:50])
         await session.say(initial_greeting)
+        log.info("greeting_said")
 
     # Wait for either: room disconnect OR end_call tool invoked
     disconnected = asyncio.Event()
@@ -161,7 +163,9 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         await end_call_event.wait()
         log.info("end_call_tool_invoked_disconnecting")
         await asyncio.sleep(3.0)  # Let farewell audio finish
-        ctx.room.disconnect()
+        result = ctx.room.disconnect()
+        if asyncio.iscoroutine(result):
+            await result
 
     end_call_task = asyncio.create_task(_handle_end_call())
 
