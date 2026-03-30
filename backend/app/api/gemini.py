@@ -141,6 +141,7 @@ async def get_gemini_token(
             "voice": agent.voice or "Puck",
             "model": (agent.provider_config or {}).get("model", "gemini-3.1-flash-live-preview"),
             "temperature": agent.temperature,
+            "initial_greeting": agent.initial_greeting or "",
             "tools": tools,
         }
     )
