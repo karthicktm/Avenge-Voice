@@ -6,7 +6,7 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from livekit.api import AccessToken, VideoGrants
+from livekit.api import AccessToken, CreateRoomRequest, LiveKitAPI, VideoGrants
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,6 +53,14 @@ async def _get_google_api_key(
     )
 
 
+async def _create_room_with_metadata(room_name: str, metadata: str) -> None:
+    """Create a LiveKit room with agent config metadata."""
+    async with LiveKitAPI(
+        settings.LIVEKIT_URL, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET
+    ) as lk:
+        await lk.room.create_room(CreateRoomRequest(name=room_name, metadata=metadata))
+
+
 def _create_livekit_token(room_name: str, participant_identity: str) -> str:
     token = (
         AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
@@ -75,8 +83,11 @@ async def get_gemini_token(
     user_uuid = user_id_to_uuid(user_id)
     token_logger = logger.bind(endpoint="gemini_token", agent_id=agent_id)
 
-    agent_uuid = uuid.UUID(agent_id)
-    workspace_uuid = uuid.UUID(workspace_id)
+    try:
+        agent_uuid = uuid.UUID(agent_id)
+        workspace_uuid = uuid.UUID(workspace_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid agent or workspace ID format") from e
 
     agent = await _get_gemini_agent(agent_uuid, db)
 
@@ -121,16 +132,20 @@ async def get_gemini_token(
     room_name = f"gemini-{agent_id}-{uuid.uuid4().hex[:8]}"
     participant_identity = f"user-{user_id}"
 
-    room_metadata = json.dumps({
-        "agent_id": str(agent.id),
-        "workspace_id": workspace_id,
-        "google_api_key": google_api_key,
-        "instructions": instructions,
-        "voice": agent.voice or "Puck",
-        "model": (agent.provider_config or {}).get("model", "gemini-2.0-flash-live-001"),
-        "temperature": agent.temperature,
-        "tools": tools,
-    })
+    room_metadata = json.dumps(
+        {
+            "agent_id": str(agent.id),
+            "workspace_id": workspace_id,
+            "google_api_key": google_api_key,
+            "instructions": instructions,
+            "voice": agent.voice or "Puck",
+            "model": (agent.provider_config or {}).get("model", "gemini-2.0-flash-live-001"),
+            "temperature": agent.temperature,
+            "tools": tools,
+        }
+    )
+
+    await _create_room_with_metadata(room_name, room_metadata)
 
     token = _create_livekit_token(room_name, participant_identity)
 
@@ -140,7 +155,6 @@ async def get_gemini_token(
         "livekit_url": settings.LIVEKIT_URL,
         "token": token,
         "room_name": room_name,
-        "room_metadata": room_metadata,
         "agent": {
             "id": str(agent.id),
             "name": agent.name,
