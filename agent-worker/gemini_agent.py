@@ -16,7 +16,7 @@ from tool_bridge import build_tools
 logger = structlog.get_logger()
 
 
-def _publish_transcript(room: Any, speaker: str, text: str) -> None:
+async def _publish_transcript(room: Any, speaker: str, text: str) -> None:
     """Send a transcript event to frontend via LiveKit data channel."""
     try:
         payload = json.dumps({"type": "transcript", "speaker": speaker, "text": text}).encode()
@@ -63,11 +63,14 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     voice = config.get("voice", "Puck")
     model_name = config.get("model", "gemini-3.1-flash-live-preview")
     tool_defs: list[dict] = config.get("tools", [])
-    initial_greeting = config.get("initial_greeting")
+    initial_greeting = config.get("initial_greeting") or ""
 
     if not google_api_key:
         log.error("missing_google_api_key")
         return
+
+    # Event to signal end_call tool was invoked
+    end_call_event = asyncio.Event()
 
     tools = build_tools(
         tools=tool_defs,
@@ -75,6 +78,7 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         workspace_id=workspace_id,
         backend_url=settings.BACKEND_URL,
         internal_secret=settings.INTERNAL_API_SECRET,
+        end_call_event=end_call_event,
     ) if tool_defs else []
 
     model = realtime.RealtimeModel(
@@ -89,12 +93,12 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     agent = Agent(instructions=instructions, tools=tools)
     session = AgentSession(llm=model)
 
-    # Issue 2 & 3: Transcript + visibility into what is said
+    # Issue 2 & 3: Transcript — async publish to frontend via data channel
     @session.on("user_input_transcribed")
     def on_user_transcribed(ev: UserInputTranscribedEvent) -> None:
         if ev.is_final and ev.transcript.strip():
             log.info("user_said", text=ev.transcript)
-            _publish_transcript(ctx.room, "user", ev.transcript)
+            asyncio.ensure_future(_publish_transcript(ctx.room, "user", ev.transcript))
 
     @session.on("conversation_item_added")
     def on_item_added(ev: ConversationItemAddedEvent) -> None:
@@ -103,23 +107,39 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         text = getattr(msg, "text_content", None) or ""
         if role == "assistant" and text.strip():
             log.info("agent_said", text=text)
-            _publish_transcript(ctx.room, "assistant", text)
+            asyncio.ensure_future(_publish_transcript(ctx.room, "assistant", text))
 
     t_start = time.monotonic()
     await session.start(agent=agent, room=ctx.room)
     log.info("gemini_agent_running", model=model_name, voice=voice, tools=len(tools),
              session_start_ms=round((time.monotonic() - t_start) * 1000))
 
-    # Issue 1: Speak immediately to reduce perceived latency
+    # Issue 1: Initiate the conversation immediately
     if initial_greeting:
+        # Speak the configured greeting directly
         await session.say(initial_greeting)
     else:
-        # Trigger an immediate greeting to warm up the audio path
-        await session.generate_reply()
+        # Trigger Gemini to open the conversation — small delay ensures session is ready
+        await asyncio.sleep(0.5)
+        await session.generate_reply(
+            user_input="[Call connected. Please start with your opening greeting now.]"
+        )
 
-    # Issue 4: Wait for room disconnect (session close_on_disconnect=True handles cleanup)
+    # Wait for either: room disconnect OR end_call tool invoked
     disconnected = asyncio.Event()
     ctx.room.on("disconnected", lambda *_: disconnected.set())
+
+    # Issue 1 (end_call): When assistant invokes end_call, disconnect after a short delay
+    # so the farewell audio finishes playing before we hang up
+    async def _handle_end_call() -> None:
+        await end_call_event.wait()
+        log.info("end_call_tool_invoked_disconnecting")
+        await asyncio.sleep(3.0)  # Let farewell audio finish
+        ctx.room.disconnect()
+
+    end_call_task = asyncio.create_task(_handle_end_call())
+
     await disconnected.wait()
+    end_call_task.cancel()
 
     log.info("agent_job_completed")

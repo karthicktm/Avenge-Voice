@@ -1,5 +1,6 @@
 """Converts backend OpenAI-format tool definitions into livekit-agents 1.x tool list."""
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -15,6 +16,7 @@ def build_tools(
     workspace_id: str,
     backend_url: str,
     internal_secret: str,
+    end_call_event: "asyncio.Event | None" = None,
 ) -> list[Any]:
     """Build a list of livekit-agents tools from OpenAI-format tool definitions.
 
@@ -48,6 +50,7 @@ def build_tools(
             _workspace_id: str = workspace_id,
             _backend_url: str = backend_url,
             _headers: dict = headers,
+            _end_call_event: "asyncio.Event | None" = end_call_event,
         ) -> str:
             log = logger.bind(tool=_name)
             try:
@@ -71,7 +74,13 @@ def build_tools(
                         headers=_headers,
                     )
                     resp.raise_for_status()
-                    result = str(resp.json().get("result", "Done"))
+                    resp_data = resp.json()
+                    raw_result = resp_data.get("result", "Done")
+                    # Detect end_call action before stringifying
+                    if isinstance(raw_result, dict) and raw_result.get("action") == "end_call":
+                        if _end_call_event:
+                            _end_call_event.set()
+                    result = str(raw_result)
                     log.info("tool_call_result", result=result[:300])
                     return result
             except Exception as e:

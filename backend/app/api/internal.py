@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.integrations import get_workspace_integrations
+from app.api.settings import get_user_api_keys
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.agent import Agent
@@ -78,13 +79,22 @@ async def execute_tool(
     agent = await _get_agent_with_workspace(agent_uuid, workspace_uuid, db)
 
     integrations = await get_workspace_integrations(_SYSTEM_USER_UUID, workspace_uuid, db)
+
+    # Fetch workspace OpenAI key — needed for embedding-based tools (lookup, categorize)
+    openai_api_key: str | None = None
+    ws_settings = await get_user_api_keys(_SYSTEM_USER_UUID, db, workspace_id=workspace_uuid)
+    if ws_settings:
+        openai_api_key = ws_settings.openai_api_key or settings.OPENAI_API_KEY
+    else:
+        openai_api_key = settings.OPENAI_API_KEY
+
     tool_registry = ToolRegistry(
         db,
         request.user_id,
         integrations=integrations,
         workspace_id=workspace_uuid,
         agent_id=agent.id,
-        openai_api_key=None,
+        openai_api_key=openai_api_key,
         tool_configs=agent.tool_configs or {},
     )
     result = await tool_registry.execute_tool(request.tool_name, request.arguments)
