@@ -111,6 +111,7 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         api_key=google_api_key,
         api_version="v1alpha",
         temperature=config.get("temperature", 0.7),
+        proactivity=True,  # Allow Gemini to speak first without waiting for user audio
     )
 
     agent = Agent(instructions=effective_instructions, tools=tools)
@@ -154,13 +155,10 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     # Give the audio track subscription a moment to complete before speaking
     await asyncio.sleep(2.5)
 
-    # Trigger Gemini to generate its opening greeting.
-    # IMPORTANT: Gemini Live v1alpha rejects any user_input or instructions parameters
-    # in generate_reply — both cause 1007. Call with NO parameters so it generates
-    # a response based solely on the system instructions (which say to greet first).
-    log.info("triggering_greeting")
-    await session.generate_reply()
-    log.info("greeting_triggered")
+    # With proactivity=True, Gemini will proactively speak when the session is idle.
+    # The instructions tell it to greet immediately, so no manual trigger needed.
+    # generate_reply() causes 1007 on v1alpha regardless of parameters.
+    log.info("greeting_via_proactivity")
 
     # Wait for either: room disconnect OR end_call tool invoked
     disconnected = asyncio.Event()
