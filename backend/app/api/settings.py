@@ -26,6 +26,7 @@ class UpdateSettingsRequest(BaseModel):
     telnyx_public_key: str | None = None
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
+    google_api_key: str | None = None
 
 
 class SettingsResponse(BaseModel):
@@ -36,6 +37,7 @@ class SettingsResponse(BaseModel):
     elevenlabs_api_key_set: bool
     telnyx_api_key_set: bool
     twilio_account_sid_set: bool
+    google_api_key_set: bool = False
     workspace_id: str | None = None
 
 
@@ -99,6 +101,7 @@ async def get_settings(
             elevenlabs_api_key_set=False,
             telnyx_api_key_set=False,
             twilio_account_sid_set=False,
+            google_api_key_set=False,
             workspace_id=workspace_id,
         )
 
@@ -108,6 +111,7 @@ async def get_settings(
         elevenlabs_api_key_set=bool(settings.elevenlabs_api_key),
         telnyx_api_key_set=bool(settings.telnyx_api_key),
         twilio_account_sid_set=bool(settings.twilio_account_sid),
+        google_api_key_set=bool(settings.google_api_key),
         workspace_id=str(settings.workspace_id) if settings.workspace_id else None,
     )
 
@@ -161,6 +165,8 @@ async def update_settings(
             settings.twilio_account_sid = request.twilio_account_sid or None
         if request.twilio_auth_token is not None:
             settings.twilio_auth_token = request.twilio_auth_token or None
+        if request.google_api_key is not None:
+            settings.google_api_key = request.google_api_key or None
 
         db.add(settings)
     else:
@@ -175,6 +181,7 @@ async def update_settings(
             telnyx_public_key=request.telnyx_public_key,
             twilio_account_sid=request.twilio_account_sid,
             twilio_auth_token=request.twilio_auth_token,
+            google_api_key=request.google_api_key,
         )
         db.add(settings)
 
