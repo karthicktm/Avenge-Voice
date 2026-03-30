@@ -155,14 +155,11 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     await asyncio.sleep(2.5)
 
     # Trigger Gemini to generate its opening greeting.
-    # session.say() requires a separate TTS model which Gemini Live doesn't use.
-    # generate_reply() with instructions tells Gemini to speak now using its native audio.
-    greeting_hint = initial_greeting[:60] if initial_greeting else "opening greeting"
-    log.info("triggering_greeting", hint=greeting_hint)
-    await session.generate_reply(
-        instructions=f'Say your opening greeting now: "{initial_greeting}"' if initial_greeting
-        else "Say your opening greeting to the caller now."
-    )
+    # IMPORTANT: Gemini Live v1alpha rejects any user_input or instructions parameters
+    # in generate_reply — both cause 1007. Call with NO parameters so it generates
+    # a response based solely on the system instructions (which say to greet first).
+    log.info("triggering_greeting")
+    await session.generate_reply()
     log.info("greeting_triggered")
 
     # Wait for either: room disconnect OR end_call tool invoked
