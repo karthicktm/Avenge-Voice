@@ -151,7 +151,9 @@ class LookupTools:
                 try:
                     collection_id = uuid.UUID(collection_id_str)
                 except ValueError:
-                    return {"success": False, "error": "Invalid collection_id UUID"}
+                    # Invalid UUID — ignore the filter and search all collections
+                    self.log.warning("lookup_search_invalid_collection_id", value=collection_id_str)
+                    collection_id = None
 
             # Base query: join records → collections
             stmt = (
