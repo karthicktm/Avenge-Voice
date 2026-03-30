@@ -6,12 +6,14 @@ from livekit.agents import WorkerOptions, cli
 from config import settings
 from gemini_agent import run_gemini_agent
 
+import logging
 structlog.configure(
     processors=[
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.JSONRenderer(),
     ],
+    wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
 )
 
 if __name__ == "__main__":

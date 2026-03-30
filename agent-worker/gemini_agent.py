@@ -19,10 +19,17 @@ logger = structlog.get_logger()
 async def _publish_transcript(room: Any, speaker: str, text: str) -> None:
     """Send a transcript event to frontend via LiveKit data channel."""
     try:
+        if room is None or room.local_participant is None:
+            logger.warning("transcript_skip_no_participant")
+            return
         payload = json.dumps({"type": "transcript", "speaker": speaker, "text": text}).encode()
-        await room.local_participant.publish_data(payload, reliable=True)
+        result = room.local_participant.publish_data(payload, reliable=True)
+        # publish_data may be async in some versions
+        if asyncio.iscoroutine(result):
+            await result
+        logger.debug("transcript_published", speaker=speaker, length=len(text))
     except Exception as e:
-        logger.warning("transcript_publish_failed", error=str(e))
+        logger.warning("transcript_publish_failed", error=str(e), speaker=speaker)
 
 
 async def run_gemini_agent(ctx: JobContext) -> None:
@@ -102,12 +109,16 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     agent = Agent(instructions=effective_instructions, tools=tools)
     session = AgentSession(llm=model)
 
-    # Issue 2 & 3: Transcript — async publish to frontend via data channel
+    # Transcript: publish to frontend via LiveKit data channel
     @session.on("user_input_transcribed")
     def on_user_transcribed(ev: UserInputTranscribedEvent) -> None:
         if ev.is_final and ev.transcript.strip():
             log.info("user_said", text=ev.transcript)
-            asyncio.ensure_future(_publish_transcript(ctx.room, "user", ev.transcript))
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_publish_transcript(ctx.room, "user", ev.transcript))
+            except RuntimeError:
+                pass  # no running loop — skip
 
     @session.on("conversation_item_added")
     def on_item_added(ev: ConversationItemAddedEvent) -> None:
@@ -116,7 +127,11 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         text = getattr(msg, "text_content", None) or ""
         if role == "assistant" and text.strip():
             log.info("agent_said", text=text)
-            asyncio.ensure_future(_publish_transcript(ctx.room, "assistant", text))
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_publish_transcript(ctx.room, "assistant", text))
+            except RuntimeError:
+                pass  # no running loop — skip
 
     # Wait for the user participant to join before starting — ensures audio
     # subscription is established so the greeting is actually heard
