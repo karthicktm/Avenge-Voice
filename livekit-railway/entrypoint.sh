@@ -14,6 +14,10 @@ else
   REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 fi
 
+echo "DEBUG: REDIS_URL=${REDIS_URL}"
+echo "DEBUG: REDIS_ADDR=${REDIS_ADDR}"
+echo "DEBUG: REDIS_USERNAME=${REDIS_USERNAME}"
+
 cat > /etc/livekit.yaml << LIVEKIT_YAML
 port: ${PORT:-7880}
 bind_addresses:
@@ -31,5 +35,9 @@ logging:
   json: true
   level: info
 LIVEKIT_YAML
+
+echo "--- Generated livekit.yaml ---"
+cat /etc/livekit.yaml
+echo "------------------------------"
 
 exec /livekit-server --config /etc/livekit.yaml
