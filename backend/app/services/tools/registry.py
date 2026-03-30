@@ -754,6 +754,21 @@ class ToolRegistry:
 
         if tool_name in lookup_tool_names:
             if tool_name == "lookup_search":
+                # Apply configured collection_id from tool_configs if Gemini didn't provide a valid one
+                configured_collection_id = self.tool_configs.get("lookup_search", {}).get(
+                    "collection_id", ""
+                )
+                provided_collection_id = str(arguments.get("collection_id") or "")
+                is_valid_uuid = False
+                if provided_collection_id:
+                    try:
+                        uuid.UUID(provided_collection_id)
+                        is_valid_uuid = True
+                    except ValueError:
+                        pass
+                if not is_valid_uuid and configured_collection_id:
+                    arguments = {**arguments, "collection_id": configured_collection_id}
+
                 canonical = _canonical_lookup_args(arguments)
                 session_key = f"lookup_search:{canonical}"
 
