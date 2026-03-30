@@ -99,10 +99,11 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     effective_instructions = (
         "## CRITICAL TOOL RULES — FOLLOW BEFORE ANYTHING ELSE\n"
         "1. NEVER say 'I wasn't able to find' or 'I couldn't find' without FIRST calling a tool.\n"
-        "2. When a caller gives a property name, address, or location: IMMEDIATELY call lookup_search. No exceptions.\n"
-        "3. When a caller describes an issue to categorize: IMMEDIATELY call categorize. No exceptions.\n"
-        "4. Always call the tool FIRST, then speak based on the result.\n"
-        "5. " + greeting_directive + "\n\n"
+        "2. For NEW/PROSPECTIVE tenants (STEP 2): as soon as they mention a property name, area or city, call lookup_search(query=<their input>) immediately. This applies to queries like 'Stockholm', 'Vällingby', 'Hinderbanan' etc.\n"
+        "3. For EXISTING tenants (STEP 5): after collecting property name and issue, call lookup_search(query=<property name + issue keywords>) immediately.\n"
+        "4. When a caller describes an issue: call categorize(text=<issue>, tree_name='k2a_categories') immediately.\n"
+        "5. ALWAYS call the tool FIRST, then speak based on what the tool returns. Never guess or use internal knowledge.\n"
+        "6. " + greeting_directive + "\n\n"
         + instructions
     )
 
