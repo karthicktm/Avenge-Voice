@@ -50,6 +50,9 @@ from app.api import (
     webhooks,
     workspaces,
 )
+from app.api import (
+    gemini as gemini_api,
+)
 from app.api import settings as settings_api
 from app.core.config import settings
 from app.core.limiter import limiter
@@ -228,6 +231,7 @@ app.include_router(agents.router)
 app.include_router(settings_api.router)
 app.include_router(realtime.router)
 app.include_router(realtime.webrtc_router)  # WebRTC session endpoint
+app.include_router(gemini_api.router)  # Gemini Live token endpoint
 app.include_router(tools.router)  # Tool execution endpoint
 app.include_router(telephony.router)  # Telephony API (phone numbers, calls)
 app.include_router(telephony.webhook_router)  # Twilio/Telnyx webhooks
