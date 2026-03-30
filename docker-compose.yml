@@ -55,6 +55,40 @@ services:
     networks:
       - voice-agent-network
 
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: voice-agent-livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - voice-agent-network
+
+  agent-worker:
+    build:
+      context: ./agent-worker
+      dockerfile: Dockerfile
+    container_name: voice-agent-worker
+    restart: unless-stopped
+    environment:
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      - BACKEND_URL=http://backend:8000
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-internal-secret-change-in-prod}
+    depends_on:
+      - livekit
+    networks:
+      - voice-agent-network
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: voice-agent-pgadmin
