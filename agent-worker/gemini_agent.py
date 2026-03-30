@@ -1,16 +1,15 @@
-"""Gemini Live voice agent using livekit-agents MultimodalAgent."""
+"""Gemini Live voice agent using livekit-agents 1.x API."""
 
 import json
 from typing import Any
 
 import httpx
 import structlog
-from livekit.agents import AutoSubscribe, JobContext, llm
-from livekit.agents.multimodal import MultimodalAgent
-from livekit.plugins import google
+from livekit.agents import Agent, AgentSession, AutoSubscribe, JobContext, RoomInputOptions
+from livekit.plugins.google import realtime
 
 from config import settings
-from tool_bridge import build_function_context
+from tool_bridge import build_tools
 
 logger = structlog.get_logger()
 
@@ -52,29 +51,35 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     instructions = config.get("instructions", "You are a helpful voice assistant.")
     voice = config.get("voice", "Puck")
     model_name = config.get("model", "gemini-2.0-flash-live-001")
-    tools: list[dict] = config.get("tools", [])
+    tool_defs: list[dict] = config.get("tools", [])
 
-    fnc_ctx: llm.FunctionContext | None = None
-    if tools:
-        fnc_ctx = build_function_context(
-            tools=tools,
-            agent_id=agent_id,
-            workspace_id=workspace_id,
-            backend_url=settings.BACKEND_URL,
-            internal_secret=settings.INTERNAL_API_SECRET,
-        )
+    # Build tool list for livekit-agents 1.x
+    tools = build_tools(
+        tools=tool_defs,
+        agent_id=agent_id,
+        workspace_id=workspace_id,
+        backend_url=settings.BACKEND_URL,
+        internal_secret=settings.INTERNAL_API_SECRET,
+    ) if tool_defs else []
 
-    model = google.beta.realtime.RealtimeModel(
+    model = realtime.RealtimeModel(
         model=model_name,
         voice=voice,
-        system_instruction=instructions,
+        instructions=instructions,
         api_key=google_api_key,
         temperature=config.get("temperature", 0.7),
     )
 
-    agent = MultimodalAgent(model=model, fnc_ctx=fnc_ctx)
-    agent.start(ctx.room)
+    agent = Agent(instructions=instructions, tools=tools)
+    session = AgentSession(llm=model)
 
     log.info("gemini_agent_running", model=model_name, voice=voice, tools=len(tools))
+
+    await session.start(
+        agent=agent,
+        room=ctx.room,
+        room_input_options=RoomInputOptions(auto_subscribe=AutoSubscribe.AUDIO_ONLY),
+    )
+
     await ctx.wait_for_disconnect()
     log.info("agent_job_completed")
