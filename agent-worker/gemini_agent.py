@@ -20,7 +20,7 @@ async def _publish_transcript(room: Any, speaker: str, text: str) -> None:
     """Send a transcript event to frontend via LiveKit data channel."""
     try:
         payload = json.dumps({"type": "transcript", "speaker": speaker, "text": text}).encode()
-        room.local_participant.publish_data(payload, reliable=True)
+        await room.local_participant.publish_data(payload, reliable=True)
     except Exception as e:
         logger.warning("transcript_publish_failed", error=str(e))
 
