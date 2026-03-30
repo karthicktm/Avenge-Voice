@@ -160,6 +160,12 @@ class Settings(BaseSettings):
     DEEPGRAM_API_KEY: str | None = None
     ELEVENLABS_API_KEY: str | None = None
 
+    # LiveKit (Gemini Live agent worker)
+    LIVEKIT_URL: str = "ws://localhost:7880"
+    LIVEKIT_API_KEY: str = "devkey"
+    LIVEKIT_API_SECRET: str = "secret"
+    INTERNAL_API_SECRET: str = "internal-secret-change-in-prod"
+
     # Telephony
     TELNYX_API_KEY: str | None = None
     TELNYX_PUBLIC_KEY: str | None = None

@@ -62,6 +62,7 @@ dependencies = [
     "beautifulsoup4>=4.14.3",
     "lxml>=6.0.2",
     "openpyxl>=3.1.5",
+    "livekit-api>=1.1.0",
 ]
 
 [project.optional-dependencies]
