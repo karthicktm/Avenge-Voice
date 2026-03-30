@@ -99,6 +99,16 @@ async def execute_tool(
         openai_api_key=openai_api_key,
         tool_configs=agent.tool_configs or {},
     )
+
+    # Pre-warm category trees before categorize calls — same as GPT Realtime path.
+    # This loads all tree nodes into memory so LLM traversal (English→Swedish matching)
+    # can run without per-node DB queries.
+    if request.tool_name == "categorize":
+        import contextlib
+        async with contextlib.AsyncExitStack() as stack:
+            stack.enter_context(contextlib.suppress(Exception))
+            await tool_registry.prewarm_category_trees()
+
     result = await tool_registry.execute_tool(request.tool_name, request.arguments)
     return {"result": result}
 
