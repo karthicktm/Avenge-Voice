@@ -88,9 +88,16 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         end_call_event=end_call_event,
     ) if tool_defs else []
 
-    # Append call-initiation directive so Gemini speaks first without needing a user trigger
-    effective_instructions = instructions
-    if not initial_greeting:
+    # Inject greeting directive into instructions.
+    # session.say() does NOT work with native audio models (Gemini Live has no separate TTS).
+    # Instead, embed the greeting into instructions and use generate_reply() to trigger it.
+    if initial_greeting:
+        effective_instructions = (
+            instructions.rstrip()
+            + f'\n\nIMPORTANT: Begin this call by saying EXACTLY: "{initial_greeting}" — '
+            "say this as your very first utterance. Do not wait for the caller to speak."
+        )
+    else:
         effective_instructions = (
             instructions.rstrip()
             + "\n\nIMPORTANT: When the call connects, immediately greet the customer "
@@ -147,11 +154,16 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     # Give the audio track subscription a moment to complete before speaking
     await asyncio.sleep(2.5)
 
-    # Initiate the conversation — speak greeting so agent starts, not the user
-    if initial_greeting:
-        log.info("saying_greeting", text=initial_greeting[:50])
-        await session.say(initial_greeting)
-        log.info("greeting_said")
+    # Trigger Gemini to generate its opening greeting.
+    # session.say() requires a separate TTS model which Gemini Live doesn't use.
+    # generate_reply() with instructions tells Gemini to speak now using its native audio.
+    greeting_hint = initial_greeting[:60] if initial_greeting else "opening greeting"
+    log.info("triggering_greeting", hint=greeting_hint)
+    await session.generate_reply(
+        instructions=f'Say your opening greeting now: "{initial_greeting}"' if initial_greeting
+        else "Say your opening greeting to the caller now."
+    )
+    log.info("greeting_triggered")
 
     # Wait for either: room disconnect OR end_call tool invoked
     disconnected = asyncio.Event()
