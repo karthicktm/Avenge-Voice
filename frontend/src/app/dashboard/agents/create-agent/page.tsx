@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { createAgent, type CreateAgentRequest } from "@/lib/api/agents";
 import { api } from "@/lib/api";
 import { AVAILABLE_INTEGRATIONS } from "@/lib/integrations";
+import { listCategoryTrees, type TreeMeta } from "@/lib/api/category-trees";
+import { listCollections, type LookupCollection } from "@/lib/api/lookup";
 import { getLanguagesForTier, getFallbackLanguage } from "@/lib/languages";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -230,6 +232,19 @@ export default function CreateAgentPage() {
   const currentLanguage = useWatch({ control: form.control, name: "language" });
   const aiProvider = useWatch({ control: form.control, name: "aiProvider" });
   const isGeminiLive = aiProvider === "gemini-live";
+  const selectedWorkspaces = useWatch({ control: form.control, name: "selectedWorkspaces" });
+
+  const { data: categoryTrees = [] } = useQuery<TreeMeta[]>({
+    queryKey: ["category-trees", selectedWorkspaces?.[0]],
+    queryFn: () => listCategoryTrees(selectedWorkspaces?.[0] ?? ""),
+    enabled: !!selectedWorkspaces?.[0],
+  });
+
+  const { data: lookupCollections = [] } = useQuery<LookupCollection[]>({
+    queryKey: ["lookup-collections", selectedWorkspaces?.[0]],
+    queryFn: () => listCollections(selectedWorkspaces?.[0]),
+    enabled: !!selectedWorkspaces?.[0],
+  });
 
   const selectedTier = useMemo(
     () => PRICING_TIERS.find((t) => t.id === pricingTier),
@@ -1100,6 +1115,137 @@ Guidelines:
                                         );
                                       })}
                                     </div>
+
+                                    {/* Category Tree Configuration */}
+                                    {integration.id === "category_tree" && (
+                                      <div className="mt-4 space-y-3 rounded-lg border bg-background p-4">
+                                        <h4 className="text-sm font-medium">
+                                          Category Tree Configuration
+                                        </h4>
+                                        <p className="text-xs text-muted-foreground">
+                                          Select the category tree this agent will use to classify
+                                          caller issues.
+                                        </p>
+                                        <div className="space-y-1.5">
+                                          <label className="text-xs font-medium">
+                                            Category Tree
+                                          </label>
+                                          <Select
+                                            value={
+                                              form.watch("toolConfigs.categorize.tree_name") || ""
+                                            }
+                                            onValueChange={(val) => {
+                                              const currentConfigs =
+                                                form.getValues("toolConfigs") || {};
+                                              form.setValue(
+                                                "toolConfigs",
+                                                {
+                                                  ...currentConfigs,
+                                                  categorize: {
+                                                    ...currentConfigs.categorize,
+                                                    tree_name: val,
+                                                  },
+                                                },
+                                                { shouldDirty: true }
+                                              );
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-8">
+                                              <SelectValue
+                                                placeholder={
+                                                  selectedWorkspaces?.[0]
+                                                    ? "Select a category tree…"
+                                                    : "Select a workspace first"
+                                                }
+                                              />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {categoryTrees.length === 0 ? (
+                                                <SelectItem value="_none" disabled>
+                                                  {selectedWorkspaces?.[0]
+                                                    ? "No trees found — create one in Category Trees"
+                                                    : "Select a workspace to see trees"}
+                                                </SelectItem>
+                                              ) : (
+                                                categoryTrees.map((tree) => (
+                                                  <SelectItem
+                                                    key={tree.tree_name}
+                                                    value={tree.tree_name}
+                                                  >
+                                                    {tree.tree_name}
+                                                  </SelectItem>
+                                                ))
+                                              )}
+                                            </SelectContent>
+                                          </Select>
+                                          <p className="text-xs text-muted-foreground">
+                                            The agent will call{" "}
+                                            <code className="font-mono">
+                                              categorize(tree_name=&quot;…&quot;)
+                                            </code>{" "}
+                                            using this tree.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Lookup Configuration */}
+                                    {integration.id === "lookup" && (
+                                      <div className="mt-4 space-y-3 rounded-lg border bg-background p-4">
+                                        <h4 className="text-sm font-medium">
+                                          Lookup Configuration
+                                        </h4>
+                                        <p className="text-xs text-muted-foreground">
+                                          Optionally restrict the agent to search a specific
+                                          collection only.
+                                        </p>
+                                        <div className="space-y-1.5">
+                                          <label className="text-xs font-medium">
+                                            Default Collection (Optional)
+                                          </label>
+                                          <Select
+                                            value={
+                                              form.watch(
+                                                "toolConfigs.lookup_search.collection_id"
+                                              ) || ""
+                                            }
+                                            onValueChange={(val) => {
+                                              const currentConfigs =
+                                                form.getValues("toolConfigs") || {};
+                                              form.setValue(
+                                                "toolConfigs",
+                                                {
+                                                  ...currentConfigs,
+                                                  lookup_search: {
+                                                    ...currentConfigs.lookup_search,
+                                                    collection_id: val === "_all" ? "" : val,
+                                                  },
+                                                },
+                                                { shouldDirty: true }
+                                              );
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-8">
+                                              <SelectValue placeholder="Search all collections" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="_all">
+                                                Search all collections
+                                              </SelectItem>
+                                              {lookupCollections.map((col) => (
+                                                <SelectItem key={col.id} value={col.id}>
+                                                  {col.name}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                          <p className="text-xs text-muted-foreground">
+                                            Leave blank to search across all collections in the
+                                            workspace.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
 
                                     {/* Knowledge Base Configuration - Translation Settings Only */}
                                     {integration.id === "knowledge_base" && (

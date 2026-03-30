@@ -72,6 +72,7 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     model_name = config.get("model", "gemini-3.1-flash-live-preview")
     tool_defs: list[dict] = config.get("tools", [])
     initial_greeting = config.get("initial_greeting") or ""
+    categorize_tree_name = config.get("categorize_tree_name", "")
 
     if not google_api_key:
         log.error("missing_google_api_key")
@@ -91,12 +92,17 @@ async def run_gemini_agent(ctx: JobContext) -> None:
 
     # Build effective instructions: tool-use rules FIRST (highest priority for Gemini),
     # then system prompt. Greeting is handled separately via TTS — do NOT instruct Gemini to greet.
-    effective_instructions = (
-        "## CRITICAL TOOL RULES — FOLLOW BEFORE ANYTHING ELSE\n"
-        "1. CATEGORIZE BEFORE SPEAKING: DO NOT state any category, issue type, or priority under ANY circumstances without first calling categorize(text=<issue description>, tree_name='k2a_categories'). "
+    categorize_rule = (
+        f"1. CATEGORIZE BEFORE SPEAKING: DO NOT state any category, issue type, or priority under ANY circumstances without first calling categorize(text=<issue description>, tree_name='{categorize_tree_name}'). "
         "The moment a caller describes a problem or issue, your VERY NEXT action MUST be a categorize() tool call — not speech. "
         "Inventing or guessing a category without calling the tool is a critical failure.\n"
-        "2. NEVER say 'I wasn't able to find' or 'I couldn't find' without FIRST calling a tool.\n"
+        if categorize_tree_name else
+        "1. NEVER guess or invent categories — only speak about categories after calling a tool.\n"
+    )
+    effective_instructions = (
+        "## CRITICAL TOOL RULES — FOLLOW BEFORE ANYTHING ELSE\n"
+        + categorize_rule
+        + "2. NEVER say 'I wasn't able to find' or 'I couldn't find' without FIRST calling a tool.\n"
         "3. For EXISTING tenants (STEP 3): as soon as they provide their phone number, call lookup_search(query=<phone number>) immediately to look up their record before continuing.\n"
         "4. For NEW/PROSPECTIVE tenants (STEP 2): as soon as they mention a property name, area or city, call lookup_search(query=<their input>) immediately. This applies to queries like 'Stockholm', 'Vällingby', 'Hinderbanan' etc.\n"
         "5. For EXISTING tenants (STEP 5): after confirming their property and collecting the issue, call lookup_search(query=<property name>) immediately.\n"

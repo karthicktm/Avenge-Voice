@@ -132,6 +132,8 @@ async def get_gemini_token(
     room_name = f"gemini-{agent_id}-{uuid.uuid4().hex[:8]}"
     participant_identity = f"user-{user_id}"
 
+    categorize_tree_name = (agent.tool_configs or {}).get("categorize", {}).get("tree_name", "")
+
     room_metadata = json.dumps(
         {
             "agent_id": str(agent.id),
@@ -143,6 +145,7 @@ async def get_gemini_token(
             "temperature": agent.temperature,
             "initial_greeting": agent.initial_greeting or "",
             "tools": tools,
+            "categorize_tree_name": categorize_tree_name,
         }
     )
 
