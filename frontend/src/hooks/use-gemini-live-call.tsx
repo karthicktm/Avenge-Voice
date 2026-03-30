@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { Room, RoomEvent, Track, type RemoteTrack } from "livekit-client";
+import { api } from "@/lib/api";
 
 export type GeminiConnectionStatus = "idle" | "connecting" | "connected" | "disconnected";
 
@@ -46,24 +47,13 @@ export function useGeminiLiveCall({ onTranscriptUpdate }: UseGeminiLiveCallOptio
       setTranscript([]);
 
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-        const authToken =
-          typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
-
-        const resp = await fetch(
-          `${apiBase}/api/v1/gemini/token/${agentId}?workspace_id=${workspaceId}`,
-          {
-            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-          }
-        );
-        if (!resp.ok) {
-          throw new Error(`Token request failed: ${resp.status}`);
-        }
-        const data = (await resp.json()) as {
+        const { data } = await api.get<{
           livekit_url: string;
           token: string;
           agent: { name: string; initial_greeting?: string };
-        };
+        }>(`/api/v1/gemini/token/${agentId}`, {
+          params: { workspace_id: workspaceId },
+        });
 
         const room = new Room({
           audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true },
