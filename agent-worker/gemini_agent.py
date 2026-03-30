@@ -155,8 +155,8 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     log.info("gemini_agent_running", model=model_name, voice=voice, tools=len(tools),
              session_start_ms=round((time.monotonic() - t_start) * 1000))
 
-    # Give the audio track subscription a moment to complete before speaking
-    await asyncio.sleep(2.5)
+    # Brief pause for audio track subscription to complete
+    await asyncio.sleep(0.5)
 
     # With proactivity=True, Gemini will proactively speak when the session is idle.
     # The instructions tell it to greet immediately, so no manual trigger needed.
