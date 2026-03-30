@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { Room, RoomEvent, Track, type RemoteTrack } from "livekit-client";
+import { Room, RoomEvent, Track, type RemoteTrack, type RemoteParticipant } from "livekit-client";
 import { api } from "@/lib/api";
 
 export type GeminiConnectionStatus = "idle" | "connecting" | "connected" | "disconnected";
@@ -98,6 +98,16 @@ export function useGeminiLiveCall({ onTranscriptUpdate }: UseGeminiLiveCallOptio
           if (audioRef.current) {
             audioRef.current.remove();
             audioRef.current = null;
+          }
+        });
+
+        // When the agent disconnects (end_call), disconnect the user too
+        room.on(RoomEvent.ParticipantDisconnected, (_participant: RemoteParticipant) => {
+          if (room.remoteParticipants.size === 0) {
+            intentionalDisconnectRef.current = true;
+            addItem({ speaker: "system", text: "Call ended" });
+            setStatus("idle");
+            void room.disconnect();
           }
         });
 

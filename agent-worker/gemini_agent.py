@@ -9,6 +9,7 @@ import httpx
 import structlog
 from livekit.agents import Agent, AgentSession, ConversationItemAddedEvent, JobContext, UserInputTranscribedEvent
 from livekit.plugins.google import realtime
+from livekit.plugins.google.beta.gemini_tts import TTS as GeminiTTS
 
 from config import settings
 from tool_bridge import build_tools
@@ -89,21 +90,18 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     ) if tool_defs else []
 
     # Build effective instructions: tool-use rules FIRST (highest priority for Gemini),
-    # then system prompt, then greeting directive.
-    greeting_directive = (
-        f'Your FIRST utterance must be exactly: "{initial_greeting}"'
-        if initial_greeting
-        else "Begin immediately with a warm greeting. Do not wait for the caller to speak."
-    )
-
+    # then system prompt. Greeting is handled separately via TTS — do NOT instruct Gemini to greet.
     effective_instructions = (
         "## CRITICAL TOOL RULES — FOLLOW BEFORE ANYTHING ELSE\n"
-        "1. NEVER say 'I wasn't able to find' or 'I couldn't find' without FIRST calling a tool.\n"
-        "2. For NEW/PROSPECTIVE tenants (STEP 2): as soon as they mention a property name, area or city, call lookup_search(query=<their input>) immediately. This applies to queries like 'Stockholm', 'Vällingby', 'Hinderbanan' etc.\n"
-        "3. For EXISTING tenants (STEP 5): after collecting property name and issue, call lookup_search(query=<property name + issue keywords>) immediately.\n"
-        "4. When a caller describes an issue: call categorize(text=<issue>, tree_name='k2a_categories') immediately.\n"
-        "5. ALWAYS call the tool FIRST, then speak based on what the tool returns. Never guess or use internal knowledge.\n"
-        "6. " + greeting_directive + "\n\n"
+        "1. CATEGORIZE BEFORE SPEAKING: DO NOT state any category, issue type, or priority under ANY circumstances without first calling categorize(text=<issue description>, tree_name='k2a_categories'). "
+        "The moment a caller describes a problem or issue, your VERY NEXT action MUST be a categorize() tool call — not speech. "
+        "Inventing or guessing a category without calling the tool is a critical failure.\n"
+        "2. NEVER say 'I wasn't able to find' or 'I couldn't find' without FIRST calling a tool.\n"
+        "3. For EXISTING tenants (STEP 3): as soon as they provide their phone number, call lookup_search(query=<phone number>) immediately to look up their record before continuing.\n"
+        "4. For NEW/PROSPECTIVE tenants (STEP 2): as soon as they mention a property name, area or city, call lookup_search(query=<their input>) immediately. This applies to queries like 'Stockholm', 'Vällingby', 'Hinderbanan' etc.\n"
+        "5. For EXISTING tenants (STEP 5): after confirming their property and collecting the issue, call lookup_search(query=<property name>) immediately.\n"
+        "6. ALWAYS call tools FIRST, then speak based on what they return. Never guess or use internal knowledge.\n"
+        "7. The opening greeting has already been spoken. DO NOT greet again. Wait for the caller to respond.\n\n"
         + instructions
     )
 
@@ -114,7 +112,6 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         api_key=google_api_key,
         api_version="v1alpha",
         temperature=config.get("temperature", 0.7),
-        proactivity=True,  # Allow Gemini to speak first without waiting for user audio
     )
 
     agent = Agent(instructions=effective_instructions, tools=tools)
@@ -155,13 +152,22 @@ async def run_gemini_agent(ctx: JobContext) -> None:
     log.info("gemini_agent_running", model=model_name, voice=voice, tools=len(tools),
              session_start_ms=round((time.monotonic() - t_start) * 1000))
 
-    # Brief pause for audio track subscription to complete
+    # Brief pause for audio track subscription to complete.
     await asyncio.sleep(0.5)
 
-    # With proactivity=True, Gemini will proactively speak when the session is idle.
-    # The instructions tell it to greet immediately, so no manual trigger needed.
-    # generate_reply() causes 1007 on v1alpha regardless of parameters.
-    log.info("greeting_via_proactivity")
+    # Speak the initial greeting via Gemini TTS, then Gemini Live takes over.
+    greeting_text = initial_greeting or "Hello, thanks for calling. How can I help you today?"
+    try:
+        tts_engine = GeminiTTS(api_key=google_api_key, voice_name=voice)
+
+        async def _greeting_audio():
+            async for chunk in tts_engine.synthesize(greeting_text):
+                yield chunk.frame
+
+        session.say(greeting_text, audio=_greeting_audio())
+        log.info("greeting_via_tts", text=greeting_text)
+    except Exception as e:
+        log.warning("greeting_tts_failed", error=str(e))
 
     # Wait for either: room disconnect OR end_call tool invoked
     disconnected = asyncio.Event()
