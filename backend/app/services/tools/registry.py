@@ -809,6 +809,19 @@ class ToolRegistry:
 
         # Categorization tools
         if tool_name == "categorize":
+            # Override tree_name with configured value if Gemini omits or hallucinates one
+            configured_tree_name = self.tool_configs.get("categorize", {}).get("tree_name", "")
+            provided_tree_name = str(arguments.get("tree_name", "")).strip()
+            # Use configured tree_name when: not provided, or provided name not in prewarmed trees
+            if configured_tree_name and (
+                not provided_tree_name
+                or (
+                    self._prewarmed_trees
+                    and provided_tree_name not in self._prewarmed_trees
+                    and configured_tree_name in self._prewarmed_trees
+                )
+            ):
+                arguments = {**arguments, "tree_name": configured_tree_name}
             tree_name = str(arguments.get("tree_name", ""))
             text_norm = str(arguments.get("text", "")).lower().strip()
             session_key = f"categorize:{tree_name}:{text_norm}"

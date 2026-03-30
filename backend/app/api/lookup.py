@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import VerifiedUser
@@ -142,7 +142,13 @@ async def list_collections(
     """List all collections scoped to workspace or user."""
     stmt = select(LookupCollection)
     if workspace_id:
-        stmt = stmt.where(LookupCollection.workspace_id == workspace_id)
+        # Include both workspace-scoped and user-scoped collections (same as tool execution)
+        stmt = stmt.where(
+            or_(
+                LookupCollection.workspace_id == workspace_id,
+                LookupCollection.user_id == user.id,
+            )
+        )
     else:
         stmt = stmt.where(LookupCollection.user_id == user.id)
     stmt = stmt.order_by(LookupCollection.created_at.desc())
