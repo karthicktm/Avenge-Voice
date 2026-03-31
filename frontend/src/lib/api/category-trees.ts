@@ -59,6 +59,7 @@ export interface NodeUpdateRequest {
   code?: string | null;
   parent_id?: string | null;
   position?: number;
+  metadata?: CategoryNodeMetadata | null;
 }
 
 export interface DiscoverHints {

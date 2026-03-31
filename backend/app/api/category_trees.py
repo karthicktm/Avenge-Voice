@@ -83,6 +83,7 @@ class NodeUpdateRequest(BaseModel):
     code: str | None = Field(None, max_length=80)
     parent_id: uuid.UUID | None = None
     position: int | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class DiscoverHints(BaseModel):
@@ -1330,6 +1331,10 @@ async def update_node(
         node.code = body.code
     if body.position is not None:
         node.position = body.position
+    if body.metadata is not None:
+        # Merge with existing metadata so unedited keys are preserved
+        existing = node.node_metadata or {}
+        node.node_metadata = {**existing, **body.metadata}
     if body.parent_id is not None:
         parent = await _get_node_or_404(body.parent_id, user.id, db)
         node.parent_id = parent.id

@@ -665,6 +665,8 @@ function NodeMetadataPanel({ metadata }: { metadata: CategoryNodeMetadata }) {
 // Node edit modal
 // ---------------------------------------------------------------------------
 
+const URGENCY_OPTIONS = ["Prio 1", "Prio 2", "Prio 3", "Blandat"];
+
 function NodeEditModal({
   open,
   node,
@@ -680,6 +682,17 @@ function NodeEditModal({
 }) {
   const [label, setLabel] = useState(node?.label ?? "");
   const [code, setCode] = useState(node?.code ?? "");
+  const [exampleQuery, setExampleQuery] = useState(node?.metadata?.example_query ?? "");
+  const [urgencyLevel, setUrgencyLevel] = useState(node?.metadata?.urgency_level ?? "");
+  const [selfResolution, setSelfResolution] = useState(node?.metadata?.self_resolution ?? false);
+  const [canReportFault, setCanReportFault] = useState(node?.metadata?.can_report_fault ?? false);
+  const [requiresManualSupport, setRequiresManualSupport] = useState(
+    node?.metadata?.requires_manual_support ?? false
+  );
+  const [requiresPropertyInfo, setRequiresPropertyInfo] = useState(
+    node?.metadata?.requires_property_info ?? false
+  );
+  const [infoToCollect, setInfoToCollect] = useState(node?.metadata?.info_to_collect ?? "");
   const [saving, setSaving] = useState(false);
 
   // Reset when node changes
@@ -688,6 +701,13 @@ function NodeEditModal({
     prevId.current = node?.id;
     setLabel(node?.label ?? "");
     setCode(node?.code ?? "");
+    setExampleQuery(node?.metadata?.example_query ?? "");
+    setUrgencyLevel(node?.metadata?.urgency_level ?? "");
+    setSelfResolution(node?.metadata?.self_resolution ?? false);
+    setCanReportFault(node?.metadata?.can_report_fault ?? false);
+    setRequiresManualSupport(node?.metadata?.requires_manual_support ?? false);
+    setRequiresPropertyInfo(node?.metadata?.requires_property_info ?? false);
+    setInfoToCollect(node?.metadata?.info_to_collect ?? "");
   }
 
   async function handleSave() {
@@ -700,6 +720,15 @@ function NodeEditModal({
       await updateCategoryNode(workspaceId, node.tree_name, node.id, {
         label: label.trim(),
         code: code.trim() || null,
+        metadata: {
+          ...(exampleQuery.trim() ? { example_query: exampleQuery.trim() } : {}),
+          ...(urgencyLevel ? { urgency_level: urgencyLevel } : {}),
+          self_resolution: selfResolution,
+          can_report_fault: canReportFault,
+          requires_manual_support: requiresManualSupport,
+          requires_property_info: requiresPropertyInfo,
+          ...(infoToCollect.trim() ? { info_to_collect: infoToCollect.trim() } : {}),
+        },
       });
       toast.success("Node updated");
       onSaved();
@@ -713,7 +742,7 @@ function NodeEditModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Node</DialogTitle>
         </DialogHeader>
@@ -730,7 +759,70 @@ function NodeEditModal({
             <Label>Code (optional)</Label>
             <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. W001" />
           </div>
-          {node?.metadata && <NodeMetadataPanel metadata={node.metadata} />}
+
+          <div className="space-y-3 rounded-md border border-border/60 bg-muted/20 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Metadata
+            </p>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Example query</Label>
+              <Input
+                value={exampleQuery}
+                onChange={(e) => setExampleQuery(e.target.value)}
+                placeholder='e.g. "My heating is broken"'
+                className="text-sm"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Urgency level</Label>
+              <select
+                value={urgencyLevel}
+                onChange={(e) => setUrgencyLevel(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+              >
+                <option value="">— not set —</option>
+                {URGENCY_OPTIONS.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Info to collect from caller</Label>
+              <textarea
+                value={infoToCollect}
+                onChange={(e) => setInfoToCollect(e.target.value)}
+                placeholder="Questions the agent should ask..."
+                rows={2}
+                className="w-full resize-none rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  ["Self-resolution possible", selfResolution, setSelfResolution],
+                  ["Can report fault", canReportFault, setCanReportFault],
+                  ["Requires manual support", requiresManualSupport, setRequiresManualSupport],
+                  ["Property info needed", requiresPropertyInfo, setRequiresPropertyInfo],
+                ] as [string, boolean, (v: boolean) => void][]
+              ).map(([lbl, val, setter]) => (
+                <label key={lbl} className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={val}
+                    onChange={(e) => setter(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded"
+                  />
+                  <span className="text-xs text-muted-foreground">{lbl}</span>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
