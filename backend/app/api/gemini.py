@@ -1,5 +1,6 @@
 """Gemini Live API — LiveKit token vending for Gemini voice agents."""
 
+import contextlib
 import json
 import uuid
 from typing import Any
@@ -11,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.integrations import get_workspace_integrations
+from app.api.realtime import get_openai_api_key_for_workspace
 from app.api.settings import get_user_api_keys
 from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.core.config import settings
@@ -117,6 +119,13 @@ async def get_gemini_token(
         use_best_practices=agent.use_best_practices,
     )
 
+    # OpenAI key is optional for Gemini — used only for LLM fallback in lookup/categorize
+    openai_api_key: str | None = None
+    with contextlib.suppress(HTTPException):
+        openai_api_key = await get_openai_api_key_for_workspace(
+            user_uuid, workspace_uuid, db, token_logger
+        )
+
     integrations = await get_workspace_integrations(user_uuid, workspace_uuid, db)
     tool_registry = ToolRegistry(
         db,
@@ -124,7 +133,7 @@ async def get_gemini_token(
         integrations=integrations,
         workspace_id=workspace_uuid,
         agent_id=agent.id,
-        openai_api_key=None,
+        openai_api_key=openai_api_key,
         tool_configs=agent.tool_configs or {},
     )
     tools = tool_registry.get_all_tool_definitions(enabled_tools, agent.enabled_tool_ids)
