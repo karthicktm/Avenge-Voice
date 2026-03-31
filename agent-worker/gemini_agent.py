@@ -90,12 +90,15 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         end_call_event=end_call_event,
     ) if tool_defs else []
 
+
     # Build effective instructions: tool-use rules FIRST (highest priority for Gemini),
     # then system prompt. Greeting is handled separately via TTS — do NOT instruct Gemini to greet.
     categorize_rule = (
-        f"1. CATEGORIZE BEFORE SPEAKING: DO NOT state any category, issue type, or priority under ANY circumstances without first calling categorize(text=<issue description>, tree_name='{categorize_tree_name}'). "
-        "The moment a caller describes a problem or issue, your VERY NEXT action MUST be a categorize() tool call — not speech. "
-        "Inventing or guessing a category without calling the tool is a critical failure.\n"
+        f"1. CATEGORIZE ISSUES — SAY ACK FIRST, THEN CALL TOOL: When a caller describes a problem or issue, "
+        f"FIRST say a brief spoken acknowledgment — for example 'Let me note that down', 'One moment', or 'Got it, let me log that' — "
+        f"and THEN immediately call categorize(text=<issue description>, tree_name='{categorize_tree_name}'). "
+        "NEVER state, guess or invent any category, issue type or priority before calling the tool. "
+        "The ack keeps the caller informed while the tool runs. Silence during tool calls is not acceptable.\n"
         if categorize_tree_name else
         "1. NEVER guess or invent categories — only speak about categories after calling a tool.\n"
     )
@@ -106,7 +109,7 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         "3. For EXISTING tenants (STEP 3): as soon as they provide their phone number, call lookup_search(query=<phone number>) immediately to look up their record before continuing.\n"
         "4. For NEW/PROSPECTIVE tenants (STEP 2): as soon as they mention a property name, area or city, call lookup_search(query=<their input>) immediately. This applies to queries like 'Stockholm', 'Vällingby', 'Hinderbanan' etc.\n"
         "5. For EXISTING tenants (STEP 5): after confirming their property and collecting the issue, call lookup_search(query=<property name>) immediately.\n"
-        "6. ALWAYS call tools FIRST, then speak based on what they return. Never guess or use internal knowledge.\n"
+        "6. ALWAYS say a brief acknowledgment (e.g. 'One moment', 'Let me check') BEFORE calling any tool — then call the tool — then speak based on what it returns. Never guess or use internal knowledge. Never be silent during tool calls.\n"
         "7. The opening greeting has already been spoken. DO NOT greet again. Wait for the caller to respond.\n\n"
         + instructions
     )
