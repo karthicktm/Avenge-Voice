@@ -266,7 +266,7 @@ class LookupTools:
                     stmt.with_only_columns(func.count()).order_by(None)
                 )
                 total_records = count_result.scalar() or 0
-                self.log.info(
+                self.log.warning(
                     "lookup_search_fallback4",
                     query=query_str,
                     scoped_record_count=total_records,
