@@ -78,6 +78,25 @@ async def run_gemini_agent(ctx: JobContext) -> None:
         log.error("missing_google_api_key")
         return
 
+    # Pre-synthesize greeting in background — runs while we set up tools and wait
+    # for the participant to join, so the audio is buffered and ready to play
+    # immediately after session.start(), cutting perceived startup delay.
+    greeting_text = initial_greeting or "Hello, thanks for calling. How can I help you today?"
+    tts_engine = GeminiTTS(api_key=google_api_key, voice_name=voice)
+    _greeting_frames: list = []
+    _presynth_done = asyncio.Event()
+
+    async def _presynthesize_greeting() -> None:
+        try:
+            async for chunk in tts_engine.synthesize(greeting_text):
+                _greeting_frames.append(chunk.frame)
+        except Exception as exc:
+            log.warning("greeting_presynth_failed", error=str(exc))
+        finally:
+            _presynth_done.set()
+
+    _presynth_task = asyncio.create_task(_presynthesize_greeting())
+
     # Event to signal end_call tool was invoked
     end_call_event = asyncio.Event()
 
@@ -162,19 +181,26 @@ async def run_gemini_agent(ctx: JobContext) -> None:
              session_start_ms=round((time.monotonic() - t_start) * 1000))
 
     # Brief pause for audio track subscription to complete.
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.1)
 
-    # Speak the initial greeting via Gemini TTS, then Gemini Live takes over.
-    greeting_text = initial_greeting or "Hello, thanks for calling. How can I help you today?"
+    # Wait for pre-synthesis to finish, then play from the buffered frames.
+    # Pre-synthesis started earlier and ran in parallel with session setup,
+    # so the audio is usually already ready by the time we get here.
     try:
-        tts_engine = GeminiTTS(api_key=google_api_key, voice_name=voice)
+        await _presynth_task  # nearly always done by now — minimal extra wait
+        if _greeting_frames:
+            async def _play_buffered():
+                for frame in _greeting_frames:
+                    yield frame
 
-        async def _greeting_audio():
-            async for chunk in tts_engine.synthesize(greeting_text):
-                yield chunk.frame
-
-        session.say(greeting_text, audio=_greeting_audio())
-        log.info("greeting_via_tts", text=greeting_text)
+            session.say(greeting_text, audio=_play_buffered())
+            log.info("greeting_via_tts", text=greeting_text)
+        else:
+            log.warning("greeting_presynth_empty_fallback", text=greeting_text)
+            async def _greeting_audio():
+                async for chunk in tts_engine.synthesize(greeting_text):
+                    yield chunk.frame
+            session.say(greeting_text, audio=_greeting_audio())
     except Exception as e:
         log.warning("greeting_tts_failed", error=str(e))
 
