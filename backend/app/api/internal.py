@@ -10,7 +10,7 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.integrations import get_workspace_integrations
@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.call_record import CallRecord
+from app.models.lookup import LookupCollection, LookupRecord
 from app.models.phone_number import PhoneNumber
 from app.models.workspace import AgentWorkspace
 from app.services.tools.registry import ToolRegistry
@@ -182,4 +183,68 @@ async def get_agent_for_phone(
     return {
         "agent_id": str(agent.id),
         "workspace_id": str(ws.workspace_id) if ws else None,
+    }
+
+
+@router.get("/debug/lookup/{agent_id}", dependencies=[Depends(_verify_internal_secret)])
+async def debug_lookup_scope(
+    agent_id: str,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Debug endpoint: show what lookup collections and records are visible for an agent."""
+    agent_uuid = uuid.UUID(agent_id)
+    workspace_uuid = uuid.UUID(workspace_id)
+    agent = await _get_agent_with_workspace(agent_uuid, workspace_uuid, db)
+
+    # Fetch OpenAI key status
+    agent_user_uuid = user_id_to_uuid(agent.user_id)
+    ws_settings = await get_user_api_keys(agent_user_uuid, db, workspace_id=workspace_uuid)
+    openai_key_source = "none"
+    if ws_settings and ws_settings.openai_api_key:
+        openai_key_source = "workspace_settings"
+    elif settings.OPENAI_API_KEY:
+        openai_key_source = "system_env"
+
+    # Count collections visible under OR(workspace_id, user_id) scope
+    coll_stmt = select(
+        LookupCollection.id,
+        LookupCollection.name,
+        LookupCollection.workspace_id,
+        LookupCollection.user_id,
+        LookupCollection.is_active,
+        func.count(LookupRecord.id).label("record_count"),
+    ).outerjoin(LookupRecord, LookupRecord.collection_id == LookupCollection.id).group_by(
+        LookupCollection.id,
+        LookupCollection.name,
+        LookupCollection.workspace_id,
+        LookupCollection.user_id,
+        LookupCollection.is_active,
+    ).where(
+        or_(
+            LookupCollection.workspace_id == workspace_uuid,
+            LookupCollection.user_id == agent.user_id,
+        )
+    )
+    result = await db.execute(coll_stmt)
+    collections = [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "workspace_id": str(r.workspace_id) if r.workspace_id else None,
+            "user_id": r.user_id,
+            "is_active": r.is_active,
+            "record_count": r.record_count,
+        }
+        for r in result.fetchall()
+    ]
+
+    return {
+        "agent_id": agent_id,
+        "agent_user_id": agent.user_id,
+        "workspace_id": workspace_id,
+        "tool_configs": agent.tool_configs,
+        "openai_key_source": openai_key_source,
+        "visible_collections": collections,
+        "total_collections": len(collections),
     }
