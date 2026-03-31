@@ -259,8 +259,23 @@ class LookupTools:
             # all return nothing. Fetches all titles from the collection, asks
             # gpt-4o-mini to pick the best match. Handles any ASR garbling that
             # the lexical/trigram layers cannot bridge.
-            if not rows and self.openai_api_key:
-                rows = await self._llm_select(stmt, query_str, limit)
+            if not rows:
+                # Log how many records the scoped base query can see — if 0, it's a
+                # scoping / data problem, not a search problem.
+                count_result = await self.db.execute(
+                    stmt.with_only_columns(func.count()).order_by(None)
+                )
+                total_records = count_result.scalar() or 0
+                self.log.info(
+                    "lookup_search_fallback4",
+                    query=query_str,
+                    scoped_record_count=total_records,
+                    has_openai_key=bool(self.openai_api_key),
+                    workspace_id=str(self.workspace_id),
+                    user_id=self.user_id,
+                )
+                if self.openai_api_key:
+                    rows = await self._llm_select(stmt, query_str, limit)
 
             if not rows:
                 return {
