@@ -80,10 +80,13 @@ async def execute_tool(
     workspace_uuid = uuid.UUID(request.workspace_id)
     agent = await _get_agent_with_workspace(agent_uuid, workspace_uuid, db)
 
-    integrations = await get_workspace_integrations(_SYSTEM_USER_UUID, workspace_uuid, db)
+    # Resolve agent owner UUID once — used for integrations, API keys, and scoping.
+    agent_user_uuid = user_id_to_uuid(agent.user_id)
+
+    # Use the agent owner's UUID so user-scoped integrations (Resend, GHL, etc.) are found.
+    integrations = await get_workspace_integrations(agent_user_uuid, workspace_uuid, db)
 
     # Fetch OpenAI key using the agent owner's user_id — needed for LLM-based tools (categorize, lookup LLM layer)
-    agent_user_uuid = user_id_to_uuid(agent.user_id)
     openai_api_key: str | None = None
     ws_settings = await get_user_api_keys(agent_user_uuid, db, workspace_id=workspace_uuid)
     if ws_settings:
