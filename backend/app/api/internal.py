@@ -90,9 +90,13 @@ async def execute_tool(
     else:
         openai_api_key = settings.OPENAI_API_KEY
 
+    # Use agent owner's user_id so user-scoped collections/trees are found correctly.
+    # request.user_id defaults to 0 (tool_bridge doesn't send it), which would miss
+    # any collections/trees scoped by user_id rather than workspace_id.
+    effective_user_id = agent.user_id if agent.user_id else request.user_id
     tool_registry = ToolRegistry(
         db,
-        request.user_id,
+        effective_user_id,
         integrations=integrations,
         workspace_id=workspace_uuid,
         agent_id=agent.id,
@@ -105,6 +109,7 @@ async def execute_tool(
     # can run without per-node DB queries.
     if request.tool_name == "categorize":
         import contextlib
+
         async with contextlib.AsyncExitStack() as stack:
             stack.enter_context(contextlib.suppress(Exception))
             await tool_registry.prewarm_category_trees()
@@ -155,9 +160,7 @@ async def get_agent_for_phone(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Look up which Gemini agent is assigned to a phone number (for SIP rooms)."""
-    result = await db.execute(
-        select(PhoneNumber).where(PhoneNumber.phone_number == phone_number)
-    )
+    result = await db.execute(select(PhoneNumber).where(PhoneNumber.phone_number == phone_number))
     phone = result.scalar_one_or_none()
     if not phone or not phone.assigned_agent_id:
         raise HTTPException(status_code=404, detail="No agent assigned to this number")
