@@ -447,6 +447,16 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     except Exception as audio_err:
                         log.exception("audio_send_error", error=str(audio_err))
 
+                elif event_type == "error":
+                    error_content = getattr(event, "error", None)
+                    log.warning(
+                        "realtime_api_error",
+                        error=str(error_content),
+                        error_type=getattr(error_content, "type", None),
+                        error_code=getattr(error_content, "code", None),
+                        error_message=getattr(error_content, "message", None),
+                    )
+
                 elif event_type == "input_audio_buffer.speech_started":
                     # Caller interrupted the agent — clear Twilio's playback buffer
                     # so buffered agent speech stops immediately.
@@ -815,6 +825,16 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                                 }
                             )
                         )
+
+                elif event_type == "error":
+                    error_content = getattr(event, "error", None)
+                    log.warning(
+                        "realtime_api_error",
+                        error=str(error_content),
+                        error_type=getattr(error_content, "type", None),
+                        error_code=getattr(error_content, "code", None),
+                        error_message=getattr(error_content, "message", None),
+                    )
 
                 elif event_type == "input_audio_buffer.speech_started":
                     # Caller interrupted the agent — clear Telnyx's playback buffer
