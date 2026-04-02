@@ -572,7 +572,7 @@ class GPTRealtimeSession:
             )
             raise
 
-    async def _configure_session(self) -> None:  # noqa: PLR0915
+    async def _configure_session(self) -> None:  # noqa: PLR0912, PLR0915
         """Configure Realtime API session with agent settings and internal tools."""
         if not self.connection or not self.tool_registry:
             self.logger.warning(
@@ -630,6 +630,17 @@ class GPTRealtimeSession:
         # Default to marin for natural conversational tone
         voice = self.agent_config.get("voice", "marin")
         temperature = self.agent_config.get("temperature", 0.6)
+        # gpt-realtime-2025-08-28 (telephony) requires temperature >= 0.6.
+        # Clamp silently so a low UI value doesn't reject the entire session.update().
+        model = self.agent_config.get("llm_model", "gpt-realtime-1.5")
+        _telephony_min_temp = 0.6
+        if model == "gpt-realtime-2025-08-28" and temperature < _telephony_min_temp:
+            self.logger.warning(
+                "temperature_clamped_for_telephony",
+                original=temperature,
+                clamped=_telephony_min_temp,
+            )
+            temperature = _telephony_min_temp
         campaign_context = self.agent_config.get("campaign_context")
         instructions = build_instructions_with_language(
             system_prompt,
