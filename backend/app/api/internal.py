@@ -210,23 +210,28 @@ async def debug_lookup_scope(
         openai_key_source = "system_env"
 
     # Count collections visible under OR(workspace_id, user_id) scope
-    coll_stmt = select(
-        LookupCollection.id,
-        LookupCollection.name,
-        LookupCollection.workspace_id,
-        LookupCollection.user_id,
-        LookupCollection.is_active,
-        func.count(LookupRecord.id).label("record_count"),
-    ).outerjoin(LookupRecord, LookupRecord.collection_id == LookupCollection.id).group_by(
-        LookupCollection.id,
-        LookupCollection.name,
-        LookupCollection.workspace_id,
-        LookupCollection.user_id,
-        LookupCollection.is_active,
-    ).where(
-        or_(
-            LookupCollection.workspace_id == workspace_uuid,
-            LookupCollection.user_id == agent.user_id,
+    coll_stmt = (
+        select(
+            LookupCollection.id,
+            LookupCollection.name,
+            LookupCollection.workspace_id,
+            LookupCollection.user_id,
+            LookupCollection.is_active,
+            func.count(LookupRecord.id).label("record_count"),
+        )
+        .outerjoin(LookupRecord, LookupRecord.collection_id == LookupCollection.id)
+        .group_by(
+            LookupCollection.id,
+            LookupCollection.name,
+            LookupCollection.workspace_id,
+            LookupCollection.user_id,
+            LookupCollection.is_active,
+        )
+        .where(
+            or_(
+                LookupCollection.workspace_id == workspace_uuid,
+                LookupCollection.user_id == agent.user_id,
+            )
         )
     )
     result = await db.execute(coll_stmt)

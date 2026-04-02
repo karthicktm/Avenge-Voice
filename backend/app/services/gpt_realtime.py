@@ -651,6 +651,20 @@ class GPTRealtimeSession:
 
         # Build turn detection config based on agent mode
         turn_detection_mode = self.agent_config.get("turn_detection_mode", "normal")
+
+        # Telephony models receive mulaw/PCM audio with line noise and echo that
+        # triggers server_vad immediately after response.created, cancelling function
+        # call responses before response.function_call_arguments.done fires. Force
+        # semantic_vad for telephony to prevent false triggers breaking tool calls.
+        model = self.agent_config.get("llm_model", "gpt-realtime-1.5")
+        if model == "gpt-realtime-2025-08-28" and turn_detection_mode == "normal":
+            turn_detection_mode = "semantic"
+            self.logger.warning(
+                "vad_overridden_for_telephony",
+                model=model,
+                new_mode="semantic",
+            )
+
         if turn_detection_mode == "disabled":
             turn_detection: dict[str, Any] | None = None
         elif turn_detection_mode == "semantic":
