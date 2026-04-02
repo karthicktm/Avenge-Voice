@@ -2,6 +2,7 @@
 
 # ruff: noqa: RUF001 - Contains intentional non-ASCII characters for internationalization
 
+import contextlib
 import json
 import types
 import uuid
@@ -373,13 +374,18 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
         )
 
     # Build the complete voice agent instructions
-    instructions = f"""[CONTEXT]
+    instructions = f"""[LANGUAGE — READ THIS FIRST]
+Default: {language_name}. ALWAYS respond in the language the caller is currently speaking.
+If the caller asks to switch language: switch IMMEDIATELY and NEVER revert — not even after a long pause.
+The best-practices text below is written in {language_name} as a style guide; it does NOT override this rule.
+
+[CONTEXT]
 Language: {language_name}
 Timezone: {tz_name}
 Current: {current_datetime}
 
 [RULES]
-- Default language is {language_name}. If the caller requests to speak in a different language, switch immediately and MAINTAIN that language for the rest of the call — do not revert to {language_name} unless the caller explicitly asks again. You handle all languages yourself without transferring.
+- Respond in the language the caller is speaking. If they switch, you switch permanently for the rest of the call.
 - All times are in {tz_name} timezone
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses to 1-2 sentences maximum - voice is conversational, not a monologue
@@ -839,6 +845,11 @@ class GPTRealtimeSession:
 
         # Send result back using SDK
         if self.connection:
+            # Clear audio accumulated during tool execution so VAD does not
+            # interrupt the model's response to the tool result.
+            with contextlib.suppress(Exception):
+                await self.connection.input_audio_buffer.clear()
+
             await self.connection.conversation.item.create(
                 item={
                     "type": "function_call_output",
