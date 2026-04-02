@@ -304,19 +304,92 @@ async def download_template(
     if fmt not in {"csv", "json", "xlsx"}:
         raise HTTPException(status_code=400, detail="Format must be csv, json, or xlsx")
 
-    example_rows = [
-        {"code": "W001", "level_1": "Water/leakage", "level_2": "Bathroom", "level_3": "Tap"},
-        {"code": "W002", "level_1": "Water/leakage", "level_2": "Kitchen", "level_3": "Sink"},
-        {"code": "H001", "level_1": "Heat/ventilation", "level_2": "Radiator", "level_3": ""},
+    # Shared column structure — matches the export format exactly so exported files
+    # can be edited and re-imported without column mapping issues.
+    template_header_cols = [
+        "code",
+        "level_1",
+        "level_2",
+        "level_3",
+        "level_4",
+        "level_1_example_query",
+        "level_2_example_query",
+        "level_3_example_query",
+        "example_query",
+        "urgency_level",
+        "self_resolution",
+        "requires_property_info",
+        "can_report_fault",
+        "requires_manual_support",
+        "info_to_collect",
+    ]
+
+    # Example rows aligned to template_header_cols
+    # code | l1 | l2 | l3 | l4 | l1_eq | l2_eq | l3_eq | eq | urgency | self | prop | fault | manual | info
+    template_example_rows: list[list[str]] = [
+        [
+            "W001",
+            "Water/leakage",
+            "Bathroom",
+            "Tap",
+            "",
+            "water leakage flooding drip",
+            "bathroom shower toilet tiles",
+            "tap faucet dripping running",
+            "The tap in my bathroom is dripping constantly",
+            "Prio 3",
+            "JA",
+            "NEJ",
+            "JA",
+            "NEJ",
+            "Ask how long it has been dripping and whether it is getting worse.",
+        ],
+        [
+            "W002",
+            "Water/leakage",
+            "Bathroom",
+            "Ceiling",
+            "",
+            "water leakage flooding drip",
+            "bathroom shower toilet tiles",
+            "ceiling wet stain",
+            "There is water dripping from my bathroom ceiling",
+            "Prio 1",
+            "NEJ",
+            "JA",
+            "JA",
+            "JA",
+            "Ask which floor they are on and whether the apartment above is aware.",
+        ],
+        [
+            "H001",
+            "Heat/ventilation",
+            "Radiator",
+            "",
+            "",
+            "heat ventilation cold warm temperature",
+            "radiator heating panel",
+            "",
+            "The radiator in my living room is not working",
+            "Prio 2",
+            "JA",
+            "NEJ",
+            "JA",
+            "NEJ",
+            "Ask if all radiators are affected or just this one.",
+        ],
     ]
 
     if fmt == "json":
         payload = [
             {
-                "code": r["code"],
-                "path": [v for v in [r["level_1"], r["level_2"], r["level_3"]] if v],
+                "code": r[0],
+                "path": [v for v in [r[1], r[2], r[3], r[4]] if v],
+                "metadata": {
+                    k: v for k, v in zip(template_header_cols[5:], r[5:], strict=False) if v
+                },
             }
-            for r in example_rows
+            for r in template_example_rows
         ]
         content = json.dumps(payload, indent=2)
         media = "application/json"
@@ -327,12 +400,10 @@ async def download_template(
 
     elif fmt == "csv":
         buf = io.StringIO()
-        writer = csv.DictWriter(
-            buf, fieldnames=["code", "level_1", "level_2", "level_3", "level_4"]
-        )
+        writer = csv.DictWriter(buf, fieldnames=template_header_cols)
         writer.writeheader()
-        for row in example_rows:
-            writer.writerow({**row, "level_4": ""})
+        for r in template_example_rows:
+            writer.writerow(dict(zip(template_header_cols, r, strict=False)))
         content_str = buf.getvalue()
         media = "text/csv"
         filename = "category_template.csv"
@@ -353,21 +424,7 @@ async def download_template(
         ws = wb.active
         ws.title = "Category Template"
 
-        header_cols = [
-            "code",
-            "level_1",
-            "level_2",
-            "level_3",
-            "level_4",
-            "example_query",
-            "urgency_level",
-            "self_resolution",
-            "requires_property_info",
-            "can_report_fault",
-            "requires_manual_support",
-            "info_to_collect",
-        ]
-        ws.append(header_cols)
+        ws.append(template_header_cols)
 
         # Style header row
         header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
@@ -376,52 +433,7 @@ async def download_template(
             cell.fill = header_fill
             cell.font = header_font
 
-        # Example rows with realistic data
-        example_data: list[list[str]] = [
-            [
-                "W001",
-                "Water/leakage",
-                "Bathroom",
-                "Tap",
-                "",
-                "The tap in my bathroom is dripping constantly",
-                "Prio 3",
-                "JA",
-                "NEJ",
-                "JA",
-                "NEJ",
-                "Ask how long it has been dripping and whether it is getting worse.",
-            ],
-            [
-                "W002",
-                "Water/leakage",
-                "Bathroom",
-                "Ceiling",
-                "",
-                "There is water dripping from my bathroom ceiling",
-                "Prio 1",
-                "NEJ",
-                "JA",
-                "JA",
-                "JA",
-                "Ask which floor they are on and whether the apartment above is aware.",
-            ],
-            [
-                "H001",
-                "Heat/ventilation",
-                "Radiator",
-                "",
-                "",
-                "The radiator in my living room is not working",
-                "Prio 2",
-                "JA",
-                "NEJ",
-                "JA",
-                "NEJ",
-                "Ask if all radiators are affected or just this one.",
-            ],
-        ]
-        for example_row in example_data:
+        for example_row in template_example_rows:
             ws.append(example_row)
 
         # Auto-fit column widths
