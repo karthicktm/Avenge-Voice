@@ -1,14 +1,25 @@
-"""Category tree enrichment — auto-generate example_query for nodes that lack one.
+"""Category tree enrichment — generate full metadata for every node.
 
-After a structured upload or on demand, this worker fetches every node in a
-category tree, builds its full label path, then asks gpt-4o to produce a
-compact set of search terms a caller might use to reach that node.
+After a structured upload or AI discovery, this worker fetches every node in a
+category tree, builds its full label path, then asks gpt-4o to produce:
 
-The generated terms are stored in node_metadata->>'example_query'.  The Postgres
-trigger on category_trees automatically rebuilds search_vector to include them,
-so FTS matching benefits immediately without any extra work.
+  - example_query      : search terms a caller might use (for FTS / LLM matching)
+  - urgency_level      : issue priority (e.g. "Prio 1" / "Prio 2" / "Prio 3")
+  - self_resolution    : whether the tenant can resolve without a technician (bool)
+  - requires_property_info : whether property-specific details are needed (bool)
+  - can_report_fault   : whether a formal fault report can be filed (bool)
+  - requires_manual_support : whether a human agent must handle this (bool)
+  - info_to_collect    : what questions to ask the caller (string)
+
+Fields that already have a value are preserved; only blank fields are filled in
+(unless overwrite=True, which regenerates everything).
+
+The generated values are merged into node_metadata (JSONB).  The Postgres
+trigger on category_trees automatically rebuilds search_vector to include the
+updated example_query, so FTS matching benefits immediately.
 """
 
+import json
 import uuid
 from typing import Any
 
@@ -16,25 +27,35 @@ import structlog
 
 logger = structlog.get_logger()
 
-_MODEL = "gpt-4o"  # full model — runs once at upload, quality matters
-_TERMS_PER_NODE = 10
+_MODEL = "gpt-4o"
+
+# Fields that enrich() will generate. Order matters for the prompt.
+_ENRICH_FIELDS = [
+    "example_query",
+    "urgency_level",
+    "self_resolution",
+    "requires_property_info",
+    "can_report_fault",
+    "requires_manual_support",
+    "info_to_collect",
+]
 
 
-async def enrich_example_queries(
+async def enrich_example_queries(  # noqa: PLR0915
     workspace_id: uuid.UUID,
     tree_name: str,
     user_id: int,
     openai_api_key: str,
     overwrite: bool = False,
 ) -> dict[str, Any]:
-    """Generate and persist example_query for every node that is missing one.
+    """Generate and persist full metadata for every node that is missing fields.
 
     Args:
         workspace_id: Workspace owning the tree.
         tree_name: Logical tree identifier.
         user_id: Integer user id — used to scope DB writes.
         openai_api_key: Key for gpt-4o calls.
-        overwrite: If True, regenerate even for nodes that already have one.
+        overwrite: If True, regenerate all fields even for nodes that already have them.
 
     Returns:
         Summary dict with enriched / skipped / failed counts.
@@ -82,18 +103,24 @@ async def enrich_example_queries(
         for node in nodes:
             meta = node.node_metadata or {}
 
-            if not overwrite and meta.get("example_query"):
+            # Determine which fields are missing (need generation)
+            if overwrite:
+                missing_fields = list(_ENRICH_FIELDS)
+            else:
+                missing_fields = [f for f in _ENRICH_FIELDS if not meta.get(f)]
+
+            if not missing_fields:
                 skipped += 1
                 continue
 
             path_str = " > ".join(paths[node.id])
             try:
-                terms = await _generate_terms(path_str, client, log)
-                if terms:
-                    node.node_metadata = {**meta, "example_query": terms}
+                generated = await _generate_metadata(path_str, missing_fields, client, log)
+                if generated:
+                    node.node_metadata = {**meta, **generated}
                     db.add(node)
                     enriched += 1
-                    log.info("node_enriched", path=path_str, terms=terms)
+                    log.info("node_enriched", path=path_str, fields=list(generated.keys()))
                 else:
                     failed += 1
             except Exception:
@@ -102,8 +129,6 @@ async def enrich_example_queries(
 
         if enriched:
             await db.commit()
-            # Invalidate the prewarmed tree cache so the next session sees the
-            # updated example_query values instead of the stale 1-hour Redis copy.
             try:
                 from app.db.redis import get_redis
 
@@ -116,39 +141,95 @@ async def enrich_example_queries(
     return {"enriched": enriched, "skipped": skipped, "failed": failed}
 
 
-async def _generate_terms(path: str, client: Any, log: Any) -> str | None:
-    """Ask gpt-4o for representative caller search terms for a category path.
+async def _generate_metadata(
+    path: str, fields: list[str], client: Any, log: Any
+) -> dict[str, Any] | None:
+    """Ask gpt-4o to generate the requested metadata fields for a category path.
 
-    Returns a space-separated string of terms, or None on failure.
+    Returns a dict of field → value, or None on failure.
     """
+    field_descriptions = {
+        "example_query": (
+            "10 short search terms (single words or 2-word phrases) a tenant might say "
+            "or type when reporting this issue. Include both the category language AND "
+            "English equivalents. Return as a single space-separated string."
+        ),
+        "urgency_level": (
+            "Issue urgency/priority. Use 'Prio 1' for urgent (health/safety risk, major damage), "
+            "'Prio 2' for important (significant inconvenience, risk of getting worse), "
+            "'Prio 3' for routine (minor inconvenience, cosmetic). Return one of: Prio 1, Prio 2, Prio 3."
+        ),
+        "self_resolution": (
+            "Can the tenant resolve this themselves without a technician visiting? "
+            "Return true or false."
+        ),
+        "requires_property_info": (
+            "Does handling this issue require property-specific information "
+            "(e.g. floor plan, supplier contact, boiler model)? Return true or false."
+        ),
+        "can_report_fault": (
+            "Can a formal fault/maintenance report be filed for this issue? Return true or false."
+        ),
+        "requires_manual_support": (
+            "Does this issue require a human agent to handle it "
+            "(i.e. the AI voice agent alone cannot resolve it)? Return true or false."
+        ),
+        "info_to_collect": (
+            "What 1-2 clarifying questions should the agent ask the caller to handle this issue? "
+            "Return a single concise sentence."
+        ),
+    }
+
+    fields_prompt = "\n".join(
+        f'  "{f}": {field_descriptions[f]}' for f in fields if f in field_descriptions
+    )
+
+    system_prompt = (
+        "You are an expert in property management issue triage. "
+        "Given a category path from a property issue classification tree, "
+        "return a JSON object with ONLY the fields listed below. "
+        "Be concise and accurate. Return valid JSON only — no explanation, no markdown.\n\n"
+        f"Fields to generate:\n{fields_prompt}"
+    )
+
     try:
         response = await client.chat.completions.create(
             model=_MODEL,
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You generate search index terms for a property management issue category. "
-                        f"Given a category path, return exactly {_TERMS_PER_NODE} short terms "
-                        "(single words or 2-word phrases) that a tenant might say or type when "
-                        "reporting an issue in this category. "
-                        "Include both the local language of the category labels AND common English "
-                        "equivalents so cross-language callers are covered. "
-                        "Return ONLY the terms separated by spaces — no punctuation, no explanation."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"Category path: {path}",
-                },
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Category path: {path}"},
             ],
-            max_tokens=80,
+            response_format={"type": "json_object"},
+            max_tokens=300,
             temperature=0,
         )
         raw = (response.choices[0].message.content or "").strip()
-        terms = " ".join(raw.lower().split())
-        log.debug("terms_generated", path=path, terms=terms)
-        return terms or None
+        parsed: dict[str, Any] = json.loads(raw)
+
+        # Normalise boolean fields — LLM may return strings like "true"/"false"
+        bool_fields = {
+            "self_resolution",
+            "requires_property_info",
+            "can_report_fault",
+            "requires_manual_support",
+        }
+        result: dict[str, Any] = {}
+        for field in fields:
+            val = parsed.get(field)
+            if val is None:
+                continue
+            if field in bool_fields:
+                if isinstance(val, bool):
+                    result[field] = val
+                else:
+                    result[field] = str(val).lower() in {"true", "ja", "yes", "1"}
+            elif field == "example_query":
+                result[field] = " ".join(str(val).lower().split())
+            else:
+                result[field] = str(val).strip()
+
+        log.debug("metadata_generated", path=path, fields=list(result.keys()))
+        return result or None
     except Exception:
-        log.exception("generate_terms_error", path=path)
+        log.exception("generate_metadata_error", path=path)
         return None
