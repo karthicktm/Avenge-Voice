@@ -216,12 +216,14 @@ function StructuredImportModal({
   open,
   workspaceId,
   treeName,
+  hasNodes,
   onClose,
   onImported,
 }: {
   open: boolean;
   workspaceId: string;
   treeName: string;
+  hasNodes: boolean;
   onClose: () => void;
   onImported: () => void;
 }) {
@@ -296,19 +298,47 @@ function StructuredImportModal({
               Upload a .csv, .xlsx, or .json file with columns: code, level_1, level_2, level_3,
               level_4
             </p>
-            <div className="flex gap-2">
-              {(["csv", "json"] as const).map((fmt) => (
-                <Button
-                  key={fmt}
-                  variant="outline"
-                  size="sm"
-                  className="gap-1"
-                  onClick={() => void downloadTemplate(fmt)}
-                >
-                  <Download className="h-3 w-3" />
-                  {fmt.toUpperCase()} template
-                </Button>
-              ))}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Blank template</p>
+              <div className="flex gap-2">
+                {(["csv", "json"] as const).map((fmt) => (
+                  <Button
+                    key={fmt}
+                    variant="outline"
+                    size="sm"
+                    className="gap-1"
+                    onClick={() => void downloadTemplate(fmt)}
+                  >
+                    <Download className="h-3 w-3" />
+                    {fmt.toUpperCase()}
+                  </Button>
+                ))}
+              </div>
+              {hasNodes && (
+                <>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Current tree as template
+                  </p>
+                  <div className="flex gap-2">
+                    {(["csv", "json"] as const).map((fmt) => (
+                      <Button
+                        key={fmt}
+                        variant="outline"
+                        size="sm"
+                        className="gap-1"
+                        onClick={() =>
+                          void exportCategoryTree(workspaceId, treeName, fmt).catch(() =>
+                            toast.error("Export failed")
+                          )
+                        }
+                      >
+                        <Download className="h-3 w-3" />
+                        {fmt.toUpperCase()} (current)
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
             <input
               ref={fileRef}
@@ -1431,6 +1461,7 @@ export default function CategoryTreesPage() {
             open={structuredImportOpen}
             workspaceId={workspaceId}
             treeName={selectedTree.tree_name}
+            hasNodes={nodes.length > 0}
             onClose={() => setStructuredImportOpen(false)}
             onImported={() => {
               invalidateNodes();
