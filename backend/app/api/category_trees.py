@@ -917,9 +917,9 @@ def _parse_structured_file(content: bytes, filename: str) -> list[dict[str, str]
                 raise HTTPException(status_code=400, detail=f"Row {i}: expected object")
             path = item.get("path", [])
             flat: dict[str, str] = {
-                    "code": str(item.get("code", "") or ""),
-                    **{f"level_{j + 1}": str(path[j]) if j < len(path) else "" for j in range(4)},
-                }
+                "code": str(item.get("code", "") or ""),
+                **{f"level_{j + 1}": str(path[j]) if j < len(path) else "" for j in range(4)},
+            }
             # Flatten metadata fields so _validate_rows can pick them up via header mapping.
             meta = item.get("metadata") or {}
             if isinstance(meta, dict):
