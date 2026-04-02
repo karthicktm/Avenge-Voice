@@ -491,9 +491,9 @@ async def export_tree(
 
     node_map: dict[uuid.UUID, CategoryTree] = {n.id: n for n in nodes}
 
-    # Collect only leaf nodes (no children) to avoid duplicating ancestor paths
-    child_ids = {n.parent_id for n in nodes if n.parent_id is not None}
-    export_nodes = [n for n in nodes if n.id not in child_ids] or nodes
+    # Export every node (all depths) so enriched metadata at intermediate levels is included.
+    # Rows are already ordered by depth (shallow first), which ensures round-trip import works.
+    export_nodes = nodes
 
     def build_path(node: CategoryTree) -> list[str]:
         path: list[str] = []
@@ -900,7 +900,7 @@ def _detect_structural_columns_by_position(
     return rename
 
 
-def _parse_structured_file(content: bytes, filename: str) -> list[dict[str, str]]:  # noqa: PLR0912
+def _parse_structured_file(content: bytes, filename: str) -> list[dict[str, str]]:  # noqa: PLR0912,PLR0915
     """Parse .csv, .json, or .xlsx upload into a list of flat row dicts."""
     fn = filename.lower()
 
@@ -916,12 +916,16 @@ def _parse_structured_file(content: bytes, filename: str) -> list[dict[str, str]
             if not isinstance(item, dict):
                 raise HTTPException(status_code=400, detail=f"Row {i}: expected object")
             path = item.get("path", [])
-            rows.append(
-                {
+            flat: dict[str, str] = {
                     "code": str(item.get("code", "") or ""),
                     **{f"level_{j + 1}": str(path[j]) if j < len(path) else "" for j in range(4)},
                 }
-            )
+            # Flatten metadata fields so _validate_rows can pick them up via header mapping.
+            meta = item.get("metadata") or {}
+            if isinstance(meta, dict):
+                for k, v in meta.items():
+                    flat[k] = str(v) if v is not None else ""
+            rows.append(flat)
         return rows
 
     if fn.endswith(".csv"):
@@ -1010,12 +1014,9 @@ def _validate_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:  # noqa:
 
     for i, row in enumerate(rows, start=2):  # row 1 is header
         levels = [str(row.get(f"level_{j}", "") or "").strip() for j in range(1, 6)]
-        # level_1 and level_2 are required
+        # level_1 is required; level_2+ are optional (single-level root nodes are valid on export/re-import)
         if not levels[0]:
             errors.append(f"Row {i}: level_1 is required")
-            continue
-        if not levels[1]:
-            errors.append(f"Row {i}: level_2 is required")
             continue
 
         code = str(row.get("code", "") or "").strip() or None
@@ -1140,7 +1141,9 @@ async def import_structured_confirm(
                 parent_id=parent_id,
                 depth=depth,
                 position=len([k for k in path_to_id if len(k) == depth + 1]),
-                # Metadata only on leaf nodes; intermediate ancestors carry None.
+                # Apply metadata to whatever node this row defines (leaf of this row's path).
+                # Intermediate ancestors that appear as prefixes of other rows are skipped via
+                # path_to_id, so their own row (processed first, depth-ordered) owns their metadata.
                 node_metadata=item_metadata if is_leaf else None,
             )
             path_to_id[seg] = node.id
