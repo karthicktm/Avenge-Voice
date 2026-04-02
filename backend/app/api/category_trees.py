@@ -463,7 +463,7 @@ _METADATA_EXPORT_FIELDS = [
 
 @router.get("/{workspace_id}/{tree_name}/export/{fmt}")
 @limiter.limit("30/minute")
-async def export_tree(
+async def export_tree(  # noqa: PLR0915
     request: Request,
     workspace_id: uuid.UUID,
     tree_name: str,
@@ -491,27 +491,53 @@ async def export_tree(
 
     node_map: dict[uuid.UUID, CategoryTree] = {n.id: n for n in nodes}
 
-    # Export every node (all depths) so enriched metadata at intermediate levels is included.
-    # Rows are already ordered by depth (shallow first), which ensures round-trip import works.
-    export_nodes = nodes
+    # Export one row per leaf node.  Each row includes:
+    #   • the full label path (level_1 … level_N)
+    #   • per-ancestor example_query columns (level_1_example_query, level_2_example_query, …)
+    #   • the leaf node's own example_query + all other metadata fields
+    # This lets users see enriched data at every level of a path in a single row.
+    child_ids = {n.parent_id for n in nodes if n.parent_id is not None}
+    leaf_nodes = [n for n in nodes if n.id not in child_ids] or nodes
 
-    def build_path(node: CategoryTree) -> list[str]:
-        path: list[str] = []
+    def build_path_nodes(node: CategoryTree) -> list[CategoryTree]:
+        """Return the full ancestor chain from root to node (inclusive)."""
+        chain: list[CategoryTree] = []
         cur: CategoryTree | None = node
         while cur is not None:
-            path.insert(0, cur.label)
+            chain.insert(0, cur)
             cur = node_map.get(cur.parent_id) if cur.parent_id else None
-        return path
+        return chain
 
     safe_name = re.sub(r"[^\w\-]", "_", tree_name)
 
+    max_depth = max((len(build_path_nodes(n)) for n in leaf_nodes), default=1)
+    level_cols = [f"level_{i + 1}" for i in range(max_depth)]
+    # Per-ancestor example_query columns for every level except the leaf itself
+    ancestor_example_cols = [f"level_{i + 1}_example_query" for i in range(max_depth - 1)]
+
+    # Collect non-example_query metadata keys from leaf nodes
+    extra_meta_keys: list[str] = [k for k in _METADATA_EXPORT_FIELDS if k != "example_query"]
+    for node in leaf_nodes:
+        if node.node_metadata:
+            for k in node.node_metadata:
+                if k not in extra_meta_keys and k != "example_query":
+                    extra_meta_keys.append(k)
+
     if fmt == "json":
         payload = []
-        for node in export_nodes:
-            path = build_path(node)
-            item: dict[str, Any] = {"code": node.code, "path": path}
-            if node.node_metadata:
-                item["metadata"] = node.node_metadata
+        for leaf in leaf_nodes:
+            chain = build_path_nodes(leaf)
+            item: dict[str, Any] = {
+                "code": leaf.code,
+                "path": [n.label for n in chain],
+                "ancestor_example_queries": {
+                    f"level_{n.depth + 1}": (n.node_metadata or {}).get("example_query", "")
+                    for n in chain[:-1]
+                    if (n.node_metadata or {}).get("example_query")
+                },
+            }
+            if leaf.node_metadata:
+                item["metadata"] = leaf.node_metadata
             payload.append(item)
         content = json.dumps(payload, indent=2)
         media = "application/json"
@@ -526,29 +552,27 @@ async def export_tree(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    # CSV
-    max_depth = max((len(build_path(n)) for n in export_nodes), default=1)
-    level_cols = [f"level_{i + 1}" for i in range(max_depth)]
-    # Collect all metadata keys present across nodes
-    extra_meta_keys: list[str] = list(_METADATA_EXPORT_FIELDS)
-    for node in export_nodes:
-        if node.node_metadata:
-            for k in node.node_metadata:
-                if k not in extra_meta_keys:
-                    extra_meta_keys.append(k)
-
-    fieldnames = ["code", *level_cols, *extra_meta_keys]
+    # CSV — fieldnames: code | level_1..N | level_1_example_query..level_(N-1)_example_query | example_query | other metadata
+    fieldnames = ["code", *level_cols, *ancestor_example_cols, "example_query", *extra_meta_keys]
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore", restval="")
     writer.writeheader()
-    for node in export_nodes:
-        path = build_path(node)
-        row: dict[str, Any] = {"code": node.code or ""}
-        for i, label in enumerate(path):
-            row[f"level_{i + 1}"] = label
-        if node.node_metadata:
-            for k in extra_meta_keys:
-                row[k] = node.node_metadata.get(k, "")
+    for leaf in leaf_nodes:
+        chain = build_path_nodes(leaf)
+        row: dict[str, Any] = {"code": leaf.code or ""}
+        # Level labels
+        for i, anc in enumerate(chain):
+            row[f"level_{i + 1}"] = anc.label
+        # Per-ancestor example_queries (all levels except the leaf)
+        for anc in chain[:-1]:
+            row[f"level_{anc.depth + 1}_example_query"] = (anc.node_metadata or {}).get(
+                "example_query", ""
+            )
+        # Leaf metadata
+        leaf_meta = leaf.node_metadata or {}
+        row["example_query"] = leaf_meta.get("example_query", "")
+        for k in extra_meta_keys:
+            row[k] = leaf_meta.get(k, "")
         writer.writerow(row)
 
     csv_content = buf.getvalue()
