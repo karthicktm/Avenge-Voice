@@ -447,6 +447,15 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     except Exception as audio_err:
                         log.exception("audio_send_error", error=str(audio_err))
 
+                elif event_type == "input_audio_buffer.speech_started":
+                    # Caller interrupted the agent — clear Twilio's playback buffer
+                    # so buffered agent speech stops immediately.
+                    log.info("barge_in_detected")
+                    with contextlib.suppress(Exception):
+                        await websocket.send_text(
+                            json.dumps({"event": "clear", "streamSid": stream_sid})
+                        )
+
                 # Handle tool calls
                 elif event_type == "response.function_call_arguments.done":
                     log.info(
@@ -513,7 +522,6 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                 # Log other events
                 elif event_type in [
                     "response.audio.done",
-                    "input_audio_buffer.speech_started",
                     "input_audio_buffer.speech_stopped",
                 ]:
                     log.debug("realtime_event", event_type=event_type)
@@ -743,7 +751,7 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
         except Exception as e:
             log.exception("telnyx_to_realtime_error", error=str(e))
 
-    async def realtime_to_telnyx() -> None:  # noqa: PLR0912
+    async def realtime_to_telnyx() -> None:  # noqa: PLR0912, PLR0915
         """Forward audio from GPT Realtime to Telnyx."""
         nonlocal should_end_call
 
@@ -779,6 +787,15 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                                     "media": {"payload": payload},
                                 }
                             )
+                        )
+
+                elif event_type == "input_audio_buffer.speech_started":
+                    # Caller interrupted the agent — clear Telnyx's playback buffer
+                    # so buffered agent speech stops immediately.
+                    log.info("barge_in_detected")
+                    with contextlib.suppress(Exception):
+                        await websocket.send_text(
+                            json.dumps({"event": "clear", "stream_id": stream_id})
                         )
 
                 # Handle tool calls
@@ -832,7 +849,6 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
 
                 elif event_type in [
                     "response.audio.done",
-                    "input_audio_buffer.speech_started",
                     "input_audio_buffer.speech_stopped",
                 ]:
                     log.debug("realtime_event", event_type=event_type)

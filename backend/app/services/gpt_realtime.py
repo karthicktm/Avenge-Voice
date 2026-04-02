@@ -456,6 +456,10 @@ class GPTRealtimeSession:
         # Initial greeting (triggered after event loop starts to avoid race condition)
         self._pending_initial_greeting: str | None = None
         self._greeting_triggered: bool = False
+        # Audio gate: True while a tool call is executing. send_audio() drops
+        # frames when set so VAD cannot fire and generate spurious "I'm still
+        # looking…" responses that corrupt the function_call_output cycle.
+        self._audio_paused: bool = False
         self.logger = logger.bind(
             component="gpt_realtime",
             session_id=self.session_id,
@@ -840,13 +844,18 @@ class GPTRealtimeSession:
                 )
             return {"success": False, "error": "Invalid JSON arguments"}
 
-        # Execute tool via internal tool registry
-        result = await self.handle_tool_call({"name": name, "arguments": arguments})
+        # Pause audio input for the duration of the tool call so Telnyx/Twilio
+        # frames don't trigger VAD and cause OpenAI to auto-generate spurious
+        # "I'm still looking…" responses that corrupt the function_call_output cycle.
+        self._audio_paused = True
+        try:
+            result = await self.handle_tool_call({"name": name, "arguments": arguments})
+        finally:
+            self._audio_paused = False
 
         # Send result back using SDK
         if self.connection:
-            # Clear audio accumulated during tool execution so VAD does not
-            # interrupt the model's response to the tool result.
+            # Clear any audio that arrived before the gate closed.
             with contextlib.suppress(Exception):
                 await self.connection.input_audio_buffer.clear()
 
@@ -925,6 +934,12 @@ class GPTRealtimeSession:
         Args:
             audio_data: PCM16 audio data (raw bytes)
         """
+        if self._audio_paused:
+            # Drop frames while a tool call is executing to prevent VAD
+            # from triggering spurious responses before function_call_output
+            # is submitted.
+            return
+
         if not self.connection:
             self.logger.error("send_audio_failed_no_connection")
             return
