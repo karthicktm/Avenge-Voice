@@ -694,34 +694,15 @@ class GPTRealtimeSession:
         )
 
         try:
-            # Send instructions + tools + voice in ONE dedicated update so they
-            # are always applied together and not overshadowed by audio-format
-            # or speed fields that may not be supported by every model variant.
-            # The audio format fields (input/output_audio_format) are sent
-            # separately because they are telephony-specific and may cause some
-            # SDK versions to silently ignore other fields.
-            core_config = {
-                k: v
-                for k, v in session_config.items()
-                if k not in ("input_audio_format", "output_audio_format", "speed")
-            }
-            await self.connection.session.update(session=core_config)
-
-            # Now apply audio format and speed as a separate update so they
-            # do not interfere with the instructions/tools application.
-            audio_config = {
-                k: v
-                for k, v in session_config.items()
-                if k in ("input_audio_format", "output_audio_format", "speed", "modalities")
-            }
-            if audio_config:
-                await self.connection.session.update(session=audio_config)
+            # Single session.update() with all fields — split updates risk the
+            # second call resetting fields not included in it on some model variants.
+            await self.connection.session.update(session=session_config)
 
             self.logger.warning(
                 "session_configured",
                 tool_count=len(tools),
                 instructions_applied=True,
-                core_keys=list(core_config.keys()),
+                session_keys=list(session_config.keys()),
             )
 
             # Store initial greeting for later - triggered after event loop starts
@@ -855,6 +836,13 @@ class GPTRealtimeSession:
 
         # Send result back using SDK
         if self.connection:
+            # Cancel any VAD-triggered "I'm still looking…" response that the model
+            # may have auto-generated while waiting for the tool result. If left
+            # active it corrupts the conversation state and the function_call_output
+            # is silently ignored.
+            with contextlib.suppress(Exception):
+                await self.connection.response.cancel()
+
             # Clear any audio that arrived before the gate closed.
             with contextlib.suppress(Exception):
                 await self.connection.input_audio_buffer.clear()
@@ -880,15 +868,17 @@ class GPTRealtimeSession:
         return result
 
     async def trigger_initial_greeting(self) -> bool:
-        """Trigger the initial greeting if one is pending.
+        """Inject instructions into the conversation and optionally speak a greeting.
 
-        This should be called AFTER the event listener has started to avoid
-        race conditions where audio events arrive before the listener is ready.
+        Called after the event loop starts to avoid race conditions. Always injects
+        the full instructions as a conversation message so gpt-realtime-2025-08-28
+        reliably follows the system prompt — session.update() instructions alone are
+        not consistently honoured by this telephony model variant across turns.
 
         Returns:
-            True if greeting was triggered, False if no greeting pending or already triggered
+            True if setup was performed, False if already done or no connection.
         """
-        if not self._pending_initial_greeting or self._greeting_triggered:
+        if self._greeting_triggered:
             return False
 
         if not self.connection:
@@ -897,32 +887,50 @@ class GPTRealtimeSession:
 
         self._greeting_triggered = True
         greeting = self._pending_initial_greeting
+        instructions = getattr(self, "_session_instructions", "")
 
-        self.logger.info("triggering_initial_greeting", greeting=greeting[:50])
+        self.logger.info(
+            "triggering_initial_greeting",
+            has_greeting=bool(greeting),
+            instructions_len=len(instructions),
+        )
 
         try:
             # Clear any buffered input audio to prevent line noise from
-            # triggering VAD and cancelling the greeting response
+            # triggering VAD and cancelling the greeting response.
             await self.connection.input_audio_buffer.clear()
 
-            # Inject the full system instructions + greeting command directly
-            # into the conversation history as a user message. This is the
-            # reliable approach for server-side telephony: the model always
-            # sees the instructions in context, not just via session.update()
-            # which gpt-realtime models may not apply consistently across turns.
-            context_text = (
-                f"{getattr(self, '_session_instructions', '')}\n\n"
-                f'Now begin the call by saying exactly: "{greeting}"'
-            ).strip()
+            if greeting:
+                # Inject instructions + greeting command as a single user message.
+                context_text = (
+                    f'{instructions}\n\nNow begin the call by saying exactly: "{greeting}"'
+                ).strip()
+                await self.connection.conversation.item.create(
+                    item={
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": context_text}],
+                    }
+                )
+                await self.connection.response.create()
+            else:
+                # No greeting — still inject instructions as a synthetic exchange so
+                # the model has them in conversation context, not just session settings.
+                await self.connection.conversation.item.create(
+                    item={
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": instructions}],
+                    }
+                )
+                await self.connection.conversation.item.create(
+                    item={
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Understood. I'm ready."}],
+                    }
+                )
 
-            await self.connection.conversation.item.create(
-                item={
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": context_text}],
-                }
-            )
-            await self.connection.response.create()
             return True
         except Exception as e:
             self.logger.exception("initial_greeting_failed", error=str(e))
@@ -941,7 +949,6 @@ class GPTRealtimeSession:
             return
 
         if not self.connection:
-            self.logger.error("send_audio_failed_no_connection")
             return
 
         try:
@@ -958,7 +965,14 @@ class GPTRealtimeSession:
                 base64_length=len(audio_base64),
             )
         except Exception as e:
-            self.logger.exception("send_audio_error", error=str(e), error_type=type(e).__name__)
+            # Log at debug level — connection closes naturally at call end and
+            # telnyx_to_realtime may send a few more frames before it notices.
+            err_str = str(e)
+            if "ConnectionClosed" in type(e).__name__ or "close" in err_str.lower():
+                self.logger.debug("send_audio_skipped_connection_closed")
+                self.connection = None  # stop future attempts immediately
+            else:
+                self.logger.warning("send_audio_error", error=err_str, error_type=type(e).__name__)
 
     def add_user_transcript(self, text: str) -> None:
         """Add a user transcript entry.

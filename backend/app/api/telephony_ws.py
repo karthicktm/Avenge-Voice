@@ -458,12 +458,19 @@ async def _handle_twilio_stream(  # noqa: PLR0915
 
                 # Handle tool calls
                 elif event_type == "response.function_call_arguments.done":
-                    log.info(
-                        "handling_function_call",
+                    log.warning(
+                        "tool_call_invoked",
                         call_id=event.call_id,
                         name=event.name,
+                        arguments_len=len(event.arguments or ""),
                     )
                     result = await realtime_session.handle_function_call_event(event)
+                    log.warning(
+                        "tool_call_result",
+                        name=event.name,
+                        success=result.get("success"),
+                        result_keys=list(result.keys()),
+                    )
                     # Check if this is an end_call action
                     if result.get("action") == "end_call":
                         log.info("end_call_action_received", reason=result.get("reason"))
@@ -800,12 +807,19 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
 
                 # Handle tool calls
                 elif event_type == "response.function_call_arguments.done":
-                    log.info(
-                        "handling_function_call",
+                    log.warning(
+                        "tool_call_invoked",
                         call_id=event.call_id,
                         name=event.name,
+                        arguments_len=len(event.arguments or ""),
                     )
                     result = await realtime_session.handle_function_call_event(event)
+                    log.warning(
+                        "tool_call_result",
+                        name=event.name,
+                        success=result.get("success"),
+                        result_keys=list(result.keys()),
+                    )
                     # Check if this is an end_call action
                     if result.get("action") == "end_call":
                         log.info("end_call_action_received", reason=result.get("reason"))
@@ -852,6 +866,10 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                     "input_audio_buffer.speech_stopped",
                 ]:
                     log.debug("realtime_event", event_type=event_type)
+
+                else:
+                    # Log any unhandled event types at warning so they're visible in Railway
+                    log.warning("unhandled_realtime_event", event_type=event_type)
 
         except Exception as e:
             log.exception("realtime_to_telnyx_error", error=str(e))
