@@ -506,6 +506,8 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     if pending_end_call:
                         log.info("ending_call_after_response_complete")
                         should_end_call = True
+                        with contextlib.suppress(Exception):
+                            await websocket.close(code=1000, reason="Call ended by agent")
                         break
 
                 # Log other events
@@ -824,6 +826,8 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                     if pending_end_call:
                         log.info("ending_call_after_response_complete")
                         should_end_call = True
+                        with contextlib.suppress(Exception):
+                            await websocket.close(code=1000, reason="Call ended by agent")
                         break
 
                 elif event_type in [
