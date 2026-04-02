@@ -405,9 +405,9 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                 event_type = event.type
                 event_count += 1
 
-                # Log all events for debugging
-                if event_count <= EVENT_LOG_THRESHOLD or event_count % 100 == 0:
-                    log.info("realtime_event_received", event_type=event_type, count=event_count)
+                # Log every non-audio event at WARNING so they show up in Railway
+                if event_type != "response.audio.delta":
+                    log.warning("realtime_event", event_type=event_type, count=event_count)
 
                 # Handle audio output
                 if event_type == "response.audio.delta":
@@ -526,12 +526,11 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                             await websocket.close(code=1000, reason="Call ended by agent")
                         break
 
-                # Log other events
                 elif event_type in [
                     "response.audio.done",
                     "input_audio_buffer.speech_stopped",
                 ]:
-                    log.debug("realtime_event", event_type=event_type)
+                    pass  # logged by the catch-all above
 
         except WebSocketDisconnect:
             log.warning("realtime_to_twilio_disconnected")
