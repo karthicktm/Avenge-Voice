@@ -502,20 +502,41 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     # Assistant speech transcript complete
                     realtime_session.flush_assistant_text()
 
+                elif event_type == "response.output_item.added":
+                    # Log what type of output the model is generating — tells us
+                    # whether the model is attempting a function call or a text response.
+                    item = getattr(event, "item", None)
+                    item_type = getattr(item, "type", "unknown") if item else "unknown"
+                    item_name = getattr(item, "name", None) if item else None
+                    log.warning(
+                        "response_output_item_added",
+                        item_type=item_type,
+                        item_name=item_name,
+                    )
+
                 # Handle response completion - check if we should end the call
                 elif event_type == "response.done":
-                    # Log full response details for debugging
                     response_data = getattr(event, "response", None)
                     if response_data:
                         status = getattr(response_data, "status", "unknown")
                         status_details = getattr(response_data, "status_details", None)
                         output = getattr(response_data, "output", [])
-                        output_count = len(output) if output else 0
-                        log.info(
+                        output_types = [getattr(o, "type", "?") for o in output] if output else []
+                        output_names = (
+                            [
+                                getattr(o, "name", None)
+                                for o in output
+                                if getattr(o, "type", "") == "function_call"
+                            ]
+                            if output
+                            else []
+                        )
+                        log.warning(
                             "response_done_details",
                             status=status,
                             status_details=str(status_details) if status_details else None,
-                            output_count=output_count,
+                            output_types=output_types,
+                            output_names=output_names,
                         )
                     else:
                         log.debug("realtime_event", event_type=event_type)
@@ -850,9 +871,42 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                     # Assistant speech transcript complete
                     realtime_session.flush_assistant_text()
 
+                elif event_type == "response.output_item.added":
+                    item = getattr(event, "item", None)
+                    item_type = getattr(item, "type", "unknown") if item else "unknown"
+                    item_name = getattr(item, "name", None) if item else None
+                    log.warning(
+                        "response_output_item_added",
+                        item_type=item_type,
+                        item_name=item_name,
+                    )
+
                 # Handle response completion - check if we should end the call
                 elif event_type == "response.done":
-                    log.debug("realtime_event", event_type=event_type)
+                    response_data = getattr(event, "response", None)
+                    if response_data:
+                        status = getattr(response_data, "status", "unknown")
+                        status_details = getattr(response_data, "status_details", None)
+                        output = getattr(response_data, "output", [])
+                        output_types = [getattr(o, "type", "?") for o in output] if output else []
+                        output_names = (
+                            [
+                                getattr(o, "name", None)
+                                for o in output
+                                if getattr(o, "type", "") == "function_call"
+                            ]
+                            if output
+                            else []
+                        )
+                        log.warning(
+                            "response_done_details",
+                            status=status,
+                            status_details=str(status_details) if status_details else None,
+                            output_types=output_types,
+                            output_names=output_names,
+                        )
+                    else:
+                        log.debug("realtime_event", event_type=event_type)
                     if pending_end_call:
                         log.info("ending_call_after_response_complete")
                         should_end_call = True
