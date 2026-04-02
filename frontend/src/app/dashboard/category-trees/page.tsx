@@ -56,6 +56,8 @@ import {
   updateCategoryNode,
   deleteCategoryNode,
   downloadTemplate,
+  exportCategoryTree,
+  enrichExamples,
   categorizeText,
   type TreeMeta,
   type CategoryNode,
@@ -928,6 +930,8 @@ export default function CategoryTreesPage() {
   const [newTreeName, setNewTreeName] = useState("");
   const [showNewTreeInput, setShowNewTreeInput] = useState(false);
 
+  const [enriching, setEnriching] = useState(false);
+
   // Modals
   const [structuredImportOpen, setStructuredImportOpen] = useState(false);
   const [aiDiscoveryOpen, setAiDiscoveryOpen] = useState(false);
@@ -1292,6 +1296,60 @@ export default function CategoryTreesPage() {
                       >
                         <Sparkles className="h-4 w-4" />
                         AI Discover
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        title="Export as CSV"
+                        onClick={() =>
+                          void exportCategoryTree(workspaceId, selectedTree.tree_name, "csv").catch(
+                            () => toast.error("Export failed")
+                          )
+                        }
+                      >
+                        <Download className="h-4 w-4" />
+                        CSV
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        title="Export as JSON"
+                        onClick={() =>
+                          void exportCategoryTree(
+                            workspaceId,
+                            selectedTree.tree_name,
+                            "json"
+                          ).catch(() => toast.error("Export failed"))
+                        }
+                      >
+                        <Download className="h-4 w-4" />
+                        JSON
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        title="Enrich nodes with AI-generated example queries"
+                        disabled={enriching}
+                        onClick={() => {
+                          setEnriching(true);
+                          void enrichExamples(workspaceId, selectedTree.tree_name)
+                            .then(() => {
+                              toast.success("AI enrichment started — nodes will update shortly");
+                              void qc.invalidateQueries({ queryKey: ["category-tree-nodes"] });
+                            })
+                            .catch(() => toast.error("Enrichment failed"))
+                            .finally(() => setEnriching(false));
+                        }}
+                      >
+                        {enriching ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-4 w-4" />
+                        )}
+                        Enrich
                       </Button>
                       <Button
                         size="sm"

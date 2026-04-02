@@ -447,6 +447,124 @@ async def download_template(
 
 
 # ---------------------------------------------------------------------------
+# Export — download live tree data in importable format
+# ---------------------------------------------------------------------------
+
+_METADATA_EXPORT_FIELDS = [
+    "example_query",
+    "urgency_level",
+    "self_resolution",
+    "requires_property_info",
+    "can_report_fault",
+    "requires_manual_support",
+    "info_to_collect",
+]
+
+
+@router.get("/{workspace_id}/{tree_name}/export/{fmt}")
+@limiter.limit("30/minute")
+async def export_tree(
+    request: Request,
+    workspace_id: uuid.UUID,
+    tree_name: str,
+    fmt: str,
+    user: VerifiedUser,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Export all active nodes of a tree as a CSV or JSON file in the same format as the import template."""
+    if fmt not in {"csv", "json"}:
+        raise HTTPException(status_code=400, detail="Format must be csv or json")
+
+    await _require_tree_access(workspace_id, tree_name, user, db)
+
+    result = await db.execute(
+        select(CategoryTree)
+        .where(
+            CategoryTree.workspace_id == workspace_id,
+            CategoryTree.tree_name == tree_name,
+            CategoryTree.user_id == user.id,
+            CategoryTree.status != "archived",
+        )
+        .order_by(CategoryTree.depth, CategoryTree.position)
+    )
+    nodes = list(result.scalars().all())
+
+    node_map: dict[uuid.UUID, CategoryTree] = {n.id: n for n in nodes}
+
+    # Collect only leaf nodes (no children) to avoid duplicating ancestor paths
+    child_ids = {n.parent_id for n in nodes if n.parent_id is not None}
+    export_nodes = [n for n in nodes if n.id not in child_ids] or nodes
+
+    def build_path(node: CategoryTree) -> list[str]:
+        path: list[str] = []
+        cur: CategoryTree | None = node
+        while cur is not None:
+            path.insert(0, cur.label)
+            cur = node_map.get(cur.parent_id) if cur.parent_id else None
+        return path
+
+    safe_name = re.sub(r"[^\w\-]", "_", tree_name)
+
+    if fmt == "json":
+        payload = []
+        for node in export_nodes:
+            path = build_path(node)
+            item: dict[str, Any] = {"code": node.code, "path": path}
+            if node.node_metadata:
+                item["metadata"] = node.node_metadata
+            payload.append(item)
+        content = json.dumps(payload, indent=2)
+        media = "application/json"
+        filename = f"{safe_name}_export.json"
+
+        def gen_json() -> Any:
+            yield content
+
+        return StreamingResponse(
+            gen_json(),
+            media_type=media,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # CSV
+    max_depth = max((len(build_path(n)) for n in export_nodes), default=1)
+    level_cols = [f"level_{i + 1}" for i in range(max_depth)]
+    # Collect all metadata keys present across nodes
+    extra_meta_keys: list[str] = list(_METADATA_EXPORT_FIELDS)
+    for node in export_nodes:
+        if node.node_metadata:
+            for k in node.node_metadata:
+                if k not in extra_meta_keys:
+                    extra_meta_keys.append(k)
+
+    fieldnames = ["code", *level_cols, *extra_meta_keys]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for node in export_nodes:
+        path = build_path(node)
+        row: dict[str, Any] = {"code": node.code or ""}
+        for i, label in enumerate(path):
+            row[f"level_{i + 1}"] = label
+        if node.node_metadata:
+            for k in extra_meta_keys:
+                row[k] = node.node_metadata.get(k, "")
+        writer.writerow(row)
+
+    csv_content = buf.getvalue()
+    filename = f"{safe_name}_export.csv"
+
+    def gen_csv() -> Any:
+        yield csv_content
+
+    return StreamingResponse(
+        gen_csv(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Metadata column handling — well-known header aliases + boolean normalization
 # ---------------------------------------------------------------------------
 

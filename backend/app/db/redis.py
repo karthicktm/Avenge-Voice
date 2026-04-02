@@ -56,7 +56,7 @@ async def get_redis() -> "Redis":
                 )
 
                 # Test connection
-                await redis_client.ping()
+                await redis_client.ping()  # type: ignore[misc]
                 logger.info("Redis connection pool initialized successfully")
 
             except Exception:

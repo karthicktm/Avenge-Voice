@@ -281,6 +281,49 @@ export async function deleteCategoryNode(
 // Categorize (direct call — for testing)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Export tree data
+// ---------------------------------------------------------------------------
+
+export async function exportCategoryTree(
+  workspaceId: string,
+  treeName: string,
+  fmt: "csv" | "json"
+): Promise<void> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+  const url = `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/category-trees/${workspaceId}/${encodeURIComponent(treeName)}/export/${fmt}`;
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Export failed");
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${treeName}_export.${fmt}`;
+  a.click();
+}
+
+// ---------------------------------------------------------------------------
+// LLM enrichment
+// ---------------------------------------------------------------------------
+
+export async function enrichExamples(
+  workspaceId: string,
+  treeName: string,
+  overwrite = false
+): Promise<{ status: string; tree_name: string }> {
+  const res = await api.post<{ status: string; tree_name: string }>(
+    `/api/v1/category-trees/${workspaceId}/${encodeURIComponent(treeName)}/enrich-examples`,
+    null,
+    { params: { overwrite } }
+  );
+  return res.data;
+}
+
+// ---------------------------------------------------------------------------
+// Categorize (direct call — for testing)
+// ---------------------------------------------------------------------------
+
 export async function categorizeText(
   workspaceId: string,
   treeName: string,
