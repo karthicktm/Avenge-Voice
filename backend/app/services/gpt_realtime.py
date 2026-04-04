@@ -323,6 +323,15 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
 - Apartment/building unit codes are a letter followed by a digit (E1, E2, E3, E4). Copy them exactly as stated. Never convert a digit to a letter or vice versa (E2 is not EF, not EF2, not E-F).
 """
 
+    # Build categorize guidance section when categorization is enabled
+    categorize_section = ""
+    if "categorization" in enabled_tools or "category_tree" in enabled_tools:
+        categorize_section = """\n[CATEGORIZATION]
+- When calling categorize, pass ONLY the caller's problem or request as the 'text' argument.
+- Do NOT include conversational context such as timing ("it happened yesterday"), frequency ("it's the first time"), or preceding Q&A.
+- Pass the shortest accurate description of the issue: e.g. "water leak under sink", not "water leak, first time, noticed this morning".
+"""
+
     # Build email tool section when Resend is enabled
     email_section = ""
     if "resend" in enabled_tools:
@@ -392,7 +401,7 @@ Current: {current_datetime}
 - Summarize tool results naturally
 - When the caller spells out a name or code letter-by-letter, echo back the EXACT same letters in the EXACT same order. Never substitute, add, or remove any character — M and N are different letters, a digit (1, 2, 3) is never a letter (F, L, Z). Do not map spelled characters to a "known" word or name. Only move on when the caller explicitly confirms the sequence is correct.
 - If the caller repeats or corrects the same thing twice without you understanding, stop building on your previous assumption. Ask: "I want to make sure I understand — could you describe the issue in a different way?" Do not ask follow-up questions based on what you thought you heard until the caller confirms you understood correctly.
-{info_retrieval_section}{best_practices_section}{lookup_section}{email_section}
+{info_retrieval_section}{best_practices_section}{lookup_section}{categorize_section}{email_section}
 [YOUR ROLE]
 {system_prompt}{campaign_section}"""
 

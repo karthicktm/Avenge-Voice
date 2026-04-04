@@ -17,6 +17,67 @@ logger = structlog.get_logger()
 FTS_THRESHOLD = 0.05
 TRGM_THRESHOLD = 0.35
 
+# Common Swedish + English words that carry no category-matching signal.
+# These are temporal/ordinal/frequency words that appear in conversational
+# context ("det är första gången") but not in category labels as topic markers.
+_WORD_MATCH_STOPWORDS = frozenset(
+    {
+        # Swedish
+        "första",
+        "andra",
+        "tredje",
+        "gången",
+        "gånger",
+        "sedan",
+        "igår",
+        "idag",
+        "imorgon",
+        "alltid",
+        "aldrig",
+        "ibland",
+        "ofta",
+        "bara",
+        "igen",
+        "redan",
+        "fortfarande",
+        "nyligen",
+        "plötsligt",
+        "senaste",
+        "ungefär",
+        "cirka",
+        "kanske",
+        "förra",
+        "nästa",
+        "just",
+        "faktiskt",
+        "egentligen",
+        "verkligen",
+        # English
+        "first",
+        "second",
+        "third",
+        "time",
+        "times",
+        "again",
+        "already",
+        "always",
+        "never",
+        "today",
+        "yesterday",
+        "tomorrow",
+        "recently",
+        "sudden",
+        "suddenly",
+        "maybe",
+        "perhaps",
+        "still",
+        "actually",
+        "really",
+        "once",
+        "twice",
+    }
+)
+
 
 @dataclass
 class _NodeProxy:
@@ -103,7 +164,10 @@ async def match_category(  # noqa: PLR0911, PLR0912
         2  # include 3+ char words so English short terms like "rat", "cold", "lock" are tried
     )
     significant_words = [
-        w.strip(".,!?-") for w in text.split() if len(w.strip(".,!?-")) > min_word_len
+        w.strip(".,!?-")
+        for w in text.split()
+        if len(w.strip(".,!?-")) > min_word_len
+        and w.strip(".,!?-").lower() not in _WORD_MATCH_STOPWORDS
     ]
     for word in significant_words:
         word_tsq = func.plainto_tsquery("simple", word)

@@ -67,7 +67,14 @@ class CategorizeTools:
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "The caller's raw input text to categorize.",
+                            "description": (
+                                "The caller's problem or request in their own words. "
+                                "Include ONLY what the caller needs help with — their issue or topic. "
+                                "Do NOT include follow-up Q&A context such as timing ('it started yesterday'), "
+                                "frequency ('it's the first time'), or your own questions. "
+                                "Example: caller reports a rat in the kitchen and says it's the first time — "
+                                "pass 'råtta i köket', not 'råtta i köket, det är första gången'."
+                            ),
                         },
                         "tree_name": {
                             "type": "string",
