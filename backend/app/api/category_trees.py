@@ -634,6 +634,7 @@ _WELL_KNOWN_HEADER_ALIASES: dict[str, str] = {
     "felanmälan / support": "support_type",
     "kan kräva manuell support": "requires_manual_support",
     "ytterligare information som behöver samlas in": "info_to_collect",
+    "ytterligare information som behöver samlas in för att vi ska skapa en felanmälan eller ett manuellt ärende": "info_to_collect",
     # Per-level definition/example columns (K2A XLSX format: "Definition Nivå N")
     "definition nivå 1": "level_1_example_query",
     "definition nivå 2": "level_2_example_query",
@@ -755,14 +756,17 @@ def _normalize_row_headers(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     if "level_1" not in renamed_keys:
         rename.update(_detect_structural_columns_by_position(rows, original_keys))
 
-    # Step 3: alias matching for known metadata headers; for any remaining
-    # unrecognized metadata headers, infer canonical key by data pattern.
+    # Step 3: alias matching for known metadata headers (with prefix matching for long
+    # Swedish headers like "Ytterligare information som behöver samlas in för att...").
     for raw in original_keys:
         if raw in rename:
             continue  # already mapped as structural
-        normalized = re.sub(r"\s*\([^)]*\)\s*$", "", raw.strip().lower()).strip()
-        if normalized in _WELL_KNOWN_HEADER_ALIASES:
-            rename[raw] = _WELL_KNOWN_HEADER_ALIASES[normalized]
+        canon = _canonical_header(raw)
+        if (
+            canon is not None
+            and canon != re.sub(r"\s*\([^)]*\)\s*$", "", raw.strip().lower()).strip()
+        ):
+            rename[raw] = canon
 
     # Collect remaining unrecognized metadata headers (not structural, not aliased)
     canonical_structural = set(_STRUCTURAL_COLUMNS)
