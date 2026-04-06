@@ -399,28 +399,49 @@ async def _llm_drill_down(
     children_map: dict[uuid.UUID | None, list[_NodeProxy]],
     client: Any,
     log: Any,
-) -> _NodeProxy | None:
-    """Drill down from root into children, returning the deepest match found."""
-    current_parent_id = root.id
-    last_picked: _NodeProxy = root
+    _tried_child_ids: set[uuid.UUID] | None = None,
+    _max_retries_per_level: int = 2,
+) -> _NodeProxy:
+    """Drill down from root into children with per-level backtracking.
 
-    for _level in range(4):  # max 4 levels below root
-        siblings = children_map.get(current_parent_id, [])
-        if not siblings:
-            break  # leaf node
+    At each level, if the chosen child branch yields no deeper match, the next-best
+    sibling is tried (up to _max_retries_per_level attempts per level). This prevents
+    a wrong intermediate pick (e.g. "Belysning" instead of "Elbilsladdare" at level 2)
+    from stranding the search in a completely wrong subtree.
+    """
+    tried = _tried_child_ids if _tried_child_ids is not None else set()
 
-        picked = await _llm_pick_from_siblings(text, siblings, client, log)
-        if picked is None:
-            break  # no match at this level — stop
+    # Honour per-level retry cap to bound total API calls
+    if len(tried) >= _max_retries_per_level:
+        return root
 
-        last_picked = picked
+    untried_siblings = [s for s in children_map.get(root.id, []) if s.id not in tried]
+    if not untried_siblings:
+        return root  # leaf or all siblings exhausted
 
-        if picked.id not in {k for k in children_map if k is not None}:
-            break  # leaf
+    picked = await _llm_pick_from_siblings(text, untried_siblings, client, log)
+    if picked is None:
+        return root  # LLM says nothing matches at this level
 
-        current_parent_id = picked.id
+    tried.add(picked.id)
 
-    return last_picked
+    # Recurse into chosen child
+    deeper = await _llm_drill_down(text, picked, children_map, client, log)
+
+    if deeper.depth > root.depth:
+        # Found a match deeper than us — accept it
+        return deeper
+
+    # Chosen child led nowhere deeper — backtrack and try next sibling at this level
+    log.info(
+        "llm_level_backtrack",
+        parent=root.label,
+        abandoned=picked.label,
+        retries_used=len(tried),
+    )
+    return await _llm_drill_down(
+        text, root, children_map, client, log, tried, _max_retries_per_level
+    )
 
 
 async def _llm_pick_from_siblings(
