@@ -100,14 +100,22 @@ async def enrich_example_queries(  # noqa: PLR0915
                 cur = node_map.get(cur.parent_id) if cur.parent_id else None
             paths[node.id] = path
 
+        # Identify leaf nodes — nodes that have no children
+        parent_ids = {n.parent_id for n in nodes if n.parent_id is not None}
+        leaf_ids = {n.id for n in nodes if n.id not in parent_ids}
+
         for node in nodes:
             meta = node.node_metadata or {}
+            is_leaf = node.id in leaf_ids
+
+            # Non-leaf nodes only get example_query; all metadata fields go on leaves only
+            eligible_fields = _ENRICH_FIELDS if is_leaf else ["example_query"]
 
             # Determine which fields are missing (need generation)
             if overwrite:
-                missing_fields = list(_ENRICH_FIELDS)
+                missing_fields = list(eligible_fields)
             else:
-                missing_fields = [f for f in _ENRICH_FIELDS if not meta.get(f)]
+                missing_fields = [f for f in eligible_fields if not meta.get(f)]
 
             if not missing_fields:
                 skipped += 1
