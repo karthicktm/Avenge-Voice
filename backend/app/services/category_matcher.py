@@ -22,7 +22,7 @@ TRGM_THRESHOLD = 0.35
 # context ("det är första gången") but not in category labels as topic markers.
 _WORD_MATCH_STOPWORDS = frozenset(
     {
-        # Swedish
+        # Swedish — temporal/ordinal/frequency (no topical signal)
         "första",
         "andra",
         "tredje",
@@ -52,7 +52,30 @@ _WORD_MATCH_STOPWORDS = frozenset(
         "faktiskt",
         "egentligen",
         "verkligen",
-        # English
+        # Swedish — operational/status words that appear in many category labels
+        # (e.g. "X fungerar inte", "Y funkar inte") but give no topical signal.
+        # Matching on these causes FTS to return the wrong leaf before LLM runs.
+        "fungerar",
+        "fungera",
+        "funkar",
+        "funka",
+        "inte",
+        "ej",
+        "trasig",
+        "trasigt",
+        "trasiga",
+        "fel",
+        "felet",
+        "problem",
+        "avhjälpning",
+        "felanmälan",
+        "anmälan",
+        "rapport",
+        "åtgärd",
+        "åtgärda",
+        "hjälp",
+        "hjälpa",
+        # English — temporal/ordinal/frequency
         "first",
         "second",
         "third",
@@ -75,6 +98,19 @@ _WORD_MATCH_STOPWORDS = frozenset(
         "really",
         "once",
         "twice",
+        # English — operational/status words
+        "works",
+        "working",
+        "broken",
+        "not",
+        "doesn't",
+        "doesnt",
+        "report",
+        "issue",
+        "fault",
+        "error",
+        "fix",
+        "repair",
     }
 )
 
@@ -299,32 +335,88 @@ async def _llm_hierarchical_select(
     log: Any,
     openai_api_key: str,
 ) -> _NodeProxy | None:
-    """Drill down the tree level by level using LLM at each step.
+    """Drill down the tree level by level using LLM at each step, with backtracking.
 
-    At each level the LLM only sees sibling nodes (never parents), so it
-    naturally picks the most specific matching category.
+    Strategy:
+      1. Pick the best level-1 (root) category.
+      2. Drill down into it; if no deeper match is found (LLM returns None at level 2),
+         backtrack and try the next-best root category.
+      3. Return the deepest match found across all attempts.
+         If multiple roots yield a result, prefer the one with greater depth.
     """
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=openai_api_key)
 
-    current_parent_id: uuid.UUID | None = None  # start from roots
-    last_picked: _NodeProxy | None = None
+    root_siblings = list(children_map.get(None, []))
+    if not root_siblings:
+        return None
 
-    for _level in range(5):  # max depth guard
+    tried_root_ids: set[uuid.UUID] = set()
+    best_result: _NodeProxy | None = None
+
+    while True:
+        remaining_roots = [s for s in root_siblings if s.id not in tried_root_ids]
+        if not remaining_roots:
+            break
+
+        picked_root = await _llm_pick_from_siblings(text, remaining_roots, client, log)
+        if picked_root is None:
+            break  # LLM says nothing in remaining roots matches
+
+        tried_root_ids.add(picked_root.id)
+
+        # Drill down from this root
+        result = await _llm_drill_down(text, picked_root, children_map, client, log)
+
+        if result is not None and result.depth > picked_root.depth:
+            # Found a deeper match — this is a confident branch, accept it
+            log.info(
+                "llm_backtrack_found_leaf",
+                root=picked_root.label,
+                leaf=result.label,
+                depth=result.depth,
+            )
+            return result
+
+        # Only reached root level in this branch — log and try another root
+        log.info(
+            "llm_backtrack",
+            from_root=picked_root.label,
+            remaining=len(remaining_roots) - 1,
+        )
+        # Keep root as fallback in case no other branch yields a deeper match
+        if best_result is None:
+            best_result = picked_root
+
+    # All branches exhausted with no deeper match — return best root-level pick
+    return best_result
+
+
+async def _llm_drill_down(
+    text: str,
+    root: _NodeProxy,
+    children_map: dict[uuid.UUID | None, list[_NodeProxy]],
+    client: Any,
+    log: Any,
+) -> _NodeProxy | None:
+    """Drill down from root into children, returning the deepest match found."""
+    current_parent_id = root.id
+    last_picked: _NodeProxy = root
+
+    for _level in range(4):  # max 4 levels below root
         siblings = children_map.get(current_parent_id, [])
         if not siblings:
-            break
+            break  # leaf node
 
         picked = await _llm_pick_from_siblings(text, siblings, client, log)
         if picked is None:
-            break  # LLM said none match — stop here
+            break  # no match at this level — stop
 
         last_picked = picked
 
-        # If this node has no children, we're at a leaf — done
         if picked.id not in {k for k in children_map if k is not None}:
-            break
+            break  # leaf
 
         current_parent_id = picked.id
 
