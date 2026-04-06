@@ -159,8 +159,8 @@ async def _generate_metadata(
     field_descriptions = {
         "example_query": (
             "10 short search terms (single words or 2-word phrases) a tenant might say "
-            "or type when reporting this issue. Include both the category language AND "
-            "English equivalents. Return as a single space-separated string."
+            "or type when reporting this issue. Use the same language as the category path. "
+            "Return as a single space-separated string."
         ),
         "urgency_level": (
             "Issue urgency/priority. Use 'Prio 1' for urgent (health/safety risk, major damage), "
@@ -197,6 +197,9 @@ async def _generate_metadata(
         "Given a category path from a property issue classification tree, "
         "return a JSON object with ONLY the fields listed below. "
         "Be concise and accurate. Return valid JSON only — no explanation, no markdown.\n\n"
+        "IMPORTANT: Respond in the SAME language as the category path provided by the user. "
+        "If the path is in Swedish, all text fields must be in Swedish. "
+        "If the path is in English, respond in English.\n\n"
         f"Fields to generate:\n{fields_prompt}"
     )
 
