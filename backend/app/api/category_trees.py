@@ -1119,6 +1119,8 @@ async def import_structured_validate(
         raise HTTPException(status_code=400, detail="File exceeds 5 MB limit")
 
     rows = _normalize_row_headers(_parse_structured_file(content, file.filename or "upload.csv"))
+    if rows:
+        logger.info("import_headers_debug", headers=list(rows[0].keys()))
     nodes = _validate_rows(rows)
 
     # Build a condensed tree preview (top 3 levels, first 50 nodes)
