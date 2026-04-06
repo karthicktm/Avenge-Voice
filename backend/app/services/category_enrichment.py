@@ -41,7 +41,7 @@ _ENRICH_FIELDS = [
 ]
 
 
-async def enrich_example_queries(  # noqa: PLR0915
+async def enrich_example_queries(  # noqa: PLR0912,PLR0915
     workspace_id: uuid.UUID,
     tree_name: str,
     user_id: int,
@@ -108,8 +108,14 @@ async def enrich_example_queries(  # noqa: PLR0915
             meta = node.node_metadata or {}
             is_leaf = node.id in leaf_ids
 
-            # Non-leaf nodes only get example_query; all metadata fields go on leaves only
-            eligible_fields = _ENRICH_FIELDS if is_leaf else ["example_query"]
+            # Non-leaf nodes only get example_query; all metadata fields go on leaves only.
+            # If the node has a support_type field (from "Felanmälan / Support" XLSX column),
+            # skip generating can_report_fault and requires_manual_support — those are covered.
+            if is_leaf:
+                excluded = {"can_report_fault", "requires_manual_support"} if meta.get("support_type") else set()
+                eligible_fields = [f for f in _ENRICH_FIELDS if f not in excluded]
+            else:
+                eligible_fields = ["example_query"]
 
             # Determine which fields are missing (need generation)
             if overwrite:

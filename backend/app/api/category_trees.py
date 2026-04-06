@@ -1086,17 +1086,7 @@ def _validate_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:  # noqa:
             raw_value = str(row.get(raw_header, "") or "").strip()
             if not raw_value:
                 continue  # skip blank cells
-            if canonical_key == "support_type":
-                # "Felanmälan / Support" is a mutually-exclusive enum: set both fields
-                # so the enricher doesn't independently guess the missing one.
-                lower_val = raw_value.lower()
-                if "felanmälan" in lower_val or "felanmalan" in lower_val:
-                    meta["can_report_fault"] = True
-                    meta.setdefault("requires_manual_support", False)
-                elif "support" in lower_val:
-                    meta["requires_manual_support"] = True
-                    meta.setdefault("can_report_fault", False)
-            elif canonical_key in _BOOLEAN_KEYS:
+            if canonical_key in _BOOLEAN_KEYS:
                 meta[canonical_key] = _normalize_bool(raw_value)
             else:
                 meta[canonical_key] = raw_value
