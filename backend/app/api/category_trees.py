@@ -1164,6 +1164,19 @@ async def import_structured_confirm(
             is_leaf = depth == len(path) - 1
             parent_id = path_to_id.get(tuple(path[:depth])) if depth > 0 else None
 
+            # Build metadata for this specific node:
+            # - Non-leaf ancestors: use per-level example_query column (level_{n}_example_query)
+            # - Leaf: use all metadata except the per-level example_query keys
+            if is_leaf:
+                node_meta: dict[str, Any] | None = (
+                    {k: v for k, v in item_metadata.items()
+                     if not re.match(r"^level_\d+_example_query$", k)}
+                    or None
+                ) if item_metadata else None
+            else:
+                level_eq = (item_metadata or {}).get(f"level_{depth + 1}_example_query")
+                node_meta = {"example_query": level_eq} if level_eq else None
+
             node = CategoryTree(
                 id=uuid.uuid4(),
                 workspace_id=workspace_id,
@@ -1177,10 +1190,7 @@ async def import_structured_confirm(
                 parent_id=parent_id,
                 depth=depth,
                 position=len([k for k in path_to_id if len(k) == depth + 1]),
-                # Apply metadata to whatever node this row defines (leaf of this row's path).
-                # Intermediate ancestors that appear as prefixes of other rows are skipped via
-                # path_to_id, so their own row (processed first, depth-ordered) owns their metadata.
-                node_metadata=item_metadata if is_leaf else None,
+                node_metadata=node_meta,
             )
             path_to_id[seg] = node.id
             nodes_to_add.append(node)
