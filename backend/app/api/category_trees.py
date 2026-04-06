@@ -631,8 +631,21 @@ _WELL_KNOWN_HEADER_ALIASES: dict[str, str] = {
     "self resolution möjlig": "self_resolution",
     "kräver fastighetsspecifik information": "requires_property_info",
     "kan felanmälas": "can_report_fault",
+    "felanmälan / support": "support_type",
     "kan kräva manuell support": "requires_manual_support",
     "ytterligare information som behöver samlas in": "info_to_collect",
+    # Per-level definition/example columns (K2A XLSX format: "Definition Nivå N")
+    "definition nivå 1": "level_1_example_query",
+    "definition nivå 2": "level_2_example_query",
+    "definition nivå 3": "level_3_example_query",
+    "definition nivå 4": "level_4_example_query",
+    "definition nivå 5": "level_5_example_query",
+    # English variants
+    "level_1_example_query": "level_1_example_query",
+    "level_2_example_query": "level_2_example_query",
+    "level_3_example_query": "level_3_example_query",
+    "level_4_example_query": "level_4_example_query",
+    "level_5_example_query": "level_5_example_query",
 }
 
 # Aliases for structural columns so files using Swedish/custom header names
@@ -1143,6 +1156,23 @@ async def import_structured_confirm(
         )
     )
 
+    def _node_meta_for_depth(
+        item_meta: dict[str, Any] | None, depth: int, is_leaf: bool
+    ) -> dict[str, Any] | None:
+        level_key = f"level_{depth + 1}_example_query"
+        if not is_leaf:
+            val = (item_meta or {}).get(level_key)
+            return {"example_query": val} if val else None
+        if not item_meta:
+            return None
+        built: dict[str, Any] = {}
+        for k, v in item_meta.items():
+            if k == level_key:
+                built.setdefault("example_query", v)
+            elif not re.match(r"^level_\d+_example_query$", k):
+                built[k] = v
+        return built or None
+
     # Build nodes with parent tracking
     # Key: tuple of path segments → node id
     path_to_id: dict[tuple[str, ...], uuid.UUID] = {}
@@ -1164,18 +1194,7 @@ async def import_structured_confirm(
             is_leaf = depth == len(path) - 1
             parent_id = path_to_id.get(tuple(path[:depth])) if depth > 0 else None
 
-            # Build metadata for this specific node:
-            # - Non-leaf ancestors: use per-level example_query column (level_{n}_example_query)
-            # - Leaf: use all metadata except the per-level example_query keys
-            if is_leaf:
-                node_meta: dict[str, Any] | None = (
-                    {k: v for k, v in item_metadata.items()
-                     if not re.match(r"^level_\d+_example_query$", k)}
-                    or None
-                ) if item_metadata else None
-            else:
-                level_eq = (item_metadata or {}).get(f"level_{depth + 1}_example_query")
-                node_meta = {"example_query": level_eq} if level_eq else None
+            node_meta = _node_meta_for_depth(item_metadata, depth, is_leaf)
 
             node = CategoryTree(
                 id=uuid.uuid4(),
