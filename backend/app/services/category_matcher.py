@@ -16,6 +16,11 @@ logger = structlog.get_logger()
 # ts_rank score below this threshold triggers LLM fallback
 FTS_THRESHOLD = 0.05
 TRGM_THRESHOLD = 0.35
+# word_similarity threshold for word-by-word cross-language trgm matching (Layer 1b-trgm).
+# Higher than TRGM_THRESHOLD to reduce false positives from short word comparisons.
+WORD_TRGM_THRESHOLD = 0.45
+# Minimum word length (exclusive) for word-by-word trgm matching.
+WORD_TRGM_MIN_LEN = 3
 
 # Common Swedish + English words that carry no category-matching signal.
 # These are temporal/ordinal/frequency words that appear in conversational
@@ -131,7 +136,7 @@ class _NodeProxy:
 MatchedNode = CategoryTree | _NodeProxy
 
 
-async def match_category(  # noqa: PLR0911, PLR0912
+async def match_category(  # noqa: PLR0911, PLR0912, PLR0915
     db: AsyncSession,
     workspace_id: uuid.UUID,
     tree_name: str,
@@ -228,6 +233,44 @@ async def match_category(  # noqa: PLR0911, PLR0912
                     "fts_word_matched", word=word, score=score, label=node.label, depth=node.depth
                 )
                 return node, float(score), "fts"
+
+    # ------------------------------------------------------------------
+    # Layer 1b-trgm — Word-by-word word_similarity (pg_trgm)
+    # Catches cross-language and inflection variants that plain FTS misses
+    # because the "simple" dictionary is token-exact.
+    # Examples: English "parking" → Swedish "Parkering / förråd / tilläggstjänster"
+    #           Swedish "parkeringen" (genitive) → "Parkering / ..."
+    # word_similarity(word, label) finds the best match of `word` against any
+    # trigram-similar substring of the label, so short words like "parking"
+    # correctly match long compound labels like "Parkering / förråd / tilläggstjänster".
+    # Threshold is deliberately higher than TRGM_THRESHOLD to avoid false positives.
+    # ------------------------------------------------------------------
+    for word in significant_words:
+        if len(word) <= WORD_TRGM_MIN_LEN:  # skip very short words to avoid noise
+            continue
+        word_trgm_stmt = (
+            select(
+                CategoryTree,
+                func.word_similarity(word, CategoryTree.label).label("word_trgm_score"),
+            )
+            .where(
+                CategoryTree.workspace_id == workspace_id,
+                CategoryTree.tree_name == tree_name,
+                CategoryTree.status == "active",
+                func.word_similarity(word, CategoryTree.label) >= WORD_TRGM_THRESHOLD,
+            )
+            .order_by(
+                CategoryTree.depth.desc(),
+                func.word_similarity(word, CategoryTree.label).desc(),
+            )
+            .limit(3)
+        )
+        word_trgm_result = await db.execute(word_trgm_stmt)
+        for node, score in word_trgm_result.fetchall():
+            log.info(
+                "word_trgm_matched", word=word, score=score, label=node.label, depth=node.depth
+            )
+            return node, float(score), "fts"
 
     # ------------------------------------------------------------------
     # Layer 1c — Trigram similarity on label (pg_trgm)
