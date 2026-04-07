@@ -328,10 +328,11 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
     if "categorization" in enabled_tools or "category_tree" in enabled_tools:
         categorize_section = """\n[CATEGORIZATION]
 - When calling categorize, pass the caller's problem or request as the 'text' argument.
-- ALWAYS include location or place context when the caller mentions it (e.g. "parking lot", "stairwell", "balcony", "basement") — this is essential for correct categorization.
+- ALWAYS include location or place context when the caller mentions it (e.g. "parking lot", "stairwell", "balcony", "basement") — this is the single most important factor for correct categorization.
+- If the caller says "charging station in the parking" — the text must contain BOTH "charging station" AND "parking". Never drop the location to focus on the symptom alone.
 - Do NOT include conversational context such as timing ("it happened yesterday"), frequency ("it's the first time"), or preceding Q&A.
-- Good examples: "EV charger not working in parking lot", "water leak under sink", "light out in stairwell".
-- Bad examples (too stripped): "charger not working", "water leak", "light out".
+- Good examples: "EV charger not working in parking garage", "water leak under sink in bathroom", "light out in stairwell".
+- Bad examples (symptom only, location dropped): "charger not working", "no power", "water leak", "light out".
 """
 
     # Build email tool section when Resend is enabled
