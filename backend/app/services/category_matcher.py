@@ -480,9 +480,12 @@ async def _llm_pick_from_siblings(
         "Each category may include hint terms in brackets showing what it covers. "
         "Categories and hints may be in a different language than the description — match by meaning. "
         "Prefer the most specific available match. "
+        "LOCATION RULE: when the description names a specific place (parking, stairwell, balcony, "
+        "garage, etc.), prefer the category that matches that location over a category that only "
+        "matches the type of problem. "
+        "Example: 'EV charger broken in parking' → prefer 'Parking' over 'Electricity' if both exist. "
         "Return 0 if the description is not genuinely about that specific category — "
         "sharing a broad domain (e.g. both involve electricity) is not enough. "
-        "Example: 'EV charger broken' should NOT match 'Lighting' even though both are electrical. "
         "Respond with ONLY the number."
     )
     user_message = (
