@@ -16,11 +16,6 @@ logger = structlog.get_logger()
 # ts_rank score below this threshold triggers LLM fallback
 FTS_THRESHOLD = 0.05
 TRGM_THRESHOLD = 0.35
-# word_similarity threshold for word-by-word cross-language trgm matching (Layer 1b-trgm).
-# Higher than TRGM_THRESHOLD to reduce false positives from short word comparisons.
-WORD_TRGM_THRESHOLD = 0.45
-# Minimum word length (exclusive) for word-by-word trgm matching.
-WORD_TRGM_MIN_LEN = 3
 
 # Common Swedish + English words that carry no category-matching signal.
 # These are temporal/ordinal/frequency words that appear in conversational
@@ -136,7 +131,7 @@ class _NodeProxy:
 MatchedNode = CategoryTree | _NodeProxy
 
 
-async def match_category(  # noqa: PLR0911, PLR0912, PLR0915
+async def match_category(  # noqa: PLR0911, PLR0912
     db: AsyncSession,
     workspace_id: uuid.UUID,
     tree_name: str,
@@ -235,44 +230,6 @@ async def match_category(  # noqa: PLR0911, PLR0912, PLR0915
                 return node, float(score), "fts"
 
     # ------------------------------------------------------------------
-    # Layer 1b-trgm — Word-by-word word_similarity (pg_trgm)
-    # Catches cross-language and inflection variants that plain FTS misses
-    # because the "simple" dictionary is token-exact.
-    # Examples: English "parking" → Swedish "Parkering / förråd / tilläggstjänster"
-    #           Swedish "parkeringen" (genitive) → "Parkering / ..."
-    # word_similarity(word, label) finds the best match of `word` against any
-    # trigram-similar substring of the label, so short words like "parking"
-    # correctly match long compound labels like "Parkering / förråd / tilläggstjänster".
-    # Threshold is deliberately higher than TRGM_THRESHOLD to avoid false positives.
-    # ------------------------------------------------------------------
-    for word in significant_words:
-        if len(word) <= WORD_TRGM_MIN_LEN:  # skip very short words to avoid noise
-            continue
-        word_trgm_stmt = (
-            select(
-                CategoryTree,
-                func.word_similarity(word, CategoryTree.label).label("word_trgm_score"),
-            )
-            .where(
-                CategoryTree.workspace_id == workspace_id,
-                CategoryTree.tree_name == tree_name,
-                CategoryTree.status == "active",
-                func.word_similarity(word, CategoryTree.label) >= WORD_TRGM_THRESHOLD,
-            )
-            .order_by(
-                CategoryTree.depth.desc(),
-                func.word_similarity(word, CategoryTree.label).desc(),
-            )
-            .limit(3)
-        )
-        word_trgm_result = await db.execute(word_trgm_stmt)
-        for node, score in word_trgm_result.fetchall():
-            log.info(
-                "word_trgm_matched", word=word, score=score, label=node.label, depth=node.depth
-            )
-            return node, float(score), "fts"
-
-    # ------------------------------------------------------------------
     # Layer 1c — Trigram similarity on label (pg_trgm)
     # Catches spelling variants / ASR errors that share trigrams with
     # category labels (e.g. "ventilasjon" → "ventilation").
@@ -349,186 +306,91 @@ async def match_category(  # noqa: PLR0911, PLR0912, PLR0915
     if not children_map:
         return None, None, "none"
 
-    # Sort each level alphabetically for stable LLM output
-    for siblings in children_map.values():
-        siblings.sort(key=lambda n: n.label)
-
     total = sum(len(v) for v in children_map.values())
-    log.info("llm_hierarchical_start", total_nodes=total)
+    log.info("llm_flat_start", total_nodes=total)
 
     try:
         matched = await asyncio.wait_for(
-            _llm_hierarchical_select(text, children_map, log, openai_api_key),
-            timeout=6.0,
+            _llm_flat_select(text, children_map, log, openai_api_key),
+            timeout=10.0,
         )
     except TimeoutError:
-        log.warning("llm_hierarchical_timeout")
+        log.warning("llm_flat_timeout")
         return None, None, "none"
 
     if matched:
-        log.info("llm_hierarchical_matched", label=matched.label, depth=matched.depth)
+        log.info("llm_flat_matched", label=matched.label, depth=matched.depth)
         return matched, 0.85, "llm"
 
     return None, None, "none"
 
 
-async def _llm_hierarchical_select(
+async def _llm_flat_select(
     text: str,
     children_map: dict[uuid.UUID | None, list[_NodeProxy]],
     log: Any,
     openai_api_key: str,
 ) -> _NodeProxy | None:
-    """Drill down the tree level by level using LLM at each step, with backtracking.
+    """Pick the best category with a single LLM call showing all full category paths.
 
-    Strategy:
-      1. Pick the best level-1 (root) category.
-      2. Drill down into it; if no deeper match is found (LLM returns None at level 2),
-         backtrack and try the next-best root category.
-      3. Return the deepest match found across all attempts.
-         If multiple roots yield a result, prefer the one with greater depth.
+    Instead of drilling down level-by-level (which cascades wrong root picks into wrong
+    leaf picks), show the LLM every leaf's complete path at once so it can make a
+    holistic decision. The description "EV charger not working in parking" will see both
+    "El → Elfel" and "Parkering → Fel på parkeringsplats" side-by-side and pick correctly.
     """
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=openai_api_key)
 
-    root_siblings = list(children_map.get(None, []))
-    if not root_siblings:
+    # Build a flat id→node map for path reconstruction
+    all_nodes: dict[uuid.UUID, _NodeProxy] = {
+        n.id: n for siblings in children_map.values() for n in siblings
+    }
+    if not all_nodes:
         return None
 
-    tried_root_ids: set[uuid.UUID] = set()
-    best_result: _NodeProxy | None = None
+    # Collect leaf nodes (nodes that have no children in the tree)
+    leaf_nodes = [n for n in all_nodes.values() if n.id not in children_map]
+    if not leaf_nodes:
+        # Degenerate tree — all nodes are roots; treat them all as candidates
+        leaf_nodes = list(all_nodes.values())
 
-    while True:
-        remaining_roots = [s for s in root_siblings if s.id not in tried_root_ids]
-        if not remaining_roots:
-            break
+    # Build full ancestor path for each leaf: ["Root", "Child", "Leaf"]
+    def _full_path(node: _NodeProxy) -> list[str]:
+        path: list[str] = [node.label]
+        current = node
+        while current.parent_id is not None:
+            parent = all_nodes.get(current.parent_id)
+            if parent is None:
+                break
+            path.insert(0, parent.label)
+            current = parent
+        return path
 
-        picked_root = await _llm_pick_from_siblings(text, remaining_roots, client, log)
-        if picked_root is None:
-            break  # LLM says nothing in remaining roots matches
+    # Stable sort: depth ascending then label for reproducible numbering
+    leaf_nodes.sort(key=lambda n: (n.depth, n.label))
 
-        tried_root_ids.add(picked_root.id)
-
-        # Drill down from this root
-        result = await _llm_drill_down(text, picked_root, children_map, client, log)
-
-        if result is not None and result.depth > picked_root.depth:
-            # Found a deeper match — this is a confident branch, accept it
-            log.info(
-                "llm_backtrack_found_leaf",
-                root=picked_root.label,
-                leaf=result.label,
-                depth=result.depth,
-            )
-            return result
-
-        # Only reached root level in this branch — log and try another root
-        log.info(
-            "llm_backtrack",
-            from_root=picked_root.label,
-            remaining=len(remaining_roots) - 1,
-        )
-        # Keep root as fallback in case no other branch yields a deeper match
-        if best_result is None:
-            best_result = picked_root
-
-    # All branches exhausted with no deeper match — return best root-level pick
-    return best_result
-
-
-async def _llm_drill_down(
-    text: str,
-    root: _NodeProxy,
-    children_map: dict[uuid.UUID | None, list[_NodeProxy]],
-    client: Any,
-    log: Any,
-    _tried_child_ids: set[uuid.UUID] | None = None,
-    _max_retries_per_level: int = 2,
-) -> _NodeProxy:
-    """Drill down from root into children with per-level backtracking.
-
-    At each level, if the chosen child branch yields no deeper match, the next-best
-    sibling is tried (up to _max_retries_per_level attempts per level). This prevents
-    a wrong intermediate pick (e.g. "Belysning" instead of "Elbilsladdare" at level 2)
-    from stranding the search in a completely wrong subtree.
-    """
-    tried = _tried_child_ids if _tried_child_ids is not None else set()
-
-    # Honour per-level retry cap to bound total API calls
-    if len(tried) >= _max_retries_per_level:
-        return root
-
-    untried_siblings = [s for s in children_map.get(root.id, []) if s.id not in tried]
-    if not untried_siblings:
-        return root  # leaf or all siblings exhausted
-
-    picked = await _llm_pick_from_siblings(text, untried_siblings, client, log)
-    if picked is None:
-        return root  # LLM says nothing matches at this level
-
-    tried.add(picked.id)
-
-    # Recurse into chosen child
-    deeper = await _llm_drill_down(text, picked, children_map, client, log)
-
-    if deeper.depth > root.depth:
-        # Found a match deeper than us — accept it
-        return deeper
-
-    # Chosen child led nowhere deeper — backtrack and try next sibling at this level
-    log.info(
-        "llm_level_backtrack",
-        parent=root.label,
-        abandoned=picked.label,
-        retries_used=len(tried),
-    )
-    return await _llm_drill_down(
-        text, root, children_map, client, log, tried, _max_retries_per_level
-    )
-
-
-async def _llm_pick_from_siblings(
-    text: str,
-    siblings: list[_NodeProxy],
-    client: Any,
-    log: Any,
-) -> _NodeProxy | None:
-    """Ask LLM to pick the best sibling node for the given text.
-
-    Returns the chosen node or None if no match.
-    """
-    # Build candidate list — include example_query hints when present so the
-    # LLM understands what each category covers without hardcoded examples.
-    # e.g. "2. VVS  [värme uppvärmning kallt ventilation vatten avlopp]"
-    candidate_lines = []
-    for i, s in enumerate(siblings):
-        line = f"{i + 1}. {s.label}"
-        if s.example_query:
-            line += f"  [{s.example_query}]"
+    candidate_lines: list[str] = []
+    for i, leaf in enumerate(leaf_nodes):
+        path_str = " → ".join(_full_path(leaf))
+        line = f"{i + 1}. {path_str}"
+        if leaf.example_query:
+            line += f"  [{leaf.example_query}]"
         candidate_lines.append(line)
-    candidate_list = "\n".join(candidate_lines)
-    sibling_labels = [s.label for s in siblings]
 
-    log.info(
-        "llm_pick_input",
-        text=text,
-        candidates=sibling_labels,
-        depth=siblings[0].depth if siblings else None,
-    )
+    candidate_list = "\n".join(candidate_lines)
+    log.info("llm_flat_input", text=text, num_candidates=len(leaf_nodes))
 
     system_prompt = (
-        "You are a category classifier. "
-        "Given a description and a numbered list of categories, "
-        "pick the single best matching category number (1-based). "
-        "Each category may include hint terms in brackets showing what it covers. "
-        "Categories and hints may be in a different language than the description — match by meaning. "
-        "Prefer the most specific available match. "
-        "LOCATION RULE: when the description names a specific place (parking, stairwell, balcony, "
-        "garage, etc.), prefer the category that matches that location over a category that only "
-        "matches the type of problem. "
-        "Example: 'EV charger broken in parking' → prefer 'Parking' over 'Electricity' if both exist. "
-        "Return 0 if the description is not genuinely about that specific category — "
-        "sharing a broad domain (e.g. both involve electricity) is not enough. "
+        "You are a category classifier for a property management system. "
+        "Given a problem description and a numbered list of categories shown as full hierarchical paths, "
+        "pick the number of the best matching category. "
+        "Each entry shows the complete path from the top-level group down to the specific issue type. "
+        "Match by BOTH the type of problem AND its location — "
+        "a category whose path mentions the right location (e.g. parking, garage, stairwell) "
+        "beats a category that only matches the problem type (e.g. electrical fault). "
+        "Categories may be in a different language than the description — match by meaning. "
+        "Return 0 only if no category is a reasonable fit. "
         "Respond with ONLY the number."
     )
     user_message = (
@@ -549,32 +411,27 @@ async def _llm_pick_from_siblings(
             raw = (response.choices[0].message.content or "").strip()
             idx = int(raw)
             if idx == 0:
-                log.info(
-                    "llm_pick_no_match",
-                    text=text,
-                    candidates=sibling_labels,
-                    depth=siblings[0].depth if siblings else None,
-                )
+                log.info("llm_flat_no_match", text=text)
                 return None
-            if 1 <= idx <= len(siblings):
-                chosen = siblings[idx - 1]
+            if 1 <= idx <= len(leaf_nodes):
+                chosen = leaf_nodes[idx - 1]
                 log.info(
-                    "llm_level_pick",
+                    "llm_flat_pick",
                     text=text,
-                    picked=chosen.label,
-                    picked_index=idx,
-                    candidates=sibling_labels,
+                    picked=" → ".join(_full_path(chosen)),
                     depth=chosen.depth,
                 )
                 return chosen
         except (ValueError, IndexError):
             log.warning(
-                "llm_pick_bad_response", raw=raw if "raw" in dir() else None, attempt=attempt
+                "llm_flat_bad_response",
+                raw=raw if "raw" in dir() else None,
+                attempt=attempt,
             )
             if attempt == 1:
                 return None
         except Exception:
-            log.exception("llm_pick_error")
+            log.exception("llm_flat_error")
             return None
 
     return None
