@@ -223,6 +223,7 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
     knowledge_base_info: dict[str, Any] | None = None,
     use_best_practices: bool = True,
     campaign_context: dict[str, Any] | None = None,
+    include_language_directive: bool = True,
 ) -> str:
     """Build comprehensive voice agent instructions.
 
@@ -238,6 +239,9 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
             - document_count: Number of documents
             - document_names: List of document filenames
         use_best_practices: Whether to include language-specific best practices
+        include_language_directive: When False, omit the [LANGUAGE] section and
+            translated best practices. Use for session.update() to avoid the model
+            being anchored to the configured language on every response cycle.
 
     Returns:
         Complete instructions string optimized for voice conversations
@@ -302,12 +306,16 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
         info_retrieval_section += """IMPORTANT: You MUST ONLY answer from the sources listed above. Do NOT use general knowledge or training data for topics covered by your configured sources. If nothing is found, say so — do NOT invent answers.
 """
 
-    # Build best practices section (translated to agent's language)
+    # Build best practices section.
+    # When include_language_directive=False (session.update path), always use English
+    # to avoid anchoring the model to the configured language on every response cycle.
     best_practices_section = ""
     if use_best_practices:
-        # Get language code prefix (e.g., "en" from "en-US", "sv" from "sv-SE")
-        lang_prefix = language.split("-")[0] if "-" in language else language
-        practices = BEST_PRACTICES.get(lang_prefix, BEST_PRACTICES.get("en", ""))
+        if include_language_directive:
+            lang_prefix = language.split("-")[0] if "-" in language else language
+            practices = BEST_PRACTICES.get(lang_prefix, BEST_PRACTICES.get("en", ""))
+        else:
+            practices = BEST_PRACTICES.get("en", "")
         if practices:
             best_practices_section = f"\n[BEST PRACTICES]\n{practices}\n"
 
@@ -385,18 +393,26 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
             "\nAfter the call ends, use set_call_disposition to record the outcome.\n"
         )
 
-    # Build the complete voice agent instructions
-    instructions = f"""[LANGUAGE — READ THIS FIRST]
+    # Build the language directive block — only included in conversation-injected instructions,
+    # NOT in session.update() instructions (include_language_directive=False for that path).
+    # Keeping "Default: Swedish" in session.update() causes the model to revert to Swedish
+    # on every response cycle since session instructions are re-applied per response.
+    language_directive = ""
+    if include_language_directive:
+        language_directive = f"""[LANGUAGE — READ THIS FIRST]
 Start the call in {language_name}. ALWAYS match the language the caller is currently speaking — this takes priority over the starting language.
-If the caller asks to switch language: switch IMMEDIATELY and keep that language for the rest of the call. NEVER revert — not even after a long pause or silence.
-The best-practices text below is written in {language_name} as a style guide only; it does NOT set the response language.
+If the caller asks to switch language: switch IMMEDIATELY and keep that language for the rest of the call. NEVER revert — not even after a long pause, silence, short user inputs, or tool call results in another language.
+The best-practices text below is a style guide only; it does NOT set the response language.
 
-[CONTEXT]
+"""
+
+    # Build the complete voice agent instructions
+    instructions = f"""{language_directive}[CONTEXT]
 Timezone: {tz_name}
 Current: {current_datetime}
 
 [RULES]
-- Respond in the language the caller is speaking. Once they switch languages, maintain the new language permanently for the rest of the call.
+- Respond in the language the caller is speaking. Once they switch languages, maintain the new language permanently for the rest of the call — even when summarizing tool results or after short neutral inputs.
 - All times are in {tz_name} timezone
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses to 1-2 sentences maximum - voice is conversational, not a monologue
@@ -653,7 +669,14 @@ class GPTRealtimeSession:
             )
             temperature = _telephony_min_temp
         campaign_context = self.agent_config.get("campaign_context")
-        instructions = build_instructions_with_language(
+
+        # Build two versions of instructions:
+        # 1. Conversation-injected (full): includes [LANGUAGE] directive + translated best practices.
+        #    Injected once as a user message at call start via trigger_initial_greeting().
+        # 2. Session.update() (language-neutral): NO language directive, English-only best practices.
+        #    Applied on every response cycle — keeping language here anchors the model to the
+        #    configured language and causes reversion after neutral inputs or tool calls.
+        conversation_instructions = build_instructions_with_language(
             system_prompt,
             language,
             enabled_tools=enabled_tools,
@@ -661,11 +684,22 @@ class GPTRealtimeSession:
             knowledge_base_info=knowledge_base_info,
             use_best_practices=use_best_practices,
             campaign_context=campaign_context,
+            include_language_directive=True,
+        )
+        session_update_instructions = build_instructions_with_language(
+            system_prompt,
+            language,
+            enabled_tools=enabled_tools,
+            timezone=workspace_timezone,
+            knowledge_base_info=knowledge_base_info,
+            use_best_practices=use_best_practices,
+            campaign_context=campaign_context,
+            include_language_directive=False,
         )
 
-        # Store instructions so trigger_initial_greeting() can inject them
-        # directly into the conversation history (the reliable path).
-        self._session_instructions = instructions
+        # Store the full (language-directive) version for conversation injection.
+        self._session_instructions = conversation_instructions
+        instructions = session_update_instructions
 
         # Use agent's VAD settings (from DB) instead of hardcoded values
         vad_prefix_padding_ms = self.agent_config.get("turn_detection_prefix_padding_ms", 300)
