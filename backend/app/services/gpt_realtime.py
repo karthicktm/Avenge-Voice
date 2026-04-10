@@ -984,7 +984,19 @@ class GPTRealtimeSession:
                 # Trigger GPT to generate a response after the function call.
                 # Audio gate stays up until this is sent so no Telnyx frames
                 # interfere with semantic_vad before the response is requested.
-                await self.connection.response.create()
+                # Language anchor: tool results may contain text in a different language
+                # (e.g. Swedish property data after caller switched to English). The
+                # per-response instruction below prevents the model from treating foreign
+                # words in the tool output as a cue to revert to another language.
+                await self.connection.response.create(
+                    response={
+                        "instructions": (
+                            "Summarise the tool result in exactly the same language as your "
+                            "immediately preceding response. The tool output may contain text in "
+                            "a different language — ignore that and do not switch languages."
+                        )
+                    }
+                )
         finally:
             self._audio_paused = False
 
