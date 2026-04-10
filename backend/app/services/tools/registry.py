@@ -773,16 +773,24 @@ class ToolRegistry:
                 session_key = f"lookup_search:{canonical}"
 
                 if session_key in self._tool_cache:
+                    self._log.info("lookup_search_session_cache_hit", query=arguments.get("query"))
                     return cast("dict[str, Any]", self._tool_cache[session_key])
 
                 redis_key = f"lookup:search:{self.workspace_id}:{_short_hash(canonical)}"
                 cached = await self._redis_get(redis_key)
                 if cached:
+                    self._log.info(
+                        "lookup_search_redis_cache_hit",
+                        query=arguments.get("query"),
+                        count=cached.get("count", 0),
+                    )
                     self._tool_cache[session_key] = cached
                     return cached
 
                 result = await self.lookup_tools.execute_tool(tool_name, arguments)
-                if result.get("success"):
+                # Only cache results that actually contain records — empty results may be
+                # transient (data not yet indexed, wrong query) and should not block retries.
+                if result.get("success") and result.get("count", 0) > 0:
                     self._tool_cache[session_key] = result
                     await self._redis_set(redis_key, result, ttl=900)
                 return result
