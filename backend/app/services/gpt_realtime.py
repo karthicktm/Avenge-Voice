@@ -442,8 +442,21 @@ The best-practices text below is a style guide only; it does NOT set the respons
 
 """
 
+    # Language consistency rule — always present in session instructions (both session.update()
+    # and conversation-injected paths). Unlike language_directive above, this block is NOT
+    # anchored to a starting language so it is safe to include in session.update() without
+    # causing the model to revert to the configured default on every response cycle.
+    language_rule = """\
+[LANGUAGE RULE — CRITICAL]
+ALWAYS respond in the language the caller is currently speaking, based on their most recent message.
+If the caller switches language mid-call, switch immediately and maintain that language for ALL subsequent turns.
+NEVER revert to a different language — not after silence, not after short inputs, and especially not because tool results or data contain text in another language.
+Tool results may be in any language; that language is irrelevant — respond only in the caller's current language.
+
+"""
+
     # Build the complete voice agent instructions
-    instructions = f"""{language_directive}[CONTEXT]
+    instructions = f"""{language_directive}{language_rule}[CONTEXT]
 Timezone: {tz_name}
 Current: {current_datetime}
 
