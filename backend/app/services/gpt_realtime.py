@@ -387,17 +387,16 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
 
     # Build the complete voice agent instructions
     instructions = f"""[LANGUAGE — READ THIS FIRST]
-Default: {language_name}. ALWAYS respond in the language the caller is currently speaking.
-If the caller asks to switch language: switch IMMEDIATELY and NEVER revert — not even after a long pause.
-The best-practices text below is written in {language_name} as a style guide; it does NOT override this rule.
+Start the call in {language_name}. ALWAYS match the language the caller is currently speaking — this takes priority over the starting language.
+If the caller asks to switch language: switch IMMEDIATELY and keep that language for the rest of the call. NEVER revert — not even after a long pause or silence.
+The best-practices text below is written in {language_name} as a style guide only; it does NOT set the response language.
 
 [CONTEXT]
-Language: {language_name}
 Timezone: {tz_name}
 Current: {current_datetime}
 
 [RULES]
-- Respond in the language the caller is speaking. If they switch, you switch permanently for the rest of the call.
+- Respond in the language the caller is speaking. Once they switch languages, maintain the new language permanently for the rest of the call.
 - All times are in {tz_name} timezone
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses to 1-2 sentences maximum - voice is conversational, not a monologue
@@ -693,7 +692,7 @@ class GPTRealtimeSession:
         elif turn_detection_mode == "semantic":
             turn_detection = {
                 "type": "semantic_vad",
-                "eagerness": "medium",
+                "eagerness": "high",
             }
         else:
             turn_detection = {
