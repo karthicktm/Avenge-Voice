@@ -724,13 +724,12 @@ class GPTRealtimeSession:
         if turn_detection_mode == "disabled":
             turn_detection: dict[str, Any] | None = None
         elif turn_detection_mode == "semantic":
+            # gpt-realtime-2025-08-28 (telephony) rejects silence_duration_ms on semantic_vad
+            # with "Unknown parameter" — which causes session.update() to silently drop the
+            # entire config including tools, leaving the model unable to call any functions.
             turn_detection = {
                 "type": "semantic_vad",
                 "eagerness": "high",
-                # silence_duration_ms is supported for semantic_vad and caps how long
-                # the model waits after speech ends before responding. Without it the
-                # API default is much higher, adding noticeable latency on telephony.
-                "silence_duration_ms": vad_silence_duration_ms,
             }
         else:
             turn_detection = {
