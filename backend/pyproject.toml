@@ -149,6 +149,7 @@ ignore = [
     "S101",    # use of assert
     "S104",    # hardcoded bind all interfaces (intentional for dev)
     "S105",    # hardcoded password (only in defaults/examples)
+    "ERA001",  # commented-out code (intentional for disabled layers/features)
     "TRY003",  # long messages outside exception class
     "TRY300",  # consider else block (prefer explicit return)
     "EM101",   # raw string in exception

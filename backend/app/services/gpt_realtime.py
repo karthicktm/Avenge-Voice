@@ -766,20 +766,32 @@ class GPTRealtimeSession:
         Returns:
             Tool result
         """
+        import time
+
         if not self.tool_registry:
             return {"success": False, "error": "Tool registry not initialized"}
 
         tool_name = tool_call.get("name", "")
         arguments = tool_call.get("arguments", {})
 
+        start_time = time.monotonic()
         self.logger.info(
-            "handling_tool_call",
+            "tool_call_start",
             tool_name=tool_name,
             arguments=arguments,
         )
 
         # Execute tool via internal tool registry
         result = await self.tool_registry.execute_tool(tool_name, arguments)
+
+        elapsed_ms = round((time.monotonic() - start_time) * 1000)
+        self.logger.info(
+            "tool_call_end",
+            tool_name=tool_name,
+            elapsed_ms=elapsed_ms,
+            success=result.get("success"),
+            result=result,
+        )
 
         return result
 

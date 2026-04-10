@@ -192,70 +192,63 @@ async def match_category(  # noqa: PLR0911, PLR0912
         log.info("fts_no_results")
 
     # ------------------------------------------------------------------
-    # Layer 1b — Word-by-word FTS fallback
-    # Full descriptions rarely match short category labels with AND logic.
-    # Try each significant word individually and take the deepest match.
+    # Layer 1b — Word-by-word FTS fallback (disabled: adds sequential DB
+    # round-trips before LLM; flat LLM handles these cases better)
     # ------------------------------------------------------------------
-    min_word_len = (
-        2  # include 3+ char words so English short terms like "rat", "cold", "lock" are tried
-    )
-    significant_words = [
-        w.strip(".,!?-")
-        for w in text.split()
-        if len(w.strip(".,!?-")) > min_word_len
-        and w.strip(".,!?-").lower() not in _WORD_MATCH_STOPWORDS
-    ]
-    for word in significant_words:
-        word_tsq = func.plainto_tsquery("simple", word)
-        word_stmt = (
-            select(CategoryTree, ts_rank_expr.label("score"))
-            .where(
-                CategoryTree.workspace_id == workspace_id,
-                CategoryTree.tree_name == tree_name,
-                CategoryTree.status == "active",
-                CategoryTree.search_vector.op("@@")(word_tsq),
-            )
-            .order_by(
-                CategoryTree.depth.desc(), func.ts_rank(CategoryTree.search_vector, word_tsq).desc()
-            )
-            .limit(5)
-        )
-        word_result = await db.execute(word_stmt)
-        word_rows = word_result.fetchall()
-        for node, score in word_rows:
-            if score >= FTS_THRESHOLD:
-                log.info(
-                    "fts_word_matched", word=word, score=score, label=node.label, depth=node.depth
-                )
-                return node, float(score), "fts"
+    # min_word_len = 2
+    # significant_words = [
+    #     w.strip(".,!?-")
+    #     for w in text.split()
+    #     if len(w.strip(".,!?-")) > min_word_len
+    #     and w.strip(".,!?-").lower() not in _WORD_MATCH_STOPWORDS
+    # ]
+    # for word in significant_words:
+    #     word_tsq = func.plainto_tsquery("simple", word)
+    #     word_stmt = (
+    #         select(CategoryTree, ts_rank_expr.label("score"))
+    #         .where(
+    #             CategoryTree.workspace_id == workspace_id,
+    #             CategoryTree.tree_name == tree_name,
+    #             CategoryTree.status == "active",
+    #             CategoryTree.search_vector.op("@@")(word_tsq),
+    #         )
+    #         .order_by(
+    #             CategoryTree.depth.desc(), func.ts_rank(CategoryTree.search_vector, word_tsq).desc()
+    #         )
+    #         .limit(5)
+    #     )
+    #     word_result = await db.execute(word_stmt)
+    #     word_rows = word_result.fetchall()
+    #     for node, score in word_rows:
+    #         if score >= FTS_THRESHOLD:
+    #             log.info(
+    #                 "fts_word_matched", word=word, score=score, label=node.label, depth=node.depth
+    #             )
+    #             return node, float(score), "fts"
 
     # ------------------------------------------------------------------
-    # Layer 1c — Trigram similarity on label (pg_trgm)
-    # Catches spelling variants / ASR errors that share trigrams with
-    # category labels (e.g. "ventilasjon" → "ventilation").
-    # Does NOT resolve semantic gaps (rat vs mice share zero trigrams —
-    # the LLM layer below handles those). Zero API cost.
-    # Requires pg_trgm extension (migration 038).
+    # Layer 1c — Trigram similarity on label (disabled: LLM handles
+    # spelling variants and cross-language matches more reliably)
     # ------------------------------------------------------------------
-    if text.strip():
-        trgm_stmt = (
-            select(CategoryTree, func.similarity(CategoryTree.label, text).label("trgm_score"))
-            .where(
-                CategoryTree.workspace_id == workspace_id,
-                CategoryTree.tree_name == tree_name,
-                CategoryTree.status == "active",
-                func.similarity(CategoryTree.label, text) >= TRGM_THRESHOLD,
-            )
-            .order_by(
-                CategoryTree.depth.desc(),
-                func.similarity(CategoryTree.label, text).desc(),
-            )
-            .limit(5)
-        )
-        trgm_result = await db.execute(trgm_stmt)
-        for node, trgm_score in trgm_result.fetchall():
-            log.info("trgm_matched", score=trgm_score, label=node.label, depth=node.depth)
-            return node, float(trgm_score), "fts"
+    # if text.strip():
+    #     trgm_stmt = (
+    #         select(CategoryTree, func.similarity(CategoryTree.label, text).label("trgm_score"))
+    #         .where(
+    #             CategoryTree.workspace_id == workspace_id,
+    #             CategoryTree.tree_name == tree_name,
+    #             CategoryTree.status == "active",
+    #             func.similarity(CategoryTree.label, text) >= TRGM_THRESHOLD,
+    #         )
+    #         .order_by(
+    #             CategoryTree.depth.desc(),
+    #             func.similarity(CategoryTree.label, text).desc(),
+    #         )
+    #         .limit(5)
+    #     )
+    #     trgm_result = await db.execute(trgm_stmt)
+    #     for node, trgm_score in trgm_result.fetchall():
+    #         log.info("trgm_matched", score=trgm_score, label=node.label, depth=node.depth)
+    #         return node, float(trgm_score), "fts"
 
     # ------------------------------------------------------------------
     # Layer 2 — Hierarchical LLM traversal
