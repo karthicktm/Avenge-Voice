@@ -946,43 +946,47 @@ class GPTRealtimeSession:
                 )
             return {"success": False, "error": "Invalid JSON arguments"}
 
-        # Pause audio input for the duration of the tool call so Telnyx/Twilio
-        # frames don't trigger VAD and cause OpenAI to auto-generate spurious
-        # "I'm still looking…" responses that corrupt the function_call_output cycle.
+        # Pause audio input until AFTER response.create() so Telnyx/Twilio frames
+        # don't enter the input buffer between function_call_output and response.create().
+        # With semantic_vad, ambient phone-line audio arriving in that window causes the
+        # model to treat it as ongoing speech and defer the response until VAD detects
+        # end-of-turn — which only happens when the caller speaks again.
         self._audio_paused = True
         try:
             result = await self.handle_tool_call({"name": name, "arguments": arguments})
+
+            # Send result back using SDK
+            if self.connection:
+                # Cancel any VAD-triggered "I'm still looking…" response that the model
+                # may have auto-generated while waiting for the tool result. If left
+                # active it corrupts the conversation state and the function_call_output
+                # is silently ignored.
+                with contextlib.suppress(Exception):
+                    await self.connection.response.cancel()
+
+                # Clear any audio that accumulated before the gate closes here.
+                with contextlib.suppress(Exception):
+                    await self.connection.input_audio_buffer.clear()
+
+                output_payload = _trim_tool_result(result)
+                self.logger.info(
+                    "function_call_output_size",
+                    tool_name=name,
+                    chars=len(output_payload),
+                )
+                await self.connection.conversation.item.create(
+                    item={
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": output_payload,
+                    }
+                )
+                # Trigger GPT to generate a response after the function call.
+                # Audio gate stays up until this is sent so no Telnyx frames
+                # interfere with semantic_vad before the response is requested.
+                await self.connection.response.create()
         finally:
             self._audio_paused = False
-
-        # Send result back using SDK
-        if self.connection:
-            # Cancel any VAD-triggered "I'm still looking…" response that the model
-            # may have auto-generated while waiting for the tool result. If left
-            # active it corrupts the conversation state and the function_call_output
-            # is silently ignored.
-            with contextlib.suppress(Exception):
-                await self.connection.response.cancel()
-
-            # Clear any audio that arrived before the gate closed.
-            with contextlib.suppress(Exception):
-                await self.connection.input_audio_buffer.clear()
-
-            output_payload = _trim_tool_result(result)
-            self.logger.info(
-                "function_call_output_size",
-                tool_name=name,
-                chars=len(output_payload),
-            )
-            await self.connection.conversation.item.create(
-                item={
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": output_payload,
-                }
-            )
-            # Trigger GPT to generate a response after the function call
-            await self.connection.response.create()
 
         self.logger.info(
             "function_call_completed",
@@ -1218,10 +1222,10 @@ class GPTRealtimeSession:
             except Exception as e:
                 self.logger.warning("connection_close_failed", error=str(e))
 
-        # Cleanup tool registry
+        # Cleanup tool registry — awaits background tasks (e.g. fire-and-forget emails)
+        # before closing httpx clients, ensuring emails sent near end-of-call are delivered.
         if self.tool_registry:
-            # No cleanup needed for internal tools
-            pass
+            await self.tool_registry.close()
 
         self.logger.info(
             "gpt_realtime_session_cleanup_completed",
