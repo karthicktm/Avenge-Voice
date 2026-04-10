@@ -393,7 +393,12 @@ class LookupTools:
             )
 
             if self.workspace_id:
-                stmt = stmt.where(LookupCollection.workspace_id == self.workspace_id)
+                stmt = stmt.where(
+                    or_(
+                        LookupCollection.workspace_id == self.workspace_id,
+                        LookupCollection.user_id == self.user_id,
+                    )
+                )
             else:
                 stmt = stmt.where(LookupCollection.user_id == self.user_id)
 

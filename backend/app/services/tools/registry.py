@@ -808,7 +808,10 @@ class ToolRegistry:
                     return cached
 
                 result = await self.lookup_tools.execute_tool(tool_name, arguments)
-                if result.get("success"):
+                # Only cache when collections actually exist — empty results may be
+                # transient (scoping issue, data not yet loaded) and should not
+                # block retries, matching the same guard on lookup_search.
+                if result.get("success") and result.get("count", 0) > 0:
                     self._tool_cache[session_key] = result
                     await self._redis_set(redis_key, result, ttl=900)
                 return result
