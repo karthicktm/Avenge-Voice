@@ -727,6 +727,10 @@ class GPTRealtimeSession:
             turn_detection = {
                 "type": "semantic_vad",
                 "eagerness": "high",
+                # silence_duration_ms is supported for semantic_vad and caps how long
+                # the model waits after speech ends before responding. Without it the
+                # API default is much higher, adding noticeable latency on telephony.
+                "silence_duration_ms": vad_silence_duration_ms,
             }
         else:
             turn_detection = {
