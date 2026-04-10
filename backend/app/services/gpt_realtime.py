@@ -20,6 +20,42 @@ from app.services.tools.registry import ToolRegistry
 
 logger = structlog.get_logger()
 
+_MAX_TOOL_OUTPUT_CHARS = 2500  # Cap function_call_output payload to reduce model processing latency
+_MAX_FIELD_VALUE_CHARS = 500  # Truncate individual string values in record data beyond this length
+
+
+def _trim_tool_result(result: dict[str, Any]) -> str:
+    """Serialize tool result, truncating long string values in record data.
+
+    Large JSONB payloads sent as function_call_output force the model to tokenize
+    thousands of characters before generating audio, adding 2-3 seconds of silence.
+    Strings > 300 chars in each record's ``data`` dict are truncated with an ellipsis;
+    all keys are preserved so the model still knows what fields exist.
+    """
+    output = json.dumps(result)
+    if len(output) <= _MAX_TOOL_OUTPUT_CHARS:
+        return output
+
+    trimmed = dict(result)
+    if "results" in trimmed and isinstance(trimmed["results"], list):
+        trimmed_records = []
+        for record in trimmed["results"]:
+            rec = dict(record)
+            if isinstance(rec.get("data"), dict):
+                rec["data"] = {
+                    k: (
+                        v[:_MAX_FIELD_VALUE_CHARS] + "…"
+                        if isinstance(v, str) and len(v) > _MAX_FIELD_VALUE_CHARS
+                        else v
+                    )
+                    for k, v in rec["data"].items()
+                }
+            trimmed_records.append(rec)
+        trimmed["results"] = trimmed_records
+
+    return json.dumps(trimmed)
+
+
 # Language code to human-readable name mapping
 LANGUAGE_NAMES: dict[str, str] = {
     "en-US": "English",
@@ -932,11 +968,17 @@ class GPTRealtimeSession:
             with contextlib.suppress(Exception):
                 await self.connection.input_audio_buffer.clear()
 
+            output_payload = _trim_tool_result(result)
+            self.logger.info(
+                "function_call_output_size",
+                tool_name=name,
+                chars=len(output_payload),
+            )
             await self.connection.conversation.item.create(
                 item={
                     "type": "function_call_output",
                     "call_id": call_id,
-                    "output": json.dumps(result),
+                    "output": output_payload,
                 }
             )
             # Trigger GPT to generate a response after the function call
