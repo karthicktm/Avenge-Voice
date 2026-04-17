@@ -382,6 +382,7 @@ async def _handle_twilio_stream(  # noqa: PLR0915
             event_count = 0
             pending_end_call = False  # True when end_call requested but waiting for AI to finish
             greeting_triggered = False  # Track if we've triggered the greeting
+            greeting_complete = False  # True after first response.done — greeting gate released
 
             # Trigger the initial greeting immediately — session.updated is consumed
             # internally by the OpenAI SDK's session.update() call and never arrives
@@ -544,12 +545,22 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                         )
                     else:
                         log.debug("realtime_event", event_type=event_type)
+                    # Release the greeting gate on the first response.done so
+                    # normal user audio can flow again after the greeting plays.
+                    if not greeting_complete:
+                        greeting_complete = True
+                        realtime_session.release_greeting_gate()
                     if pending_end_call:
                         log.info("ending_call_after_response_complete")
                         should_end_call = True
                         with contextlib.suppress(Exception):
                             await websocket.close(code=1000, reason="Call ended by agent")
                         break
+
+                elif event_type == "input_audio_buffer.committed":
+                    # User turn finalized — briefly suppress input to prevent PSTN
+                    # background noise from cancelling the model's upcoming reply.
+                    asyncio.create_task(realtime_session.post_turn_clear())  # noqa: RUF006
 
                 elif event_type in [
                     "response.audio.done",
@@ -793,6 +804,7 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
 
             pending_end_call = False  # True when end_call requested but waiting for AI to finish
             greeting_triggered = False  # Track if we've triggered the greeting
+            greeting_complete = False  # True after first response.done — greeting gate released
 
             async for event in realtime_session.connection:
                 event_type = event.type
@@ -921,12 +933,22 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                         )
                     else:
                         log.debug("realtime_event", event_type=event_type)
+                    # Release the greeting gate on the first response.done so
+                    # normal user audio can flow again after the greeting plays.
+                    if not greeting_complete:
+                        greeting_complete = True
+                        realtime_session.release_greeting_gate()
                     if pending_end_call:
                         log.info("ending_call_after_response_complete")
                         should_end_call = True
                         with contextlib.suppress(Exception):
                             await websocket.close(code=1000, reason="Call ended by agent")
                         break
+
+                elif event_type == "input_audio_buffer.committed":
+                    # User turn finalized — briefly suppress input to prevent PSTN
+                    # background noise from cancelling the model's upcoming reply.
+                    asyncio.create_task(realtime_session.post_turn_clear())  # noqa: RUF006
 
                 elif event_type in [
                     "response.audio.done",

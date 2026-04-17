@@ -2,6 +2,7 @@
 
 # ruff: noqa: RUF001 - Contains intentional non-ASCII characters for internationalization
 
+import asyncio
 import contextlib
 import json
 import types
@@ -552,6 +553,13 @@ class GPTRealtimeSession:
         # frames when set so VAD cannot fire and generate spurious "I'm still
         # looking…" responses that corrupt the function_call_output cycle.
         self._audio_paused: bool = False
+        # Greeting gate: True from trigger_initial_greeting() until the first
+        # response.done fires. Blocks PSTN background noise from cancelling the
+        # initial greeting via spurious speech_started events.
+        self._greeting_gate: bool = False
+        # Post-turn gate: briefly True after input_audio_buffer.committed to
+        # prevent lingering PSTN noise from cancelling the model's reply.
+        self._post_turn_gate: bool = False
         self.logger = logger.bind(
             component="gpt_realtime",
             session_id=self.session_id,
@@ -1069,6 +1077,10 @@ class GPTRealtimeSession:
         )
 
         try:
+            # Gate audio input for the entire greeting window so PSTN background
+            # noise cannot fire speech_started and cancel the greeting response.
+            self._greeting_gate = True
+
             # Clear any buffered input audio to prevent line noise from
             # triggering VAD and cancelling the greeting response.
             await self.connection.input_audio_buffer.clear()
@@ -1109,16 +1121,42 @@ class GPTRealtimeSession:
             self.logger.exception("initial_greeting_failed", error=str(e))
             return False
 
+    def release_greeting_gate(self) -> None:
+        """Release the greeting audio gate after the first response completes.
+
+        Called by the telephony WS handler when the first response.done fires,
+        allowing normal user audio to flow to OpenAI again.
+        """
+        if self._greeting_gate:
+            self._greeting_gate = False
+            self.logger.info("greeting_gate_released")
+
+    async def post_turn_clear(self) -> None:
+        """Brief audio blackout after user turn to prevent PSTN noise cancellation.
+
+        After input_audio_buffer.committed, PSTN background noise can fire
+        speech_started within ~300 ms and cancel the model's reply. This method
+        briefly blocks audio input, clears the buffer, then releases.
+        """
+        self._post_turn_gate = True
+        try:
+            if self.connection:
+                with contextlib.suppress(Exception):
+                    await self.connection.input_audio_buffer.clear()
+            await asyncio.sleep(0.3)
+        finally:
+            self._post_turn_gate = False
+            self.logger.debug("post_turn_gate_released")
+
     async def send_audio(self, audio_data: bytes) -> None:
         """Send audio input to GPT Realtime using SDK.
 
         Args:
             audio_data: PCM16 audio data (raw bytes)
         """
-        if self._audio_paused:
-            # Drop frames while a tool call is executing to prevent VAD
-            # from triggering spurious responses before function_call_output
-            # is submitted.
+        if self._audio_paused or self._greeting_gate or self._post_turn_gate:
+            # Drop frames while a tool call is executing, during the initial
+            # greeting window, or in the brief post-turn noise-suppression window.
             return
 
         if not self.connection:
