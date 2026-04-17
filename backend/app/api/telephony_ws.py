@@ -5,7 +5,6 @@ connecting them to our AI voice agent pipeline.
 """
 
 import asyncio
-import audioop
 import base64
 import contextlib
 import json
@@ -349,15 +348,13 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     )
 
                 elif event == "media":
-                    # Twilio sends mulaw 8kHz; OpenAI expects PCM16 24kHz.
-                    # Convert: mulaw 8kHz → PCM16 8kHz → PCM16 24kHz
+                    # Twilio sends mulaw 8kHz; OpenAI session is configured with
+                    # g711_ulaw so no conversion is needed — pass raw mulaw bytes.
                     media = data.get("media", {})
                     payload = media.get("payload", "")
                     if payload:
                         audio_mulaw = base64.b64decode(payload)
-                        audio_pcm16_8k = audioop.ulaw2lin(audio_mulaw, 2)
-                        audio_pcm16_24k, _ = audioop.ratecv(audio_pcm16_8k, 2, 1, 8000, 24000, None)
-                        await realtime_session.send_audio(audio_pcm16_24k)
+                        await realtime_session.send_audio(audio_mulaw)
 
                 elif event == "stop":
                     log.info("twilio_stream_stopped")
@@ -424,15 +421,12 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                         continue
 
                     try:
-                        audio_bytes = base64.b64decode(delta_data)
-                        # OpenAI outputs PCM16 at 24kHz; Twilio expects mulaw at 8kHz.
-                        # Downsample 24kHz → 8kHz then convert PCM16 → mulaw.
-                        audio_8k, _ = audioop.ratecv(audio_bytes, 2, 1, 24000, 8000, None)
-                        audio_mulaw = audioop.lin2ulaw(audio_8k, 2)
-                        payload = base64.b64encode(audio_mulaw).decode("utf-8")
+                        # OpenAI outputs g711_ulaw (8kHz mulaw) — already the format
+                        # Twilio expects, so use the base64 delta directly.
+                        payload = delta_data
                         log.warning(
                             "sending_audio_to_twilio",
-                            audio_size=len(audio_mulaw),
+                            audio_size=len(payload),
                             stream_sid=stream_sid or "EMPTY",
                         )
                         await websocket.send_text(
@@ -814,14 +808,14 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                 # Handle audio output
                 elif event_type == "response.audio.delta":
                     if hasattr(event, "delta") and event.delta:
-                        audio_bytes = base64.b64decode(event.delta)
-                        payload = base64.b64encode(audio_bytes).decode("utf-8")
+                        # OpenAI outputs g711_ulaw (8kHz mulaw) — already base64-encoded
+                        # in the format Telnyx expects, so use event.delta directly.
                         await websocket.send_text(
                             json.dumps(
                                 {
                                     "event": "media",
                                     "stream_id": stream_id,
-                                    "media": {"payload": payload},
+                                    "media": {"payload": event.delta},
                                 }
                             )
                         )
