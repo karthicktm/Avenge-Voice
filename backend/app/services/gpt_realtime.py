@@ -560,6 +560,11 @@ class GPTRealtimeSession:
         # Post-turn gate: briefly True after input_audio_buffer.committed to
         # prevent lingering PSTN noise from cancelling the model's reply.
         self._post_turn_gate: bool = False
+        # Agent-response gate: True while a response.created → response.done
+        # cycle is active. Blocks PSTN background noise from firing speech_started
+        # and cancelling in-progress agent speech (full noise-resistant mode for
+        # call-center environments where continuous background noise is expected).
+        self._agent_response_gate: bool = False
         self.logger = logger.bind(
             component="gpt_realtime",
             session_id=self.session_id,
@@ -1131,6 +1136,16 @@ class GPTRealtimeSession:
             self._greeting_gate = False
             self.logger.info("greeting_gate_released")
 
+    def set_agent_response_gate(self, active: bool) -> None:
+        """Set or clear the agent-response audio gate.
+
+        Call with active=True when response.created fires and active=False when
+        response.done fires. While active, all incoming user audio is dropped so
+        PSTN background noise cannot fire speech_started and cancel the response.
+        """
+        self._agent_response_gate = active
+        self.logger.debug("agent_response_gate", active=active)
+
     async def post_turn_clear(self) -> None:
         """Brief audio blackout after user turn to prevent PSTN noise cancellation.
 
@@ -1154,9 +1169,16 @@ class GPTRealtimeSession:
         Args:
             audio_data: PCM16 audio data (raw bytes)
         """
-        if self._audio_paused or self._greeting_gate or self._post_turn_gate:
-            # Drop frames while a tool call is executing, during the initial
-            # greeting window, or in the brief post-turn noise-suppression window.
+        if (
+            self._audio_paused
+            or self._greeting_gate
+            or self._post_turn_gate
+            or self._agent_response_gate
+        ):
+            # Drop frames while: a tool call is executing, during the initial
+            # greeting window, in the brief post-turn noise-suppression window,
+            # or while the agent is actively generating a response (prevents PSTN
+            # background noise from firing speech_started and cancelling speech).
             return
 
         if not self.connection:

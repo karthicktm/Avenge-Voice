@@ -519,8 +519,15 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                         item_name=item_name,
                     )
 
+                elif event_type == "response.created":
+                    # Agent is starting a response — block user audio so PSTN
+                    # background noise cannot fire speech_started and cancel it.
+                    realtime_session.set_agent_response_gate(True)
+
                 # Handle response completion - check if we should end the call
                 elif event_type == "response.done":
+                    # Agent finished — re-open audio so user can speak.
+                    realtime_session.set_agent_response_gate(False)
                     response_data = getattr(event, "response", None)
                     if response_data:
                         status = getattr(response_data, "status", "unknown")
@@ -907,8 +914,15 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                         item_name=item_name,
                     )
 
+                elif event_type == "response.created":
+                    # Agent is starting a response — block user audio so PSTN
+                    # background noise cannot fire speech_started and cancel it.
+                    realtime_session.set_agent_response_gate(True)
+
                 # Handle response completion - check if we should end the call
                 elif event_type == "response.done":
+                    # Agent finished — re-open audio so user can speak.
+                    realtime_session.set_agent_response_gate(False)
                     response_data = getattr(event, "response", None)
                     if response_data:
                         status = getattr(response_data, "status", "unknown")
