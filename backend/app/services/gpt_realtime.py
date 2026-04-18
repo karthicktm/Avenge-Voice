@@ -1176,10 +1176,14 @@ class GPTRealtimeSession:
 
         Called by the telephony WS handler when the first response.done fires,
         allowing normal user audio to flow to OpenAI again.
+
+        Also triggers a post-response blackout so ambient background noise that
+        was masked by the greeting gate cannot immediately commit as a user turn.
         """
         if self._greeting_gate:
             self._greeting_gate = False
             self.logger.info("greeting_gate_released")
+            asyncio.ensure_future(self.post_turn_clear())  # noqa: RUF006
 
     def set_agent_response_gate(self, active: bool) -> None:
         """Set or clear the agent-response audio gate.
@@ -1188,16 +1192,20 @@ class GPTRealtimeSession:
         response.done fires. While active, all incoming user audio is dropped so
         PSTN background noise cannot fire speech_started and cancel the response.
 
-        When activating, also clears the input buffer to evict any audio frames
-        that arrived in the race window just before response.created — otherwise
-        those frames can still trigger speech_started and cancel the response.
-        When deactivating, clears the buffer to flush noise that accumulated
-        while the gate was up, preventing it from immediately triggering a new turn.
+        On activate: clears the input buffer immediately to evict audio frames
+        that arrived in the race window just before response.created.
+        On deactivate: triggers a post_turn_clear() blackout so noise that
+        accumulated while the gate was up cannot immediately trigger a new turn.
         """
         self._agent_response_gate = active
         self.logger.debug("agent_response_gate", active=active)
-        if self.connection:
+        if active:
+            # Evict pre-buffered noise that snuck in before the gate went up.
             asyncio.ensure_future(self._clear_input_buffer_safely())  # noqa: RUF006
+        else:
+            # Brief blackout after agent finishes — prevents ambient noise from
+            # immediately firing speech_started and generating a spurious response.
+            asyncio.ensure_future(self.post_turn_clear())  # noqa: RUF006
 
     async def _clear_input_buffer_safely(self) -> None:
         """Clear the OpenAI input buffer, suppressing any errors."""
