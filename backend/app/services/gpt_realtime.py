@@ -99,7 +99,8 @@ BEST_PRACTICES: dict[str, str] = {
 - Confirm details (date, time, phone number, etc.) with the caller BEFORE taking actions like booking or sending messages
 - Search for existing contacts before creating new ones — never share other customers' information
 - Only transfer or end a call when the caller explicitly requests it
-- When summarizing or confirming call details, deliver the COMPLETE summary immediately — never say "I have all the details" or "let me summarize" and then wait for a user response; the announcement and full summary must be spoken together in the same turn""",
+- When summarizing or confirming call details, deliver the COMPLETE summary immediately — never say "I have all the details" or "let me summarize" and then wait for a user response; the announcement and full summary must be spoken together in the same turn
+- Once you have delivered the complete final summary, do NOT repeat it — if the caller confirms with "yes", "ok", or similar, respond only with a brief closing (e.g. "The report has been submitted. Thank you for calling.")""",
     "sv": """- Håll svar till 1-2 meningar — röstsamtal är en konversation, inte en föreläsning
 - Ställ en fråga i taget, inte flera
 - Om du inte vet något, säg det ärligt
@@ -110,7 +111,8 @@ BEST_PRACTICES: dict[str, str] = {
 - Bekräfta detaljer (datum, tid, telefonnummer etc.) med den som ringer INNAN du vidtar åtgärder som bokning eller meddelanden
 - Sök efter befintliga kontakter innan du skapar nya — dela aldrig andra kunders information
 - Koppla eller avsluta ett samtal bara när den som ringer uttryckligen begär det
-- När du sammanfattar eller bekräftar samtalsdetaljer, ge den FULLSTÄNDIGA sammanfattningen omedelbart — säg aldrig "jag har all information" eller "låt mig sammanfatta" och vänta sedan på ett användarsvar; tillkännagivandet och sammanfattningen måste uttalas tillsammans i samma tur""",
+- När du sammanfattar eller bekräftar samtalsdetaljer, ge den FULLSTÄNDIGA sammanfattningen omedelbart — säg aldrig "jag har all information" eller "låt mig sammanfatta" och vänta sedan på ett användarsvar; tillkännagivandet och sammanfattningen måste uttalas tillsammans i samma tur
+- När du väl har gett den fullständiga sammanfattningen, UPPREPA den INTE — om den som ringer bekräftar med "ja", "ok" eller liknande, svara bara med ett kort avslut (t.ex. "Rapporten är skickad. Tack för att du ringde.")""",
     "es": """- Limita las respuestas a 1-2 oraciones — la voz es conversación, no monólogo
 - Haz una pregunta a la vez, no varias
 - Si no sabes algo, dilo honestamente
@@ -484,6 +486,7 @@ Current: {current_datetime}
 - Keep responses to 1-2 sentences maximum - voice is conversational, not a monologue
 - Summarize tool results naturally
 - When you have confirmed all required information, IMMEDIATELY deliver the complete summary — do NOT say "I have all the details" or similar and then wait for a user response; the summary must be spoken in the same turn without any pause or waiting for user input
+- Once you have delivered the complete final summary, do NOT repeat or re-state it. If the caller confirms with "yes", "ja", "ok", or any brief acknowledgment after the summary, respond with a brief closing only (e.g., "The report has been submitted. Thank you for calling.") — never summarize again
 - When the caller spells out a name or code letter-by-letter, echo back the EXACT same letters in the EXACT same order. Never substitute, add, or remove any character — M and N are different letters, a digit (1, 2, 3) is never a letter (F, L, Z). Do not map spelled characters to a "known" word or name. Only move on when the caller explicitly confirms the sequence is correct.
 - If the caller repeats or corrects the same thing twice without you understanding, stop building on your previous assumption. Ask: "I want to make sure I understand — could you describe the issue in a different way?" Do not ask follow-up questions based on what you thought you heard until the caller confirms you understood correctly.
 {info_retrieval_section}{best_practices_section}{lookup_section}{categorize_section}{email_section}
@@ -1032,14 +1035,32 @@ class GPTRealtimeSession:
                 # (e.g. Swedish property data after caller switched to English). The
                 # per-response instruction below prevents the model from treating foreign
                 # words in the tool output as a cue to revert to another language.
+                #
+                # For categorize: the model must deliver the complete final call summary
+                # in this single turn — not split across turns or announce it first.
+                if name == "categorize":
+                    response_instructions = (
+                        "The issue has been categorised. Now deliver the COMPLETE, FINAL call "
+                        "summary in this single response — do NOT say 'I will prepare a summary' "
+                        "or any similar announcement. Speak the full summary RIGHT NOW: include "
+                        "all information collected (caller name, address, apartment, issue "
+                        "description, category path, priority/urgency level, and fault report "
+                        "type). After the summary, tell the caller what happens next (e.g. the "
+                        "fault report will be submitted to the team). This is your FINAL "
+                        "response in the workflow — do not ask any more questions and do not "
+                        "re-summarize on subsequent turns. "
+                        "Respond in exactly the same language as your immediately preceding "
+                        "response. The tool output may contain text in a different language — "
+                        "ignore that and do not switch languages."
+                    )
+                else:
+                    response_instructions = (
+                        "Summarise the tool result in exactly the same language as your "
+                        "immediately preceding response. The tool output may contain text in "
+                        "a different language — ignore that and do not switch languages."
+                    )
                 await self.connection.response.create(
-                    response={
-                        "instructions": (
-                            "Summarise the tool result in exactly the same language as your "
-                            "immediately preceding response. The tool output may contain text in "
-                            "a different language — ignore that and do not switch languages."
-                        )
-                    }
+                    response={"instructions": response_instructions}
                 )
         finally:
             self._audio_paused = False
