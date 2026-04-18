@@ -99,7 +99,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Confirm details (date, time, phone number, etc.) with the caller BEFORE taking actions like booking or sending messages
 - Search for existing contacts before creating new ones — never share other customers' information
 - Only transfer or end a call when the caller explicitly requests it
-- When summarizing or confirming call details, deliver the COMPLETE summary in the same response — never say "let me summarize" and then pause; the announcement and full summary must be spoken together""",
+- When summarizing or confirming call details, deliver the COMPLETE summary immediately — never say "I have all the details" or "let me summarize" and then wait for a user response; the announcement and full summary must be spoken together in the same turn""",
     "sv": """- Håll svar till 1-2 meningar — röstsamtal är en konversation, inte en föreläsning
 - Ställ en fråga i taget, inte flera
 - Om du inte vet något, säg det ärligt
@@ -110,7 +110,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Bekräfta detaljer (datum, tid, telefonnummer etc.) med den som ringer INNAN du vidtar åtgärder som bokning eller meddelanden
 - Sök efter befintliga kontakter innan du skapar nya — dela aldrig andra kunders information
 - Koppla eller avsluta ett samtal bara när den som ringer uttryckligen begär det
-- När du sammanfattar eller bekräftar samtalsdetaljer, ge den FULLSTÄNDIGA sammanfattningen i samma svar — säg aldrig "låt mig sammanfatta" och gör sedan en paus; tillkännagivandet och sammanfattningen måste uttalas tillsammans""",
+- När du sammanfattar eller bekräftar samtalsdetaljer, ge den FULLSTÄNDIGA sammanfattningen omedelbart — säg aldrig "jag har all information" eller "låt mig sammanfatta" och vänta sedan på ett användarsvar; tillkännagivandet och sammanfattningen måste uttalas tillsammans i samma tur""",
     "es": """- Limita las respuestas a 1-2 oraciones — la voz es conversación, no monólogo
 - Haz una pregunta a la vez, no varias
 - Si no sabes algo, dilo honestamente
@@ -121,7 +121,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Confirma detalles (fecha, hora, teléfono, etc.) con el llamante ANTES de tomar acciones como reservar o enviar mensajes
 - Busca contactos existentes antes de crear nuevos — nunca compartas información de otros clientes
 - Solo transfiere o termina una llamada cuando el llamante lo solicite explícitamente
-- Cuando resumas o confirmes detalles de la llamada, entrega el resumen COMPLETO en la misma respuesta — nunca digas "déjame resumir" y luego hagas una pausa; el anuncio y el resumen completo deben decirse juntos""",
+- Cuando resumas o confirmes detalles de la llamada, entrega el resumen COMPLETO inmediatamente — nunca digas "tengo todos los detalles" ni "déjame resumir" y luego esperes una respuesta del usuario; el anuncio y el resumen completo deben decirse juntos en el mismo turno""",
     "fr": """- Limitez les réponses à 1-2 phrases — la voix est une conversation, pas un monologue
 - Posez une question à la fois, pas plusieurs
 - Si vous ne savez pas quelque chose, dites-le honnêtement
@@ -132,7 +132,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Confirmez les détails (date, heure, téléphone, etc.) avec l'appelant AVANT de réserver ou d'envoyer des messages
 - Recherchez les contacts existants avant d'en créer — ne partagez jamais les infos d'autres clients
 - Ne transférez ou terminez un appel que sur demande explicite de l'appelant
-- Lorsque vous résumez ou confirmez les détails d'un appel, livrez le résumé COMPLET dans la même réponse — ne dites jamais "laissez-moi résumer" et faites ensuite une pause ; l'annonce et le résumé complet doivent être prononcés ensemble""",
+- Lorsque vous résumez ou confirmez les détails d'un appel, livrez le résumé COMPLET immédiatement — ne dites jamais "j'ai tous les détails" ni "laissez-moi résumer" et attendez ensuite une réponse ; l'annonce et le résumé complet doivent être prononcés ensemble dans le même tour""",
     "de": """- Halten Sie Antworten auf 1-2 Sätze — Sprache ist Gespräch, kein Vortrag
 - Stellen Sie eine Frage auf einmal, nicht mehrere
 - Wenn Sie etwas nicht wissen, sagen Sie es ehrlich
@@ -143,7 +143,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Bestätigen Sie Details (Datum, Uhrzeit, Telefonnummer etc.) mit dem Anrufer VOR Buchungen oder Nachrichten
 - Suchen Sie bestehende Kontakte bevor Sie neue erstellen — teilen Sie nie Daten anderer Kunden
 - Leiten Sie einen Anruf nur auf ausdrückliche Anfrage weiter oder beenden Sie ihn
-- Wenn Sie Anrufdetails zusammenfassen oder bestätigen, liefern Sie die VOLLSTÄNDIGE Zusammenfassung in derselben Antwort — sagen Sie nie "lassen Sie mich zusammenfassen" und machen dann eine Pause; Ankündigung und vollständige Zusammenfassung müssen zusammen gesprochen werden""",
+- Wenn Sie Anrufdetails zusammenfassen oder bestätigen, liefern Sie die VOLLSTÄNDIGE Zusammenfassung sofort — sagen Sie nie "ich habe alle Informationen" oder "lassen Sie mich zusammenfassen" und warten dann auf eine Antwort; Ankündigung und vollständige Zusammenfassung müssen zusammen im selben Zug gesprochen werden""",
     "it": """- Limita le risposte a 1-2 frasi — la voce è conversazione, non monologo
 - Fai una domanda alla volta, non più di una
 - Se non sai qualcosa, dillo onestamente
@@ -154,7 +154,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Conferma i dettagli (data, ora, telefono, ecc.) con il chiamante PRIMA di prenotare o inviare messaggi
 - Cerca contatti esistenti prima di crearne nuovi — non condividere mai info di altri clienti
 - Trasferisci o termina una chiamata solo su richiesta esplicita del chiamante
-- Quando riassumi o confermi i dettagli di una chiamata, fornisci il riassunto COMPLETO nella stessa risposta — non dire mai "lasciami riassumere" e poi fare una pausa; l'annuncio e il riassunto completo devono essere detti insieme""",
+- Quando riassumi o confermi i dettagli di una chiamata, fornisci il riassunto COMPLETO immediatamente — non dire mai "ho tutti i dettagli" né "lasciami riassumere" e poi aspettare una risposta; l'annuncio e il riassunto completo devono essere detti insieme nello stesso turno""",
     "pt": """- Limite as respostas a 1-2 frases — voz é conversa, não monólogo
 - Faça uma pergunta de cada vez, não várias
 - Se não souber algo, diga honestamente
@@ -165,7 +165,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Confirme detalhes (data, hora, telefone, etc.) com o chamador ANTES de reservar ou enviar mensagens
 - Procure contatos existentes antes de criar novos — nunca compartilhe informações de outros clientes
 - Só transfira ou encerre uma chamada quando o chamador solicitar explicitamente
-- Ao resumir ou confirmar detalhes da chamada, entregue o resumo COMPLETO na mesma resposta — nunca diga "deixe-me resumir" e faça uma pausa; o anúncio e o resumo completo devem ser ditos juntos""",
+- Ao resumir ou confirmar detalhes da chamada, entregue o resumo COMPLETO imediatamente — nunca diga "tenho todos os detalhes" nem "deixe-me resumir" e espere uma resposta; o anúncio e o resumo completo devem ser ditos juntos no mesmo turno""",
     "nl": """- Beperk antwoorden tot 1-2 zinnen — stem is gesprek, geen lezing
 - Stel één vraag per keer, niet meerdere
 - Als u iets niet weet, zeg het eerlijk
@@ -176,7 +176,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Bevestig details (datum, tijd, telefoonnummer, etc.) met de beller VOOR het boeken of versturen van berichten
 - Zoek bestaande contacten voordat u nieuwe aanmaakt — deel nooit informatie van andere klanten
 - Schakel of beëindig een gesprek alleen op uitdrukkelijk verzoek van de beller
-- Wanneer u gesprekdetails samenvat of bevestigt, lever de VOLLEDIGE samenvatting in dezelfde reactie — zeg nooit "laat me samenvatten" en maak dan een pauze; de aankondiging en de volledige samenvatting moeten samen worden uitgesproken""",
+- Wanneer u gesprekdetails samenvat of bevestigt, lever de VOLLEDIGE samenvatting onmiddellijk — zeg nooit "ik heb alle details" of "laat me samenvatten" en wacht dan op een reactie; de aankondiging en de volledige samenvatting moeten samen in dezelfde beurt worden uitgesproken""",
     "ja": """- 回答は1〜2文に収めてください — 音声は会話であり、独演会ではありません
 - 質問は一度に一つだけにしてください
 - わからないことは正直に伝えてください
@@ -187,7 +187,7 @@ BEST_PRACTICES: dict[str, str] = {
 - 予約やメッセージ送信の前に、日付・時間・電話番号等の詳細を発信者に確認してください
 - 新規作成前に既存の連絡先を検索してください — 他の顧客の情報を共有しないでください
 - 発信者が明示的に要求した場合のみ転送または終了してください
-- 通話の詳細を要約または確認する場合は、同じ応答で完全な要約を提供してください — 「まとめます」と言ってから間を置かないでください; 告知と完全な要約は一緒に話す必要があります""",
+- 通話の詳細を要約または確認する場合は、すぐに完全な要約を提供してください — 「必要な情報はすべて揃いました」や「まとめます」と言ってから間を置かないでください; 告知と完全な要約は同じターンで一緒に話す必要があります""",
     "ko": """- 답변은 1-2문장으로 제한하세요 — 음성은 대화이지 독백이 아닙니다
 - 한 번에 하나의 질문만 하세요
 - 모르는 것이 있으면 솔직히 말하세요
@@ -198,7 +198,7 @@ BEST_PRACTICES: dict[str, str] = {
 - 예약이나 메시지 전송 전에 날짜, 시간, 전화번호 등의 세부 사항을 발신자에게 확인하세요
 - 새로 만들기 전에 기존 연락처를 검색하세요 — 다른 고객의 정보를 공유하지 마세요
 - 발신자가 명시적으로 요청할 때만 전환하거나 종료하세요
-- 통화 세부 사항을 요약하거나 확인할 때는 동일한 응답에서 완전한 요약을 제공하세요 — 절대로 "요약하겠습니다"라고 말한 후 멈추지 마세요; 발표와 완전한 요약은 함께 말해야 합니다""",
+- 통화 세부 사항을 요약하거나 확인할 때는 즉시 완전한 요약을 제공하세요 — "모든 정보가 준비되었습니다"나 "요약하겠습니다"라고 말한 후 사용자 응답을 기다리지 마세요; 발표와 완전한 요약은 같은 턴에 함께 말해야 합니다""",
     "zh": """- 回答控制在1-2句话以内 — 语音是对话，不是独白
 - 一次只问一个问题
 - 如果不知道某事，请诚实说明
@@ -209,7 +209,7 @@ BEST_PRACTICES: dict[str, str] = {
 - 在预约或发送消息前，先与来电者确认日期、时间、电话号码等详情
 - 创建新联系人前先搜索现有联系人 — 绝不分享其他客户的信息
 - 只有在来电者明确要求时才转接或结束通话
-- 总结或确认通话细节时，在同一响应中提供完整摘要 — 绝不要说"让我总结"然后停顿；声明和完整摘要必须一起说出""",
+- 总结或确认通话细节时，立即提供完整摘要 — 绝不要说"我已经有了所有信息"或"让我总结"然后等待用户回应；声明和完整摘要必须在同一轮中一起说出""",
     "ru": """- Ограничьте ответы 1-2 предложениями — голос — это разговор, а не монолог
 - Задавайте по одному вопросу за раз
 - Если вы чего-то не знаете, честно скажите об этом
@@ -220,7 +220,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Подтвердите детали (дата, время, номер телефона и т.д.) со звонящим ПЕРЕД бронированием или отправкой сообщений
 - Ищите существующие контакты перед созданием новых — никогда не делитесь данными других клиентов
 - Переводите или завершайте звонок только по явной просьбе звонящего
-- При подведении итогов или подтверждении деталей звонка предоставляйте ПОЛНОЕ резюме в том же ответе — никогда не говорите "позвольте мне подвести итоги" и не делайте паузу; объявление и полное резюме должны быть произнесены вместе""",
+- При подведении итогов или подтверждении деталей звонка предоставляйте ПОЛНОЕ резюме немедленно — никогда не говорите "у меня есть вся информация" или "позвольте мне подвести итоги" и не ждите ответа пользователя; объявление и полное резюме должны быть произнесены вместе в том же ходу""",
     "ar": """- اقصر إجاباتك على 1-2 جملة — الصوت محادثة وليس خطابًا
 - اطرح سؤالًا واحدًا في كل مرة
 - إذا كنت لا تعرف شيئًا، قل ذلك بصدق
@@ -231,7 +231,7 @@ BEST_PRACTICES: dict[str, str] = {
 - تأكد من التفاصيل (التاريخ، الوقت، رقم الهاتف، إلخ) مع المتصل قبل الحجز أو إرسال الرسائل
 - ابحث عن جهات الاتصال الموجودة قبل إنشاء جديدة — لا تشارك أبدًا معلومات عملاء آخرين
 - حوّل أو أنهِ المكالمة فقط عندما يطلب المتصل ذلك صراحةً
-- عند تلخيص أو تأكيد تفاصيل المكالمة، قدّم الملخص الكامل في نفس الرد — لا تقل أبدًا "دعني ألخص" ثم تتوقف؛ الإعلان والملخص الكامل يجب أن يُقالا معًا""",
+- عند تلخيص أو تأكيد تفاصيل المكالمة، قدّم الملخص الكامل فوراً — لا تقل أبدًا "لديّ كل المعلومات" أو "دعني ألخص" ثم تنتظر رداً من المتصل؛ الإعلان والملخص الكامل يجب أن يُقالا معًا في نفس الدور""",
     "hi": """- जवाब 1-2 वाक्यों तक सीमित रखें — आवाज़ बातचीत है, भाषण नहीं
 - एक बार में एक ही प्रश्न पूछें
 - अगर आप कुछ नहीं जानते, तो ईमानदारी से बताएं
@@ -242,7 +242,7 @@ BEST_PRACTICES: dict[str, str] = {
 - बुकिंग या संदेश भेजने से पहले, कॉलर से तारीख, समय, फ़ोन नंबर आदि की पुष्टि करें
 - नए बनाने से पहले मौजूदा संपर्कों की खोज करें — अन्य ग्राहकों की जानकारी साझा न करें
 - कॉल तभी ट्रांसफ़र या समाप्त करें जब कॉलर स्पष्ट रूप से अनुरोध करे
-- कॉल विवरण सारांशित या पुष्टि करते समय, उसी प्रतिक्रिया में पूरा सारांश दें — कभी न कहें "मुझे सारांश देने दीजिए" और फिर रुकें; घोषणा और पूरा सारांश एक साथ बोला जाना चाहिए""",
+- कॉल विवरण सारांशित या पुष्टि करते समय, तुरंत पूरा सारांश दें — कभी न कहें "मेरे पास सभी जानकारी है" या "मुझे सारांश देने दीजिए" और फिर उपयोगकर्ता की प्रतिक्रिया का इंतजार करें; घोषणा और पूरा सारांश एक ही बारी में एक साथ बोला जाना चाहिए""",
     "pl": """- Ogranicz odpowiedzi do 1-2 zdań — głos to rozmowa, nie wykład
 - Zadawaj jedno pytanie na raz
 - Jeśli czegoś nie wiesz, powiedz to szczerze
@@ -253,7 +253,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Potwierdź szczegóły (datę, godzinę, numer telefonu itp.) z dzwoniącym PRZED rezerwacją lub wysłaniem wiadomości
 - Szukaj istniejących kontaktów przed tworzeniem nowych — nigdy nie udostępniaj danych innych klientów
 - Przekieruj lub zakończ połączenie tylko na wyraźną prośbę dzwoniącego
-- Podczas podsumowania lub potwierdzania szczegółów rozmowy, podaj PEŁNE podsumowanie w tej samej odpowiedzi — nigdy nie mów "pozwól, że podsumują" i nie rób przerwy; zapowiedź i pełne podsumowanie muszą być wypowiedziane razem""",
+- Podczas podsumowania lub potwierdzania szczegółów rozmowy, podaj PEŁNE podsumowanie natychmiast — nigdy nie mów "mam wszystkie informacje" ani "pozwól, że podsumują" i nie czekaj na odpowiedź użytkownika; zapowiedź i pełne podsumowanie muszą być wypowiedziane razem w tej samej turze""",
     "tr": """- Yanıtları 1-2 cümleyle sınırlayın — ses konuşmadır, monolog değil
 - Bir seferde tek soru sorun
 - Bir şeyi bilmiyorsanız, dürüstçe söyleyin
@@ -264,7 +264,7 @@ BEST_PRACTICES: dict[str, str] = {
 - Rezervasyon veya mesaj göndermeden önce tarih, saat, telefon numarası gibi detayları arayanla onaylayın
 - Yeni oluşturmadan önce mevcut kişileri arayın — diğer müşterilerin bilgilerini asla paylaşmayın
 - Çağrıyı yalnızca arayan açıkça talep ettiğinde aktarın veya sonlandırın
-- Görüşme ayrıntılarını özetlerken veya onaylarken, TAM özeti aynı yanıtta sunun — asla "özetleyeyim" deyip duraksama; duyuru ve tam özet birlikte söylenmelidir""",
+- Görüşme ayrıntılarını özetlerken veya onaylarken, TAM özeti hemen sunun — asla "tüm bilgilerim var" veya "özetleyeyim" deyip kullanıcı yanıtı bekleme; duyuru ve tam özet aynı turda birlikte söylenmelidir""",
 }
 
 
@@ -483,6 +483,7 @@ Current: {current_datetime}
 - For booking tools, use ISO format with timezone offset (e.g., 2024-12-01T14:00:00-05:00)
 - Keep responses to 1-2 sentences maximum - voice is conversational, not a monologue
 - Summarize tool results naturally
+- When you have confirmed all required information, IMMEDIATELY deliver the complete summary — do NOT say "I have all the details" or similar and then wait for a user response; the summary must be spoken in the same turn without any pause or waiting for user input
 - When the caller spells out a name or code letter-by-letter, echo back the EXACT same letters in the EXACT same order. Never substitute, add, or remove any character — M and N are different letters, a digit (1, 2, 3) is never a letter (F, L, Z). Do not map spelled characters to a "known" word or name. Only move on when the caller explicitly confirms the sequence is correct.
 - If the caller repeats or corrects the same thing twice without you understanding, stop building on your previous assumption. Ask: "I want to make sure I understand — could you describe the issue in a different way?" Do not ask follow-up questions based on what you thought you heard until the caller confirms you understood correctly.
 {info_retrieval_section}{best_practices_section}{lookup_section}{categorize_section}{email_section}
