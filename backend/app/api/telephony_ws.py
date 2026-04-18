@@ -453,13 +453,19 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     )
 
                 elif event_type == "input_audio_buffer.speech_started":
-                    # Caller interrupted the agent — clear Twilio's playback buffer
-                    # so buffered agent speech stops immediately.
-                    log.info("barge_in_detected")
-                    with contextlib.suppress(Exception):
-                        await websocket.send_text(
-                            json.dumps({"event": "clear", "streamSid": stream_sid})
-                        )
+                    # Only treat as a real barge-in when the agent isn't actively
+                    # generating a response. When the gate is active, this event is
+                    # almost certainly PSTN/outdoor noise that slipped into the buffer
+                    # just before response.created — clearing Twilio's buffer here
+                    # would cut the agent mid-sentence with no benefit.
+                    if not realtime_session._agent_response_gate:  # noqa: SLF001
+                        log.info("barge_in_detected")
+                        with contextlib.suppress(Exception):
+                            await websocket.send_text(
+                                json.dumps({"event": "clear", "streamSid": stream_sid})
+                            )
+                    else:
+                        log.info("speech_started_suppressed_agent_gate_active")
 
                 # Handle tool calls
                 elif event_type == "response.function_call_arguments.done":
@@ -850,13 +856,19 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                     )
 
                 elif event_type == "input_audio_buffer.speech_started":
-                    # Caller interrupted the agent — clear Telnyx's playback buffer
-                    # so buffered agent speech stops immediately.
-                    log.info("barge_in_detected")
-                    with contextlib.suppress(Exception):
-                        await websocket.send_text(
-                            json.dumps({"event": "clear", "stream_id": stream_id})
-                        )
+                    # Only treat as a real barge-in when the agent isn't actively
+                    # generating a response. When the gate is active, this event is
+                    # almost certainly PSTN/outdoor noise that slipped into the buffer
+                    # just before response.created — clearing Telnyx's buffer here
+                    # would cut the agent mid-sentence with no benefit.
+                    if not realtime_session._agent_response_gate:  # noqa: SLF001
+                        log.info("barge_in_detected")
+                        with contextlib.suppress(Exception):
+                            await websocket.send_text(
+                                json.dumps({"event": "clear", "stream_id": stream_id})
+                            )
+                    else:
+                        log.info("speech_started_suppressed_agent_gate_active")
 
                 # Handle tool calls
                 elif event_type == "response.function_call_arguments.done":

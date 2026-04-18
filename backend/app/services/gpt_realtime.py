@@ -809,9 +809,10 @@ class GPTRealtimeSession:
             # gpt-realtime-2025-08-28 (telephony) rejects silence_duration_ms on semantic_vad
             # with "Unknown parameter" — which causes session.update() to silently drop the
             # entire config including tools, leaving the model unable to call any functions.
+            # eagerness "medium" (not "high") to avoid wind/outdoor noise triggering false turns.
             turn_detection = {
                 "type": "semantic_vad",
-                "eagerness": "high",
+                "eagerness": "medium",
             }
         else:
             turn_detection = {
@@ -1186,9 +1187,23 @@ class GPTRealtimeSession:
         Call with active=True when response.created fires and active=False when
         response.done fires. While active, all incoming user audio is dropped so
         PSTN background noise cannot fire speech_started and cancel the response.
+
+        When activating, also clears the input buffer to evict any audio frames
+        that arrived in the race window just before response.created — otherwise
+        those frames can still trigger speech_started and cancel the response.
+        When deactivating, clears the buffer to flush noise that accumulated
+        while the gate was up, preventing it from immediately triggering a new turn.
         """
         self._agent_response_gate = active
         self.logger.debug("agent_response_gate", active=active)
+        if self.connection:
+            asyncio.ensure_future(self._clear_input_buffer_safely())  # noqa: RUF006
+
+    async def _clear_input_buffer_safely(self) -> None:
+        """Clear the OpenAI input buffer, suppressing any errors."""
+        if self.connection:
+            with contextlib.suppress(Exception):
+                await self.connection.input_audio_buffer.clear()
 
     async def post_turn_clear(self) -> None:
         """Brief audio blackout after user turn to prevent PSTN noise cancellation.
