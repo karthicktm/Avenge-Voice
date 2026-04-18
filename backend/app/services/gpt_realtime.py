@@ -1062,6 +1062,28 @@ class GPTRealtimeSession:
                 await self.connection.response.create(
                     response={"instructions": response_instructions}
                 )
+                # After categorize: switch session to "call concluded" mode so any
+                # noise- or user-speech-triggered response that fires after the summary
+                # plays out will just say goodbye instead of re-summarizing.
+                # Per-response instructions above govern the actual summary response;
+                # this session.update() governs every subsequent turn.
+                if name == "categorize":
+                    with contextlib.suppress(Exception):
+                        await self.connection.session.update(
+                            session={
+                                "instructions": (
+                                    "The fault report call summary has just been delivered. "
+                                    "The call is now CONCLUDED. "
+                                    "If the caller says ANYTHING further, respond ONLY with "
+                                    "a brief, warm farewell in the same language they are "
+                                    "speaking (e.g. 'Thank you for calling. Have a great day! "
+                                    "Goodbye!'). Do NOT repeat the summary under any "
+                                    "circumstances. Do NOT ask any questions. The call is over."
+                                ),
+                                "tool_choice": "none",
+                            }
+                        )
+                    self.logger.info("session_switched_to_farewell_mode")
         finally:
             self._audio_paused = False
 
