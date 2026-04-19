@@ -9,6 +9,7 @@ import base64
 import contextlib
 import json
 import uuid
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 import structlog
@@ -19,6 +20,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.settings import get_user_api_keys
 from app.core.auth import user_id_to_uuid
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.call_record import CallRecord
@@ -173,7 +175,7 @@ async def _load_campaign_context(
 
 
 @router.websocket("/twilio/{agent_id}")
-async def twilio_media_stream(
+async def twilio_media_stream(  # noqa: PLR0915
     websocket: WebSocket,
     agent_id: str,
     db: AsyncSession = Depends(get_db),
@@ -272,12 +274,23 @@ async def twilio_media_stream(
             session_id=session_id,
             workspace_id=workspace_id,
         ) as realtime_session:
+            # Define recording starter — fired when the stream start event arrives
+            # (call is guaranteed in-progress at that point). Cannot use status callback
+            # because Twilio only sends `completed` by default for inbound phone numbers.
+            async def _start_recording(sid: str) -> None:
+                twilio_svc = await _get_twilio_service(user_id_int, db, workspace_id)
+                if twilio_svc:
+                    public_url = settings.PUBLIC_URL or ""
+                    rec_callback = f"{public_url}/webhooks/twilio/recording-status?workspace_id={workspace_id}"
+                    await twilio_svc.start_call_recording(sid, rec_callback)
+
             # Handle Twilio media stream and capture call_sid
             call_sid, ended_by_agent = await _handle_twilio_stream(
                 websocket=websocket,
                 realtime_session=realtime_session,
                 log=log,
                 enable_transcript=agent.enable_transcript,
+                on_stream_started=_start_recording,
             )
 
             # Hang up the phone call if the agent triggered end_call
@@ -308,6 +321,7 @@ async def _handle_twilio_stream(  # noqa: PLR0915
     realtime_session: GPTRealtimeSession,
     log: Any,
     enable_transcript: bool = False,
+    on_stream_started: Callable[[str], Coroutine[None, None, None]] | None = None,
 ) -> tuple[str, bool]:
     """Handle Twilio Media Stream messages.
 
@@ -346,6 +360,12 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                         stream_sid=stream_sid,
                         call_sid=call_sid,
                     )
+                    if on_stream_started and call_sid:
+                        coro = on_stream_started(call_sid)
+                        rec_task: asyncio.Task[None] = asyncio.create_task(coro)
+                        rec_task.add_done_callback(
+                            lambda t: t.exception() if not t.cancelled() else None
+                        )
 
                 elif event == "media":
                     # Twilio sends mulaw 8kHz; OpenAI session is configured with
