@@ -274,17 +274,30 @@ class TwilioService(TelephonyProvider):
             self.logger.exception("webhook_config_failed", sid=phone_number_id, error=str(e))
             return False
 
-    def generate_answer_response(self, websocket_url: str, agent_id: str | None = None) -> str:
+    def generate_answer_response(
+        self,
+        websocket_url: str,
+        agent_id: str | None = None,
+        recording_status_callback_url: str | None = None,
+    ) -> str:
         """Generate TwiML response to answer a call and stream to WebSocket.
 
         Args:
             websocket_url: WebSocket URL for media streaming
             agent_id: Optional agent ID for context
+            recording_status_callback_url: Optional URL for recording status callbacks
 
         Returns:
             TwiML response string
         """
         response = VoiceResponse()
+
+        if recording_status_callback_url:
+            response.record(
+                recording_status_callback=recording_status_callback_url,
+                recording_status_callback_method="POST",
+                recording_status_callback_event=["completed"],
+            )
 
         # Connect to WebSocket for media streaming
         connect = Connect()

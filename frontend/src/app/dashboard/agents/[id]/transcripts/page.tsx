@@ -13,6 +13,7 @@ import {
   Loader2,
   AlertCircle,
   Clock,
+  Music,
   Phone,
   PhoneIncoming,
   PhoneOutgoing,
@@ -29,7 +30,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { listCalls, type CallRecord } from "@/lib/api/calls";
+import { toast } from "sonner";
+import { listCalls, downloadCallRecording, type CallRecord } from "@/lib/api/calls";
 import { getAgent } from "@/lib/api/agents";
 
 function formatDuration(seconds: number): string {
@@ -121,6 +123,16 @@ export default function TranscriptsPage({ params }: { params: Promise<{ id: stri
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadRecording = async (call: CallRecord) => {
+    if (!call.recording_url) return;
+    try {
+      await downloadCallRecording(call.id);
+      toast.success("Recording download started");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to download recording");
+    }
   };
 
   if (isLoading) {
@@ -269,18 +281,34 @@ export default function TranscriptsPage({ params }: { params: Promise<{ id: stri
                       <Clock className="h-3 w-3" />
                       <span>{formatDuration(call.duration_seconds)}</span>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownloadTranscript(call);
-                      }}
-                    >
-                      <Download className="mr-1 h-3 w-3" />
-                      Download
-                    </Button>
+                    <div className="flex gap-1">
+                      {call.recording_url && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDownloadRecording(call);
+                          }}
+                        >
+                          <Music className="mr-1 h-3 w-3" />
+                          Audio
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadTranscript(call);
+                        }}
+                      >
+                        <Download className="mr-1 h-3 w-3" />
+                        Download
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -366,6 +394,12 @@ export default function TranscriptsPage({ params }: { params: Promise<{ id: stri
             <Button variant="outline" onClick={() => setSelectedCall(null)}>
               Close
             </Button>
+            {selectedCall?.recording_url && (
+              <Button variant="outline" onClick={() => void handleDownloadRecording(selectedCall)}>
+                <Music className="mr-2 h-4 w-4" />
+                Audio
+              </Button>
+            )}
             {selectedCall && (
               <Button onClick={() => handleDownloadTranscript(selectedCall)}>
                 <Download className="mr-2 h-4 w-4" />

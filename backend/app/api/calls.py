@@ -2,10 +2,13 @@
 
 import uuid
 from collections import defaultdict
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +18,7 @@ from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.db.session import get_db
 from app.models.call_record import CallRecord
 from app.models.category_tree import CategoryResult
+from app.models.user_settings import UserSettings
 
 router = APIRouter(prefix="/api/v1/calls", tags=["calls"])
 logger = structlog.get_logger()
@@ -314,6 +318,67 @@ async def get_call(
         ended_at=record.ended_at,
         category_path=cat.matched_path if cat else None,
         category_code=cat.matched_code if cat else None,
+    )
+
+
+@router.get("/{call_id}/recording")
+async def get_call_recording(
+    call_id: str,
+    current_user: VerifiedUser,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Proxy a call recording from Twilio.
+
+    Streams the MP3 recording through the backend using workspace Twilio credentials,
+    avoiding the need to expose credentials or recording URLs to the client.
+    """
+    user_uuid = user_id_to_uuid(current_user.id)
+    result = await db.execute(
+        select(CallRecord).where(
+            CallRecord.id == uuid.UUID(call_id),
+            CallRecord.user_id == user_uuid,
+        )
+    )
+    record = result.scalar_one_or_none()
+    if not record:
+        raise HTTPException(status_code=404, detail="Call record not found")
+    if not record.recording_url:
+        raise HTTPException(status_code=404, detail="No recording available for this call")
+
+    account_sid: str | None = None
+    auth_token: str | None = None
+    if record.workspace_id:
+        ws_result = await db.execute(
+            select(UserSettings).where(UserSettings.workspace_id == record.workspace_id)
+        )
+        ws_settings = ws_result.scalar_one_or_none()
+        if ws_settings:
+            account_sid = ws_settings.twilio_account_sid
+            auth_token = ws_settings.twilio_auth_token
+
+    if not account_sid or not auth_token:
+        raise HTTPException(status_code=503, detail="Twilio credentials not configured")
+
+    recording_url = record.recording_url
+
+    async def audio_stream() -> AsyncIterator[bytes]:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "GET",
+                recording_url,
+                auth=(account_sid, auth_token),
+            ) as response,
+        ):
+            async for chunk in response.aiter_bytes(chunk_size=8192):
+                yield chunk
+
+    return StreamingResponse(
+        audio_stream(),
+        media_type="audio/mpeg",
+        headers={
+            "Content-Disposition": f'attachment; filename="recording-{call_id}.mp3"',
+        },
     )
 
 

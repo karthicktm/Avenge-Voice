@@ -101,6 +101,30 @@ export async function getCall(callId: string): Promise<CallRecord> {
 }
 
 /**
+ * Download a call recording as an MP3 file via the backend proxy
+ */
+export async function downloadCallRecording(callId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/v1/calls/${callId}/recording`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error((error as { detail?: string }).detail ?? "Failed to download recording");
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `recording-${callId}.mp3`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+/**
  * Get call statistics for an agent
  */
 export async function getAgentCallStats(agentId: string): Promise<CallStats> {

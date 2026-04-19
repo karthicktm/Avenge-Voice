@@ -532,7 +532,9 @@ async def purchase_phone_number(
                 detail="Twilio credentials not configured. Please add them in Settings.",
             )
         number = await twilio_service.purchase_phone_number(purchase_request.phone_number)
-        await _configure_webhook_for_provider(twilio_service, number.id, "twilio", log, workspace_id)
+        await _configure_webhook_for_provider(
+            twilio_service, number.id, "twilio", log, workspace_id
+        )
 
     elif purchase_request.provider == "telnyx":
         telnyx_service = await get_telnyx_service(current_user.id, db, workspace_id=workspace_uuid)
@@ -542,7 +544,9 @@ async def purchase_phone_number(
                 detail="Telnyx credentials not configured. Please add them in Settings.",
             )
         number = await telnyx_service.purchase_phone_number(purchase_request.phone_number)
-        await _configure_webhook_for_provider(telnyx_service, number.id, "telnyx", log, workspace_id)
+        await _configure_webhook_for_provider(
+            telnyx_service, number.id, "telnyx", log, workspace_id
+        )
 
     else:
         raise HTTPException(status_code=400, detail="Invalid provider. Use 'twilio' or 'telnyx'.")
@@ -985,9 +989,12 @@ async def twilio_voice_webhook(
     ws_url = public_url.replace("http://", "wss://").replace("https://", "wss://")
     stream_url = f"{ws_url}/ws/telephony/twilio/{agent_id}"
 
-    # Generate TwiML to connect to our WebSocket
+    # Generate TwiML to connect to our WebSocket with recording enabled
+    recording_callback_url = (
+        f"{public_url}/webhooks/twilio/recording-status?workspace_id={agent_workspace_id}"
+    )
     twilio_service = TwilioService("", "")  # Just need TwiML generation
-    twiml = twilio_service.generate_answer_response(stream_url, agent_id)
+    twiml = twilio_service.generate_answer_response(stream_url, agent_id, recording_callback_url)
 
     log.info("twilio_twiml_generated", agent_id=agent_id, stream_url=stream_url)
 
@@ -1124,10 +1131,54 @@ async def twilio_answer_webhook(
     if campaign_id and campaign_contact_id:
         stream_url += f"?campaign_id={campaign_id}&campaign_contact_id={campaign_contact_id}"
 
+    recording_callback_url = (
+        f"{public_url}/webhooks/twilio/recording-status?workspace_id={workspace_id}"
+    )
     twilio_service = TwilioService("", "")
-    twiml = twilio_service.generate_answer_response(stream_url, agent_id)
+    twiml = twilio_service.generate_answer_response(stream_url, agent_id, recording_callback_url)
 
     return Response(content=twiml, media_type="application/xml")
+
+
+@webhook_router.post("/twilio/recording-status")
+async def twilio_recording_status_callback(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    workspace_id: str = Query(default=""),
+    call_sid: str = Form(default="", alias="CallSid"),
+    recording_url: str = Form(default="", alias="RecordingUrl"),
+    recording_status: str = Form(default="", alias="RecordingStatus"),
+) -> dict[str, str]:
+    """Handle Twilio recording status callbacks.
+
+    Called when a recording is ready. Stores the recording URL on the call record.
+    """
+    twilio_auth_token: str | None = None
+    if workspace_id:
+        try:
+            workspace_uuid = uuid.UUID(workspace_id)
+            ws_settings_result = await db.execute(
+                select(UserSettings).where(UserSettings.workspace_id == workspace_uuid)
+            )
+            ws_settings = ws_settings_result.scalar_one_or_none()
+            if ws_settings:
+                twilio_auth_token = ws_settings.twilio_auth_token
+        except Exception:
+            logger.warning("twilio_recording_workspace_lookup_failed", workspace_id=workspace_id)
+
+    await verify_twilio_webhook(request, auth_token=twilio_auth_token)
+
+    if recording_status != "completed":
+        return {"status": "ignored"}
+
+    result = await db.execute(select(CallRecord).where(CallRecord.provider_call_id == call_sid))
+    call_record = result.scalar_one_or_none()
+    if call_record:
+        call_record.recording_url = recording_url + ".mp3"
+        await db.commit()
+        logger.info("recording_url_saved", call_sid=call_sid)
+
+    return {"status": "received"}
 
 
 # =============================================================================

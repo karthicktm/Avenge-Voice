@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   History,
   Download,
+  Music,
   Play,
   Pause,
   Loader2,
@@ -35,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { listCalls, type CallRecord } from "@/lib/api/calls";
+import { listCalls, downloadCallRecording, type CallRecord } from "@/lib/api/calls";
 import { api } from "@/lib/api";
 import { FolderOpen } from "lucide-react";
 
@@ -152,6 +153,19 @@ export default function CallHistoryPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     toast.success("Transcript download started");
+  };
+
+  const handleDownloadRecording = async (call: CallRecord) => {
+    if (!call.recording_url) {
+      toast.error("No recording available for this call");
+      return;
+    }
+    try {
+      await downloadCallRecording(call.id);
+      toast.success("Recording download started");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to download recording");
+    }
   };
 
   const handleRowClick = (callId: string) => {
@@ -371,6 +385,19 @@ export default function CallHistoryPage() {
                               ) : (
                                 <Play className="h-4 w-4" />
                               )}
+                            </Button>
+                          )}
+                          {call.recording_url && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Download recording"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleDownloadRecording(call);
+                              }}
+                            >
+                              <Music className="h-4 w-4" />
                             </Button>
                           )}
                           {call.transcript && (
