@@ -1064,26 +1064,39 @@ class GPTRealtimeSession:
                     response={"instructions": response_instructions}
                 )
                 # After categorize: switch session to "call concluded" mode so any
-                # noise- or user-speech-triggered response that fires after the summary
-                # plays out will just say goodbye instead of re-summarizing.
-                # Per-response instructions above govern the actual summary response;
-                # this session.update() governs every subsequent turn.
+                # noise- or user-speech-triggered response fires a farewell instead of
+                # re-summarizing. Remove categorize from the tools list so it cannot
+                # be called again, but keep other tools (e.g. resend_send_email) so
+                # the agent can still send the fault-report email if instructed.
                 if name == "categorize":
                     with contextlib.suppress(Exception):
-                        await self.connection.session.update(
-                            session={
-                                "instructions": (
-                                    "The fault report call summary has just been delivered. "
-                                    "The call is now CONCLUDED. "
-                                    "If the caller says ANYTHING further, respond ONLY with "
-                                    "a brief, warm farewell in the same language they are "
-                                    "speaking (e.g. 'Thank you for calling. Have a great day! "
-                                    "Goodbye!'). Do NOT repeat the summary under any "
-                                    "circumstances. Do NOT ask any questions. The call is over."
-                                ),
-                                "tool_choice": "none",
-                            }
+                        enabled_tools = self.agent_config.get("enabled_tools", [])
+                        enabled_tool_ids = self.agent_config.get("enabled_tool_ids", {})
+                        post_cat_enabled = [
+                            t for t in enabled_tools if t not in ("categorization", "category_tree")
+                        ]
+                        post_cat_tools = (
+                            self.tool_registry.get_all_tool_definitions(
+                                post_cat_enabled, enabled_tool_ids
+                            )
+                            if self.tool_registry and post_cat_enabled
+                            else []
                         )
+                        farewell_session: dict[str, Any] = {
+                            "instructions": (
+                                "The fault report call summary has just been delivered. "
+                                "The call is now CONCLUDED. "
+                                "If instructed by your role, send the fault report email NOW "
+                                "using resend_send_email before saying goodbye. "
+                                "After that, respond ONLY with a brief, warm farewell in the "
+                                "same language the caller is speaking. Do NOT repeat the "
+                                "summary under any circumstances. Do NOT ask any questions."
+                            ),
+                            "tool_choice": "auto" if post_cat_tools else "none",
+                        }
+                        if post_cat_tools:
+                            farewell_session["tools"] = post_cat_tools
+                        await self.connection.session.update(session=farewell_session)
                     self.logger.info("session_switched_to_farewell_mode")
         finally:
             self._audio_paused = False

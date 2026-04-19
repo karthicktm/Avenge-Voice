@@ -818,12 +818,11 @@ class ToolRegistry:
 
             return await self.lookup_tools.execute_tool(tool_name, arguments)
 
-        # Categorization tools
+        # Categorization tools — always go through DB/LLM so CategoryResult is persisted
         if tool_name == "categorize":
-            # Override tree_name with configured value if Gemini omits or hallucinates one
+            # Override tree_name with configured value if agent omits or hallucinates one
             configured_tree_name = self.tool_configs.get("categorize", {}).get("tree_name", "")
             provided_tree_name = str(arguments.get("tree_name", "")).strip()
-            # Use configured tree_name when: not provided, or provided name not in prewarmed trees
             if configured_tree_name and (
                 not provided_tree_name
                 or (
@@ -833,39 +832,12 @@ class ToolRegistry:
                 )
             ):
                 arguments = {**arguments, "tree_name": configured_tree_name}
-            tree_name = str(arguments.get("tree_name", ""))
-            text_norm = str(arguments.get("text", "")).lower().strip()
-            session_key = f"categorize:{tree_name}:{text_norm}"
-
-            # Layer 0: session-level exact cache (within this call)
-            if session_key in self._tool_cache:
-                return cast("dict[str, Any]", self._tool_cache[session_key])
-
-            # Layer 1: Redis result cache (cross-session, 24 h for LLM results)
-            redis_key = f"categorize:{self.workspace_id}:{tree_name}:{_short_hash(text_norm)}"
-            cached = await self._redis_get(redis_key)
-            if cached:
-                self._tool_cache[session_key] = cached
-                return cached
-
-            # Layer 2: in-memory match against prewarmed tree nodes (sub-millisecond)
-            prewarmed_nodes = self._prewarmed_trees.get(tree_name)
-            if prewarmed_nodes:
-                in_mem = _match_in_memory(text_norm, prewarmed_nodes)
-                if in_mem:
-                    self._tool_cache[session_key] = in_mem
-                    return in_mem
-
-            # Layer 3: Postgres FTS + optional LLM fallback (existing path)
-            # Pass prewarmed nodes so match_category() and categorize_tools skip
-            # redundant DB queries for LLM traversal and path reconstruction.
+            # Pass prewarmed nodes so match_category() can skip redundant DB queries
+            # for LLM traversal and path reconstruction (they are still used there).
+            prewarmed_nodes = self._prewarmed_trees.get(str(arguments.get("tree_name", "")))
             if prewarmed_nodes:
                 arguments = {**arguments, "_prewarmed_nodes": prewarmed_nodes}
-            result = await self.categorize_tools.execute_tool(tool_name, arguments)
-            self._tool_cache[session_key] = result
-            if result.get("success") and result.get("resolution_layer") == "llm":
-                await self._redis_set(redis_key, result, ttl=86400)
-            return result
+            return await self.categorize_tools.execute_tool(tool_name, arguments)
 
         # Resend email tools — fire-and-forget so the agent doesn't wait for HTTP
         if tool_name == "resend_send_email":

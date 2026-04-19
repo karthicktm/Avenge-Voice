@@ -1,4 +1,4 @@
-"""Category matching logic — Postgres FTS (Layer 1) + hierarchical LLM fallback (Layer 2)."""
+"""Category matching logic — LLM-based categorization."""
 
 import asyncio
 import uuid
@@ -6,113 +6,12 @@ from dataclasses import dataclass
 from typing import Any
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category_tree import CategoryTree
 
 logger = structlog.get_logger()
-
-# ts_rank score below this threshold triggers LLM fallback
-FTS_THRESHOLD = 0.05
-TRGM_THRESHOLD = 0.35
-
-# Common Swedish + English words that carry no category-matching signal.
-# These are temporal/ordinal/frequency words that appear in conversational
-# context ("det är första gången") but not in category labels as topic markers.
-_WORD_MATCH_STOPWORDS = frozenset(
-    {
-        # Swedish — temporal/ordinal/frequency (no topical signal)
-        "första",
-        "andra",
-        "tredje",
-        "gången",
-        "gånger",
-        "sedan",
-        "igår",
-        "idag",
-        "imorgon",
-        "alltid",
-        "aldrig",
-        "ibland",
-        "ofta",
-        "bara",
-        "igen",
-        "redan",
-        "fortfarande",
-        "nyligen",
-        "plötsligt",
-        "senaste",
-        "ungefär",
-        "cirka",
-        "kanske",
-        "förra",
-        "nästa",
-        "just",
-        "faktiskt",
-        "egentligen",
-        "verkligen",
-        # Swedish — operational/status words that appear in many category labels
-        # (e.g. "X fungerar inte", "Y funkar inte") but give no topical signal.
-        # Matching on these causes FTS to return the wrong leaf before LLM runs.
-        "fungerar",
-        "fungera",
-        "funkar",
-        "funka",
-        "inte",
-        "ej",
-        "trasig",
-        "trasigt",
-        "trasiga",
-        "fel",
-        "felet",
-        "problem",
-        "avhjälpning",
-        "felanmälan",
-        "anmälan",
-        "rapport",
-        "åtgärd",
-        "åtgärda",
-        "hjälp",
-        "hjälpa",
-        # English — temporal/ordinal/frequency
-        "first",
-        "second",
-        "third",
-        "time",
-        "times",
-        "again",
-        "already",
-        "always",
-        "never",
-        "today",
-        "yesterday",
-        "tomorrow",
-        "recently",
-        "sudden",
-        "suddenly",
-        "maybe",
-        "perhaps",
-        "still",
-        "actually",
-        "really",
-        "once",
-        "twice",
-        # English — operational/status words
-        "works",
-        "working",
-        "broken",
-        "not",
-        "doesn't",
-        "doesnt",
-        "report",
-        "issue",
-        "fault",
-        "error",
-        "fix",
-        "repair",
-    }
-)
 
 
 @dataclass
@@ -131,7 +30,7 @@ class _NodeProxy:
 MatchedNode = CategoryTree | _NodeProxy
 
 
-async def match_category(  # noqa: PLR0911, PLR0912
+async def match_category(
     db: AsyncSession,
     workspace_id: uuid.UUID,
     tree_name: str,
@@ -161,97 +60,7 @@ async def match_category(  # noqa: PLR0911, PLR0912
     )
 
     # ------------------------------------------------------------------
-    # Layer 1 — Postgres FTS (prefer deepest match above threshold)
-    # ------------------------------------------------------------------
-    tsquery = func.plainto_tsquery("simple", text)
-    ts_rank_expr = func.ts_rank(CategoryTree.search_vector, tsquery)
-
-    fts_stmt = (
-        select(CategoryTree, ts_rank_expr.label("score"))
-        .where(
-            CategoryTree.workspace_id == workspace_id,
-            CategoryTree.tree_name == tree_name,
-            CategoryTree.status == "active",
-            CategoryTree.search_vector.op("@@")(tsquery),
-        )
-        .order_by(CategoryTree.depth.desc(), ts_rank_expr.desc())  # deepest first
-        .limit(10)
-    )
-
-    fts_result = await db.execute(fts_stmt)
-    fts_rows = fts_result.fetchall()
-
-    if fts_rows:
-        # Take the deepest node that's above threshold
-        for node, score in fts_rows:
-            if score >= FTS_THRESHOLD:
-                log.info("fts_matched", score=score, label=node.label, depth=node.depth)
-                return node, float(score), "fts"
-        log.info("fts_below_threshold", best_score=fts_rows[0][1])
-    else:
-        log.info("fts_no_results")
-
-    # ------------------------------------------------------------------
-    # Layer 1b — Word-by-word FTS fallback (disabled: adds sequential DB
-    # round-trips before LLM; flat LLM handles these cases better)
-    # ------------------------------------------------------------------
-    # min_word_len = 2
-    # significant_words = [
-    #     w.strip(".,!?-")
-    #     for w in text.split()
-    #     if len(w.strip(".,!?-")) > min_word_len
-    #     and w.strip(".,!?-").lower() not in _WORD_MATCH_STOPWORDS
-    # ]
-    # for word in significant_words:
-    #     word_tsq = func.plainto_tsquery("simple", word)
-    #     word_stmt = (
-    #         select(CategoryTree, ts_rank_expr.label("score"))
-    #         .where(
-    #             CategoryTree.workspace_id == workspace_id,
-    #             CategoryTree.tree_name == tree_name,
-    #             CategoryTree.status == "active",
-    #             CategoryTree.search_vector.op("@@")(word_tsq),
-    #         )
-    #         .order_by(
-    #             CategoryTree.depth.desc(), func.ts_rank(CategoryTree.search_vector, word_tsq).desc()
-    #         )
-    #         .limit(5)
-    #     )
-    #     word_result = await db.execute(word_stmt)
-    #     word_rows = word_result.fetchall()
-    #     for node, score in word_rows:
-    #         if score >= FTS_THRESHOLD:
-    #             log.info(
-    #                 "fts_word_matched", word=word, score=score, label=node.label, depth=node.depth
-    #             )
-    #             return node, float(score), "fts"
-
-    # ------------------------------------------------------------------
-    # Layer 1c — Trigram similarity on label (disabled: LLM handles
-    # spelling variants and cross-language matches more reliably)
-    # ------------------------------------------------------------------
-    # if text.strip():
-    #     trgm_stmt = (
-    #         select(CategoryTree, func.similarity(CategoryTree.label, text).label("trgm_score"))
-    #         .where(
-    #             CategoryTree.workspace_id == workspace_id,
-    #             CategoryTree.tree_name == tree_name,
-    #             CategoryTree.status == "active",
-    #             func.similarity(CategoryTree.label, text) >= TRGM_THRESHOLD,
-    #         )
-    #         .order_by(
-    #             CategoryTree.depth.desc(),
-    #             func.similarity(CategoryTree.label, text).desc(),
-    #         )
-    #         .limit(5)
-    #     )
-    #     trgm_result = await db.execute(trgm_stmt)
-    #     for node, trgm_score in trgm_result.fetchall():
-    #         log.info("trgm_matched", score=trgm_score, label=node.label, depth=node.depth)
-    #         return node, float(trgm_score), "fts"
-
-    # ------------------------------------------------------------------
-    # Layer 2 — Hierarchical LLM traversal
+    # LLM traversal — always use LLM for accurate categorization
     # ------------------------------------------------------------------
     if not openai_api_key:
         log.info("llm_skipped_no_api_key")
