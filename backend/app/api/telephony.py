@@ -1075,10 +1075,16 @@ async def twilio_status_callback(
                     )
                 )
                 ws_rec = ws_rec_result.scalar_one_or_none()
-                if ws_rec and ws_rec.twilio_account_sid and ws_rec.twilio_auth_token:
+                twilio_account_sid = (
+                    ws_rec.twilio_account_sid if ws_rec else None
+                ) or settings.TWILIO_ACCOUNT_SID
+                twilio_auth_token = (
+                    ws_rec.twilio_auth_token if ws_rec else None
+                ) or settings.TWILIO_AUTH_TOKEN
+                if twilio_account_sid and twilio_auth_token:
                     public_url = settings.PUBLIC_URL or str(request.base_url).rstrip("/")
                     rec_callback_url = f"{public_url}/webhooks/twilio/recording-status?workspace_id={call_record.workspace_id}"
-                    rec_service = TwilioService(ws_rec.twilio_account_sid, ws_rec.twilio_auth_token)
+                    rec_service = TwilioService(twilio_account_sid, twilio_auth_token)
                     await rec_service.start_call_recording(call_sid, rec_callback_url)
         elif call_status in ("completed", "busy", "failed", "no-answer", "canceled"):
             call_record.ended_at = datetime.now(UTC)
