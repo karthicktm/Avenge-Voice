@@ -967,21 +967,27 @@ async def twilio_voice_webhook(
     # Resolve workspace: prefer query param (already looked up), fall back to agent's workspace
     agent_workspace_id = workspace_uuid or await get_agent_workspace_id(agent.id, db)
 
-    # Create call record for inbound call
-    call_record = CallRecord(
-        user_id=user_id_to_uuid(agent.user_id),
-        workspace_id=agent_workspace_id,
-        provider="twilio",
-        provider_call_id=call_sid,
-        agent_id=agent.id,
-        direction=CallDirection.INBOUND.value,
-        status=CallStatus.RINGING.value,
-        from_number=from_number,
-        to_number=to_number,
+    # Create call record for inbound call (guard against Twilio webhook retries)
+    existing_record = await db.scalar(
+        select(CallRecord).where(CallRecord.provider_call_id == call_sid)
     )
-    db.add(call_record)
-    await db.commit()
-    log.info("call_record_created", record_id=str(call_record.id))
+    if not existing_record:
+        call_record = CallRecord(
+            user_id=user_id_to_uuid(agent.user_id),
+            workspace_id=agent_workspace_id,
+            provider="twilio",
+            provider_call_id=call_sid,
+            agent_id=agent.id,
+            direction=CallDirection.INBOUND.value,
+            status=CallStatus.RINGING.value,
+            from_number=from_number,
+            to_number=to_number,
+        )
+        db.add(call_record)
+        await db.commit()
+        log.info("call_record_created", record_id=str(call_record.id))
+    else:
+        log.info("call_record_already_exists", call_sid=call_sid)
 
     # Build WebSocket URL using PUBLIC_URL so behind a reverse proxy (e.g. Railway)
     # the TwiML points to the correct external address, not the internal one.
@@ -989,12 +995,9 @@ async def twilio_voice_webhook(
     ws_url = public_url.replace("http://", "wss://").replace("https://", "wss://")
     stream_url = f"{ws_url}/ws/telephony/twilio/{agent_id}"
 
-    # Generate TwiML to connect to our WebSocket with recording enabled
-    recording_callback_url = (
-        f"{public_url}/webhooks/twilio/recording-status?workspace_id={agent_workspace_id}"
-    )
+    # Generate TwiML to connect to our WebSocket
     twilio_service = TwilioService("", "")  # Just need TwiML generation
-    twiml = twilio_service.generate_answer_response(stream_url, agent_id, recording_callback_url)
+    twiml = twilio_service.generate_answer_response(stream_url, agent_id)
 
     log.info("twilio_twiml_generated", agent_id=agent_id, stream_url=stream_url)
 
@@ -1063,6 +1066,20 @@ async def twilio_status_callback(
         # Update timestamps based on status
         if call_status == "in-progress" and not call_record.answered_at:
             call_record.answered_at = datetime.now(UTC)
+            # Start recording via REST API now that call is connected.
+            # Cannot use <Record> TwiML verb alongside <Connect><Stream> — it blocks execution.
+            if call_record.workspace_id:
+                ws_rec_result = await db.execute(
+                    select(UserSettings).where(
+                        UserSettings.workspace_id == call_record.workspace_id
+                    )
+                )
+                ws_rec = ws_rec_result.scalar_one_or_none()
+                if ws_rec and ws_rec.twilio_account_sid and ws_rec.twilio_auth_token:
+                    public_url = settings.PUBLIC_URL
+                    rec_callback_url = f"{public_url}/webhooks/twilio/recording-status?workspace_id={call_record.workspace_id}"
+                    rec_service = TwilioService(ws_rec.twilio_account_sid, ws_rec.twilio_auth_token)
+                    await rec_service.start_call_recording(call_sid, rec_callback_url)
         elif call_status in ("completed", "busy", "failed", "no-answer", "canceled"):
             call_record.ended_at = datetime.now(UTC)
             if call_duration:
@@ -1131,11 +1148,8 @@ async def twilio_answer_webhook(
     if campaign_id and campaign_contact_id:
         stream_url += f"?campaign_id={campaign_id}&campaign_contact_id={campaign_contact_id}"
 
-    recording_callback_url = (
-        f"{public_url}/webhooks/twilio/recording-status?workspace_id={workspace_id}"
-    )
     twilio_service = TwilioService("", "")
-    twiml = twilio_service.generate_answer_response(stream_url, agent_id, recording_callback_url)
+    twiml = twilio_service.generate_answer_response(stream_url, agent_id)
 
     return Response(content=twiml, media_type="application/xml")
 

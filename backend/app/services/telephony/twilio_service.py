@@ -274,30 +274,17 @@ class TwilioService(TelephonyProvider):
             self.logger.exception("webhook_config_failed", sid=phone_number_id, error=str(e))
             return False
 
-    def generate_answer_response(
-        self,
-        websocket_url: str,
-        agent_id: str | None = None,
-        recording_status_callback_url: str | None = None,
-    ) -> str:
+    def generate_answer_response(self, websocket_url: str, agent_id: str | None = None) -> str:
         """Generate TwiML response to answer a call and stream to WebSocket.
 
         Args:
             websocket_url: WebSocket URL for media streaming
             agent_id: Optional agent ID for context
-            recording_status_callback_url: Optional URL for recording status callbacks
 
         Returns:
             TwiML response string
         """
         response = VoiceResponse()
-
-        if recording_status_callback_url:
-            response.record(
-                recording_status_callback=recording_status_callback_url,
-                recording_status_callback_method="POST",
-                recording_status_callback_event=["completed"],
-            )
 
         # Connect to WebSocket for media streaming
         connect = Connect()
@@ -310,6 +297,32 @@ class TwilioService(TelephonyProvider):
         response.append(connect)
 
         return str(response)
+
+    async def start_call_recording(self, call_sid: str, recording_status_callback_url: str) -> bool:
+        """Start recording an in-progress call via the Twilio REST API.
+
+        Must be called after the call is connected (in-progress). Using the REST API
+        allows recording to run concurrently with <Connect><Stream> without blocking it.
+
+        Args:
+            call_sid: Twilio Call SID of the active call
+            recording_status_callback_url: URL to receive recording completion events
+
+        Returns:
+            True if recording started successfully
+        """
+        self.logger.info("starting_call_recording", call_sid=call_sid)
+        try:
+            await asyncio.to_thread(
+                self.client.calls(call_sid).recordings.create,
+                recording_status_callback=recording_status_callback_url,
+                recording_status_callback_method="POST",
+            )
+            self.logger.info("call_recording_started", call_sid=call_sid)
+            return True
+        except Exception as e:
+            self.logger.exception("start_recording_failed", call_sid=call_sid, error=str(e))
+            return False
 
     def generate_gather_response(
         self,
