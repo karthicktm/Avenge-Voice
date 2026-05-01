@@ -63,6 +63,7 @@ dependencies = [
     "lxml>=6.0.2",
     "openpyxl>=3.1.5",
     "livekit-api>=1.1.0",
+    "xlrd>=2.0.2",
 ]
 
 [project.optional-dependencies]
@@ -213,6 +214,10 @@ module = [
     "lxml.*",
     "pypdf.*",
     "docx.*",
+    "openpyxl",
+    "openpyxl.*",
+    "xlrd",
+    "xlrd.*",
     "tiktoken.*",
     "pgvector.*",
 ]

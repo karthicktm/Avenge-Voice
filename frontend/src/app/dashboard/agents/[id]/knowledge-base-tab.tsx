@@ -55,7 +55,7 @@ interface KnowledgeBaseTabProps {
   crawlScheduleHours?: number;
 }
 
-const SUPPORTED_TYPES = ["pdf", "docx", "txt", "md"];
+const SUPPORTED_TYPES = ["pdf", "docx", "txt", "md", "xlsx", "xls", "csv"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 const SCHEDULE_LABELS: Record<number, string> = {
@@ -281,7 +281,7 @@ export function KnowledgeBaseTab({
           <input
             type="file"
             multiple
-            accept=".pdf,.docx,.txt,.md"
+            accept=".pdf,.docx,.txt,.md,.xlsx,.xls,.csv"
             className="absolute inset-0 cursor-pointer opacity-0"
             onChange={handleFileInput}
             disabled={uploadMutation.isPending}

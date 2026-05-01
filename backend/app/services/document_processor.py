@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import io
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -25,9 +26,12 @@ class DocumentProcessor:
     - DOCX: Uses python-docx for extraction
     - TXT: Direct text reading
     - MD: Direct text reading (Markdown)
+    - XLSX: Uses openpyxl for extraction
+    - XLS: Uses xlrd for extraction
+    - CSV: Uses stdlib csv module
     """
 
-    SUPPORTED_TYPES: ClassVar[set[str]] = {"pdf", "docx", "txt", "md"}
+    SUPPORTED_TYPES: ClassVar[set[str]] = {"pdf", "docx", "txt", "md", "xlsx", "xls", "csv"}
 
     def __init__(self) -> None:
         """Initialize document processor."""
@@ -118,6 +122,12 @@ class DocumentProcessor:
             text = await self._extract_docx(content)
         elif file_type in ("txt", "md"):
             text = await self._extract_text_file(content)
+        elif file_type == "xlsx":
+            text = await self._extract_xlsx(content)
+        elif file_type == "xls":
+            text = await self._extract_xls(content)
+        elif file_type == "csv":
+            text = await self._extract_csv(content)
         else:
             msg = f"Unsupported file type: {file_type}"
             raise ValueError(msg)
@@ -198,6 +208,118 @@ class DocumentProcessor:
         except Exception as e:
             self.logger.exception("docx_extraction_failed")
             msg = f"Failed to extract DOCX text: {e}"
+            raise ValueError(msg) from e
+
+    async def _extract_xlsx(self, content: bytes) -> str:
+        """Extract text from XLSX files.
+
+        Args:
+            content: XLSX file bytes
+
+        Returns:
+            Extracted text with sheet/row structure
+        """
+        try:
+            import openpyxl
+
+            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+            sections: list[str] = []
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+                rows = list(ws.iter_rows(values_only=True))
+                if not rows:
+                    continue
+                headers = [str(h) if h is not None else "" for h in rows[0]]
+                lines: list[str] = [f"Sheet: {sheet_name}"]
+                for row in rows[1:]:
+                    cells = [str(v) if v is not None else "" for v in row]
+                    if not any(cells):
+                        continue
+                    parts = [
+                        f"{headers[i]}: {cells[i]}"
+                        for i in range(min(len(headers), len(cells)))
+                        if headers[i]
+                    ]
+                    if parts:
+                        lines.append(", ".join(parts))
+                sections.append("\n".join(lines))
+            wb.close()
+            return "\n\n".join(sections)
+        except Exception as e:
+            self.logger.exception("xlsx_extraction_failed")
+            msg = f"Failed to extract XLSX text: {e}"
+            raise ValueError(msg) from e
+
+    async def _extract_xls(self, content: bytes) -> str:
+        """Extract text from XLS (legacy Excel) files.
+
+        Args:
+            content: XLS file bytes
+
+        Returns:
+            Extracted text with sheet/row structure
+        """
+        try:
+            import xlrd
+
+            wb = xlrd.open_workbook(file_contents=content)
+            sections: list[str] = []
+            for sheet_name in wb.sheet_names():
+                ws = wb.sheet_by_name(sheet_name)
+                if ws.nrows == 0:
+                    continue
+                headers = [str(ws.cell_value(0, col)) for col in range(ws.ncols)]
+                lines: list[str] = [f"Sheet: {sheet_name}"]
+                for row_idx in range(1, ws.nrows):
+                    cells = [str(ws.cell_value(row_idx, col)) for col in range(ws.ncols)]
+                    if not any(cells):
+                        continue
+                    parts = [f"{headers[i]}: {cells[i]}" for i in range(len(headers)) if headers[i]]
+                    if parts:
+                        lines.append(", ".join(parts))
+                sections.append("\n".join(lines))
+            return "\n\n".join(sections)
+        except Exception as e:
+            self.logger.exception("xls_extraction_failed")
+            msg = f"Failed to extract XLS text: {e}"
+            raise ValueError(msg) from e
+
+    async def _extract_csv(self, content: bytes) -> str:
+        """Extract text from CSV files.
+
+        Args:
+            content: CSV file bytes
+
+        Returns:
+            Extracted text with header-prefixed rows
+        """
+        try:
+            encoding = self._detect_encoding(content)
+            try:
+                text = content.decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                text = content.decode("utf-8", errors="replace")
+
+            reader = csv.reader(io.StringIO(text))
+            rows = list(reader)
+            if not rows:
+                return ""
+            headers = rows[0]
+            lines: list[str] = []
+            for row in rows[1:]:
+                if not any(row):
+                    continue
+                parts = [
+                    f"{headers[i]}: {row[i]}"
+                    for i in range(min(len(headers), len(row)))
+                    if headers[i]
+                ]
+                if parts:
+                    lines.append(", ".join(parts))
+            return "\n".join(lines)
+        except Exception as e:
+            self.logger.exception("csv_extraction_failed")
+            msg = f"Failed to extract CSV text: {e}"
             raise ValueError(msg) from e
 
     def chunk_text(self, text: str) -> list[str]:

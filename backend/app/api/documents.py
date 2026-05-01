@@ -130,7 +130,7 @@ async def upload_document(
 ) -> DocumentResponse:
     """Upload a document to an agent's knowledge base.
 
-    Supported file types: PDF, DOCX, TXT, MD
+    Supported file types: PDF, DOCX, TXT, MD, XLSX, XLS, CSV
     Max file size: 10MB
     """
     # Verify agent ownership
