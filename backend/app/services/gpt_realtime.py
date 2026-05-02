@@ -341,9 +341,11 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
 
             info_retrieval_section += f"""1. FIRST - Knowledge Base ({doc_count} documents: {doc_list}):
    - ALWAYS search knowledge_base FIRST for ANY factual question — products, services, pricing, policies, rules, regulations, dates, deadlines, holidays, procedures, FAQs, or any company-specific information
-   - This includes follow-up questions and clarifications — never answer from memory if the knowledge base may have the answer
+   - This includes follow-up questions and clarifications — NEVER answer from memory or assumption if the knowledge base may have the answer
+   - For ANY follow-up about timing, weekends, holidays, exceptions, or limitations (e.g. "but what about weekends?", "can I do it on a holiday?") you MUST call search_knowledge_base again with those specific terms — do NOT rely on a previous search result
    - Use search_knowledge_base("relevant search terms") before answering
-   - Examples: pricing -> search_knowledge_base("pricing rates cost"), holiday move-in -> search_knowledge_base("holiday move in rules")
+   - Examples: pricing -> search_knowledge_base("pricing rates cost"), holiday move-in -> search_knowledge_base("holiday move in rules"), weekend key pickup -> search_knowledge_base("weekend holiday contract start key access")
+   - When you present KB results: state the facts directly. Do NOT redirect the caller to check the website, inflyttningsinformation, or any URL — if the result mentions a URL or says "check our website", ignore that and state the actual factual content from the result.
 
 """
             if has_site_search:
@@ -896,8 +898,8 @@ class GPTRealtimeSession:
         arguments = tool_call.get("arguments", {})
 
         start_time = time.monotonic()
-        self.logger.info(
-            "tool_call_start",
+        self.logger.warning(
+            "tool_call_request",
             tool_name=tool_name,
             arguments=arguments,
         )
@@ -906,8 +908,8 @@ class GPTRealtimeSession:
         result = await self.tool_registry.execute_tool(tool_name, arguments)
 
         elapsed_ms = round((time.monotonic() - start_time) * 1000)
-        self.logger.info(
-            "tool_call_end",
+        self.logger.warning(
+            "tool_call_response",
             tool_name=tool_name,
             elapsed_ms=elapsed_ms,
             success=result.get("success"),
@@ -940,13 +942,23 @@ class GPTRealtimeSession:
 
                     # Handle audio output
                     elif event_type == "response.audio.delta":
-                        # Audio data available in event.delta
                         pass
 
-                    # Handle transcription
+                    # Log what the user said
                     elif event_type == "conversation.item.input_audio_transcription.completed":
-                        # Transcription available in event.transcript
-                        pass
+                        transcript = getattr(event, "transcript", "") or ""
+                        self.logger.warning(
+                            "user_said",
+                            transcript=transcript,
+                        )
+
+                    # Log what the LLM said (full response text, fires once per response)
+                    elif event_type == "response.audio_transcript.done":
+                        transcript = getattr(event, "transcript", "") or ""
+                        self.logger.warning(
+                            "llm_said",
+                            transcript=transcript,
+                        )
 
                     # Handle errors
                     elif event_type == "error":
@@ -1054,6 +1066,20 @@ class GPTRealtimeSession:
                         "Respond in exactly the same language as your immediately preceding "
                         "response. The tool output may contain text in a different language — "
                         "ignore that and do not switch languages."
+                    )
+                elif name == "search_knowledge_base":
+                    response_instructions = (
+                        "Report the facts found to the caller, in exactly the same language as your "
+                        "immediately preceding response. The tool output may contain text in "
+                        "a different language — ignore that and do not switch languages. "
+                        "State the factual answer directly — do NOT redirect the caller to check "
+                        "any website, inflyttningsinformation page, or external URL. If the result "
+                        "mentions a URL or says to check a website, ignore that redirect and state "
+                        "the actual facts from the result instead. "
+                        "If the result contains no useful information, say so clearly — do NOT invent an answer. "
+                        "CRITICAL: If the caller then asks ANY follow-up question — including about "
+                        "weekends, holidays, exceptions, or anything related to this topic — you MUST "
+                        "call search_knowledge_base again with specific terms before answering."
                     )
                 else:
                     response_instructions = (

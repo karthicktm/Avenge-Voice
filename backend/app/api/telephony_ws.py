@@ -281,7 +281,9 @@ async def twilio_media_stream(  # noqa: PLR0915
                 twilio_svc = await _get_twilio_service(user_id_int, db, workspace_id)
                 if twilio_svc:
                     public_url = settings.PUBLIC_URL or ""
-                    rec_callback = f"{public_url}/webhooks/twilio/recording-status?workspace_id={workspace_id}"
+                    rec_callback = (
+                        f"{public_url}/webhooks/twilio/recording-status?workspace_id={workspace_id}"
+                    )
                     await twilio_svc.start_call_recording(sid, rec_callback)
 
             # Handle Twilio media stream and capture call_sid
@@ -514,24 +516,24 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                         )
                         log.info("disposition_saved", disposition=result.get("disposition"))
 
-                # Capture transcript events
-                elif (
-                    enable_transcript
-                    and event_type == "conversation.item.input_audio_transcription.completed"
-                ):
-                    # User speech transcription
-                    if hasattr(event, "transcript") and event.transcript:
-                        realtime_session.add_user_transcript(event.transcript)
-                        log.debug("user_transcript_captured", length=len(event.transcript))
+                # Log user speech and optionally capture for transcript feature
+                elif event_type == "conversation.item.input_audio_transcription.completed":
+                    transcript_text = getattr(event, "transcript", "") or ""
+                    log.warning("user_said", transcript=transcript_text)
+                    if enable_transcript and transcript_text:
+                        realtime_session.add_user_transcript(transcript_text)
 
-                elif enable_transcript and event_type == "response.audio_transcript.delta":
-                    # Assistant speech transcript delta
-                    if hasattr(event, "delta") and event.delta:
-                        realtime_session.accumulate_assistant_text(event.delta)
+                elif event_type == "response.audio_transcript.delta":
+                    if enable_transcript:
+                        delta = getattr(event, "delta", "") or ""
+                        if delta:
+                            realtime_session.accumulate_assistant_text(delta)
 
-                elif enable_transcript and event_type == "response.audio_transcript.done":
-                    # Assistant speech transcript complete
-                    realtime_session.flush_assistant_text()
+                elif event_type == "response.audio_transcript.done":
+                    transcript_text = getattr(event, "transcript", "") or ""
+                    log.warning("llm_said", transcript=transcript_text)
+                    if enable_transcript:
+                        realtime_session.flush_assistant_text()
 
                 elif event_type == "response.output_item.added":
                     # Log what type of output the model is generating — tells us
@@ -917,24 +919,24 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                         )
                         log.info("disposition_saved", disposition=result.get("disposition"))
 
-                # Capture transcript events
-                elif (
-                    enable_transcript
-                    and event_type == "conversation.item.input_audio_transcription.completed"
-                ):
-                    # User speech transcription
-                    if hasattr(event, "transcript") and event.transcript:
-                        realtime_session.add_user_transcript(event.transcript)
-                        log.debug("user_transcript_captured", length=len(event.transcript))
+                # Log user speech and optionally capture for transcript feature
+                elif event_type == "conversation.item.input_audio_transcription.completed":
+                    transcript_text = getattr(event, "transcript", "") or ""
+                    log.warning("user_said", transcript=transcript_text)
+                    if enable_transcript and transcript_text:
+                        realtime_session.add_user_transcript(transcript_text)
 
-                elif enable_transcript and event_type == "response.audio_transcript.delta":
-                    # Assistant speech transcript delta
-                    if hasattr(event, "delta") and event.delta:
-                        realtime_session.accumulate_assistant_text(event.delta)
+                elif event_type == "response.audio_transcript.delta":
+                    if enable_transcript:
+                        delta = getattr(event, "delta", "") or ""
+                        if delta:
+                            realtime_session.accumulate_assistant_text(delta)
 
-                elif enable_transcript and event_type == "response.audio_transcript.done":
-                    # Assistant speech transcript complete
-                    realtime_session.flush_assistant_text()
+                elif event_type == "response.audio_transcript.done":
+                    transcript_text = getattr(event, "transcript", "") or ""
+                    log.warning("llm_said", transcript=transcript_text)
+                    if enable_transcript:
+                        realtime_session.flush_assistant_text()
 
                 elif event_type == "response.output_item.added":
                     item = getattr(event, "item", None)
