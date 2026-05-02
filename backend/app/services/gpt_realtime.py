@@ -340,9 +340,10 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
                 doc_list = f"{doc_count} documents"
 
             info_retrieval_section += f"""1. FIRST - Knowledge Base ({doc_count} documents: {doc_list}):
-   - ALWAYS search knowledge_base FIRST for questions about products, services, pricing, policies, FAQs
+   - ALWAYS search knowledge_base FIRST for ANY factual question — products, services, pricing, policies, rules, regulations, dates, deadlines, holidays, procedures, FAQs, or any company-specific information
+   - This includes follow-up questions and clarifications — never answer from memory if the knowledge base may have the answer
    - Use search_knowledge_base("relevant search terms") before answering
-   - Examples: pricing -> search_knowledge_base("pricing rates cost")
+   - Examples: pricing -> search_knowledge_base("pricing rates cost"), holiday move-in -> search_knowledge_base("holiday move in rules")
 
 """
             if has_site_search:

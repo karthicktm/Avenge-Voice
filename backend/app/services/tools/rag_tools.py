@@ -51,7 +51,7 @@ class RAGTools:
             {
                 "type": "function",
                 "name": "search_knowledge_base",
-                "description": "Search the knowledge base for information from uploaded documents. Use this when the customer asks questions that might be answered in your company's documentation, FAQs, product guides, or other uploaded materials.",
+                "description": "Search the knowledge base for information from uploaded documents. MUST be called before answering any factual question about company policies, rules, procedures, regulations, dates, deadlines, holidays, or any topic that may be covered in the uploaded materials. Also call for follow-up and clarifying questions — never answer from training data when the knowledge base may have the answer.",
                 "parameters": {
                     "type": "object",
                     "properties": {
