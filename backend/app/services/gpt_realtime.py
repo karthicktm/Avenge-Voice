@@ -345,6 +345,8 @@ def build_instructions_with_language(  # noqa: PLR0912, PLR0915
    - For ANY follow-up about timing, weekends, holidays, exceptions, or limitations (e.g. "but what about weekends?", "can I do it on a holiday?") you MUST call search_knowledge_base again with those specific terms — do NOT rely on a previous search result
    - Use search_knowledge_base("relevant search terms") before answering
    - Examples: pricing -> search_knowledge_base("pricing rates cost"), holiday move-in -> search_knowledge_base("holiday move in rules"), weekend key pickup -> search_knowledge_base("weekend holiday contract start key access")
+   - CRITICAL: If search_knowledge_base returns results (found=true), you MUST use those results to answer the caller — NEVER say "the knowledge base has no information" or "I couldn't find anything" when results were actually returned, even if their relevance score seems low. Always present what was found.
+   - If the first search returns no results (found=false), retry with simpler or broader terms before giving up. Voice speech recognition often mishears words — if a query term seems unusual, try the standard equivalent (e.g. if you heard "flygdagar" try "helgdagar", if you heard a garbled word try the plain Swedish housing term: "helgdag", "inflyttning", "utflyttning", "hyresavtal", "nyckel", "lördag", "söndag").
    - When you present KB results: state the facts directly. Do NOT redirect the caller to check the website, inflyttningsinformation, or any URL — if the result mentions a URL or says "check our website", ignore that and state the actual factual content from the result.
 
 """
