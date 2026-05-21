@@ -706,10 +706,9 @@ export default function TestAgentPage() {
 
       const response = await fetch("https://api.openai.com/v1/realtime/calls", {
         method: "POST",
-        body: JSON.stringify({ sdp: offer.sdp }),
+        body: offer.sdp,
         headers: {
-          "Content-Type": "application/json",
-          Accept: "application/sdp",
+          "Content-Type": "application/sdp",
           Authorization: `Bearer ${ephemeralKey}`,
         },
       });
