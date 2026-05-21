@@ -59,6 +59,7 @@ import {
 import { api } from "@/lib/api";
 import { getWebhookInfo, configurePhoneNumberWebhook } from "@/lib/api/telephony";
 import { listCategoryTrees, type TreeMeta } from "@/lib/api/category-trees";
+import { listWorkflows, attachWorkflow, detachWorkflow, type Workflow } from "@/lib/api/workflows";
 import { listCollections, type LookupCollection } from "@/lib/api/lookup";
 import { getLanguagesForTier, getFallbackLanguage } from "@/lib/languages";
 import { AVAILABLE_INTEGRATIONS } from "@/lib/integrations";
@@ -80,6 +81,130 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { GitBranch, ExternalLink } from "lucide-react";
+
+// ── WorkflowTab ───────────────────────────────────────────────────────────────
+
+function WorkflowTab({ agentId, workspaceId }: { agentId: string; workspaceId: string }) {
+  const qc = useQueryClient();
+  const [attachingId, setAttachingId] = useState<string | null>(null);
+
+  const { data: workflows = [] } = useQuery<Workflow[]>({
+    queryKey: ["workflows", workspaceId],
+    queryFn: () => listWorkflows(workspaceId),
+    enabled: !!workspaceId,
+  });
+
+  const { data: agentData } = useQuery({
+    queryKey: ["agent", agentId],
+    queryFn: async () => {
+      const res = await api.get<{ workflow_id: string | null }>(`/api/v1/agents/${agentId}`);
+      return res.data;
+    },
+  });
+
+  const attachedId = agentData?.workflow_id ?? null;
+  const attachedWorkflow = workflows.find((w) => w.id === attachedId);
+
+  const attachMutation = useMutation({
+    mutationFn: (wfId: string) => attachWorkflow(wfId, agentId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["agent", agentId] });
+      toast.success("Workflow attached");
+      setAttachingId(null);
+    },
+    onError: () => toast.error("Failed to attach workflow"),
+  });
+
+  const detachMutation = useMutation({
+    mutationFn: () => detachWorkflow(attachedId ?? "", agentId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["agent", agentId] });
+      toast.success("Workflow detached");
+    },
+    onError: () => toast.error("Failed to detach workflow"),
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <GitBranch className="h-4 w-4 text-indigo-500" />
+          Conversation Workflow
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {attachedWorkflow ? (
+          <div className="flex items-center justify-between rounded-lg border bg-indigo-50 px-4 py-3">
+            <div>
+              <div className="flex items-center gap-2 font-medium">
+                <GitBranch className="h-4 w-4 text-indigo-500" />
+                {attachedWorkflow.name}
+              </div>
+              <div className="mt-0.5 text-xs text-gray-500">
+                {attachedWorkflow.nodes.length} nodes · {attachedWorkflow.edges.length} edges
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/dashboard/workflows">
+                  <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                  Edit
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-500 hover:text-red-700"
+                onClick={() => detachMutation.mutate()}
+                disabled={detachMutation.isPending}
+              >
+                Detach
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">No workflow attached. Select one below:</p>
+        )}
+
+        {workflows.length > 0 && (
+          <div className="space-y-2">
+            {workflows
+              .filter((w) => w.id !== attachedId)
+              .map((wf) => (
+                <div
+                  key={wf.id}
+                  className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+                >
+                  <span>{wf.name}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={attachMutation.isPending && attachingId === wf.id}
+                    onClick={() => {
+                      setAttachingId(wf.id);
+                      attachMutation.mutate(wf.id);
+                    }}
+                  >
+                    Attach
+                  </Button>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {workflows.length === 0 && (
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/dashboard/workflows">
+              <GitBranch className="mr-1 h-3.5 w-3.5" />
+              Create a Workflow
+            </Link>
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 // Best practices system prompt template based on OpenAI's 2025 GPT Realtime guidelines
 const BEST_PRACTICES_PROMPT = `# Role & Identity
@@ -906,6 +1031,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                 <TabTriggerWithErrors value="knowledge-base" label="Knowledge Base" />
               )}
               <TabTriggerWithErrors value="advanced" label="Advanced" />
+              <TabTriggerWithErrors value="workflow" label="Workflow" />
             </TabsList>
 
             <TabsContent value="basic" className="mt-4 space-y-3">
@@ -2468,6 +2594,9 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                 />
               </TabsContent>
             )}
+            <TabsContent value="workflow" className="mt-4">
+              <WorkflowTab agentId={agentId} workspaceId={selectedWorkspaces[0] ?? ""} />
+            </TabsContent>
           </Tabs>
 
           <div className="flex justify-end gap-3">

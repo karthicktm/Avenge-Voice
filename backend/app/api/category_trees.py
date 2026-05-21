@@ -647,6 +647,29 @@ _WELL_KNOWN_HEADER_ALIASES: dict[str, str] = {
     "level_3_example_query": "level_3_example_query",
     "level_4_example_query": "level_4_example_query",
     "level_5_example_query": "level_5_example_query",
+    # Generic workflow fields (AMEDTEC + future clients)
+    "action_type": "action_type",
+    "transfer_target": "transfer_target",
+    "email_target": "email_target",
+    "required_information": "required_information",
+    "approved_script": "approved_script",
+    "approved_agent_script": "approved_script",
+    "approved_agent_script_de": "approved_script",
+    "approved_agent_script_en": "approved_script",
+    "detection_signals_en": "detection_signals_en",
+    "detection_signals_de": "detection_signals_de",
+    "priority_order": "priority_order",
+    "priority_class": "priority_class",
+    "not_allowed_or_safety_boundary": "safety_boundary",
+    "safety_boundary": "safety_boundary",
+    "fallback_if_unclear": "fallback_category_code",
+    "definition": "definition",
+    "agent_allowed_scope": "agent_allowed_scope",
+    "email_summary_template": "email_summary_template",
+    "implementation_notes": "implementation_notes",
+    # AMEDTEC exact column headers
+    "category_code": "code",
+    "category_name": "level_1",
 }
 
 # Aliases for structural columns so files using Swedish/custom header names
@@ -656,8 +679,12 @@ _STRUCTURAL_HEADER_ALIASES: dict[str, str] = {
     # code column
     "kategorikod": "code",
     "category code": "code",
+    "category_code": "code",
     "kategori kod": "code",
     "cat code": "code",
+    # category_name → level_1 (AMEDTEC)
+    "category_name": "level_1",
+    "category name": "level_1",
     # level columns — Swedish "Nivå" and common English variants
     "nivå 1": "level_1",
     "niva 1": "level_1",
@@ -694,6 +721,9 @@ _BOOLEAN_KEYS = {
 
 _TRUTHY = {"ja", "yes", "true", "1", "j", "y"}
 _FALSY = {"nej", "no", "false", "0", "n"}
+
+# Metadata keys that hold comma/semicolon-separated values — split into list[str].
+_LIST_FIELDS = {"required_information", "detection_signals_en", "detection_signals_de"}
 
 
 def _canonical_header(raw: str) -> str | None:
@@ -1092,6 +1122,10 @@ def _validate_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:  # noqa:
                 continue  # skip blank cells
             if canonical_key in _BOOLEAN_KEYS:
                 meta[canonical_key] = _normalize_bool(raw_value)
+            elif canonical_key in _LIST_FIELDS:
+                # Split comma or semicolon separated values into a list
+                parts = [p.strip() for p in re.split(r"[,;]", raw_value) if p.strip()]
+                meta[canonical_key] = parts if parts else raw_value
             else:
                 meta[canonical_key] = raw_value
 

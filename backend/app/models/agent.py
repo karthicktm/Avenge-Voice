@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.agent_assignment import AgentAssignment
     from app.models.document import Document
     from app.models.quota import AgentQuota
+    from app.models.workflow import Workflow
     from app.models.workspace import AgentWorkspace
 
 
@@ -56,7 +57,9 @@ class Agent(Base):
         String(10), nullable=False, default="en-US", comment="Agent language (e.g., en-US, es-ES)"
     )
     use_best_practices: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True,
+        Boolean,
+        nullable=False,
+        default=True,
         comment="Include language-specific best practices in system prompt",
     )
     voice: Mapped[str] = mapped_column(
@@ -209,6 +212,14 @@ class Agent(Base):
         comment="Widget customization settings (theme, position, colors, etc.)",
     )
 
+    # Workflow engine — optional; agents without workflow_id use legacy categorize path
+    workflow_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("workflows.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
@@ -224,6 +235,7 @@ class Agent(Base):
     )
 
     # Relationships
+    workflow: Mapped["Workflow | None"] = relationship("Workflow", foreign_keys=[workflow_id])
     agent_workspaces: Mapped[list["AgentWorkspace"]] = relationship(
         "AgentWorkspace", back_populates="agent", cascade="all, delete-orphan"
     )

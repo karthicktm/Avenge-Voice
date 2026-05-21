@@ -558,6 +558,8 @@ class GPTRealtimeSession:
         # Initial greeting (triggered after event loop starts to avoid race condition)
         self._pending_initial_greeting: str | None = None
         self._greeting_triggered: bool = False
+        # Workflow engine — set in initialize() if agent.workflow_id is configured
+        self.workflow_executor: Any = None
         # Audio gate: True while a tool call is executing. send_audio() drops
         # frames when set so VAD cannot fire and generate spurious "I'm still
         # looking…" responses that corrupt the function_call_output cycle.
@@ -655,6 +657,34 @@ class GPTRealtimeSession:
                 self.logger.info("category_trees_prewarmed")
             except Exception:
                 self.logger.warning("category_trees_prewarm_failed_continuing")
+
+        # Initialise WorkflowExecutor if this agent has a workflow assigned
+        workflow_id_str = self.agent_config.get("workflow_id")
+        workflow_nodes: list[dict[str, Any]] = self.agent_config.get("workflow_nodes") or []
+        workflow_edges: list[dict[str, Any]] = self.agent_config.get("workflow_edges") or []
+        if workflow_id_str and workflow_nodes:
+            try:
+                from app.services.workflow_engine.executor import WorkflowExecutor
+                from app.services.workflow_engine.llm_client import LLMConfig
+
+                wf_llm_config = LLMConfig(
+                    provider="openai",
+                    model="gpt-4o-mini",
+                    api_key=api_key,
+                )
+                self.workflow_executor = WorkflowExecutor(
+                    workflow_id=uuid.UUID(workflow_id_str),
+                    nodes=workflow_nodes,
+                    edges=workflow_edges,
+                    llm_config=wf_llm_config,
+                )
+                self.logger.info(
+                    "workflow_executor_initialised",
+                    workflow_id=workflow_id_str,
+                    nodes=len(workflow_nodes),
+                )
+            except Exception:
+                self.logger.exception("workflow_executor_init_failed_continuing")
 
         # Connect to OpenAI Realtime API
         await self._connect_realtime_api()
@@ -973,7 +1003,7 @@ class GPTRealtimeSession:
             self.logger.exception("realtime_event_loop_error", error=str(e))
             raise
 
-    async def handle_function_call_event(self, event: Any) -> dict[str, Any]:
+    async def handle_function_call_event(self, event: Any) -> dict[str, Any]:  # noqa: PLR0912, PLR0915
         """Handle function call from GPT Realtime.
 
         Args:
@@ -1052,23 +1082,26 @@ class GPTRealtimeSession:
                 # per-response instruction below prevents the model from treating foreign
                 # words in the tool output as a cue to revert to another language.
                 #
-                # For categorize: the model must deliver the complete final call summary
-                # in this single turn — not split across turns or announce it first.
+                # For categorize: build response instructions based on workflow state
+                # (if executor is active) or fall back to the hardcoded summary prompt.
                 if name == "categorize":
-                    response_instructions = (
-                        "The issue has been categorised. Now deliver the COMPLETE, FINAL call "
-                        "summary in this single response — do NOT say 'I will prepare a summary' "
-                        "or any similar announcement. Speak the full summary RIGHT NOW: include "
-                        "all information collected (caller name, address, apartment, issue "
-                        "description, category path, priority/urgency level, and fault report "
-                        "type). After the summary, tell the caller what happens next (e.g. the "
-                        "fault report will be submitted to the team). This is your FINAL "
-                        "response in the workflow — do not ask any more questions and do not "
-                        "re-summarize on subsequent turns. "
-                        "Respond in exactly the same language as your immediately preceding "
-                        "response. The tool output may contain text in a different language — "
-                        "ignore that and do not switch languages."
-                    )
+                    if self.workflow_executor:
+                        response_instructions = self._build_workflow_response_instructions(result)
+                    else:
+                        response_instructions = (
+                            "The issue has been categorised. Now deliver the COMPLETE, FINAL call "
+                            "summary in this single response — do NOT say 'I will prepare a summary' "
+                            "or any similar announcement. Speak the full summary RIGHT NOW: include "
+                            "all information collected (caller name, address, apartment, issue "
+                            "description, category path, priority/urgency level, and fault report "
+                            "type). After the summary, tell the caller what happens next (e.g. the "
+                            "fault report will be submitted to the team). This is your FINAL "
+                            "response in the workflow — do not ask any more questions and do not "
+                            "re-summarize on subsequent turns. "
+                            "Respond in exactly the same language as your immediately preceding "
+                            "response. The tool output may contain text in a different language — "
+                            "ignore that and do not switch languages."
+                        )
                 elif name == "search_knowledge_base":
                     response_instructions = (
                         "Report the facts found to the caller, in exactly the same language as your "
@@ -1092,41 +1125,68 @@ class GPTRealtimeSession:
                 await self.connection.response.create(
                     response={"instructions": response_instructions}
                 )
-                # After categorize: switch session to "call concluded" mode so any
-                # noise- or user-speech-triggered response fires a farewell instead of
-                # re-summarizing. Remove categorize from the tools list so it cannot
-                # be called again, but keep other tools (e.g. resend_send_email) so
-                # the agent can still send the fault-report email if instructed.
+                # After categorize: switch session so it won't re-categorize.
+                # Workflow path: keep all tools active (next node may need them).
+                # Legacy path: switch to farewell mode so noise/speech fires a
+                # brief goodbye instead of re-summarising.
                 if name == "categorize":
                     with contextlib.suppress(Exception):
-                        enabled_tools = self.agent_config.get("enabled_tools", [])
-                        enabled_tool_ids = self.agent_config.get("enabled_tool_ids", {})
-                        post_cat_enabled = [
-                            t for t in enabled_tools if t not in ("categorization", "category_tree")
-                        ]
-                        post_cat_tools = (
-                            self.tool_registry.get_all_tool_definitions(
-                                post_cat_enabled, enabled_tool_ids
+                        if self.workflow_executor:
+                            # Workflow mode: just remove the categorize tool; keep others.
+                            enabled_tools = self.agent_config.get("enabled_tools", [])
+                            enabled_tool_ids = self.agent_config.get("enabled_tool_ids", {})
+                            post_cat_enabled = [
+                                t
+                                for t in enabled_tools
+                                if t not in ("categorization", "category_tree")
+                            ]
+                            post_cat_tools = (
+                                self.tool_registry.get_all_tool_definitions(
+                                    post_cat_enabled, enabled_tool_ids
+                                )
+                                if self.tool_registry
+                                else []
                             )
-                            if self.tool_registry and post_cat_enabled
-                            else []
-                        )
-                        farewell_session: dict[str, Any] = {
-                            "instructions": (
-                                "The fault report call summary has just been delivered. "
-                                "The call is now CONCLUDED. "
-                                "If instructed by your role, send the fault report email NOW "
-                                "using resend_send_email before saying goodbye. "
-                                "After that, respond ONLY with a brief, warm farewell in the "
-                                "same language the caller is speaking. Do NOT repeat the "
-                                "summary under any circumstances. Do NOT ask any questions."
-                            ),
-                            "tool_choice": "auto" if post_cat_tools else "none",
-                        }
-                        if post_cat_tools:
-                            farewell_session["tools"] = post_cat_tools
-                        await self.connection.session.update(session=farewell_session)
-                    self.logger.info("session_switched_to_farewell_mode")
+                            wf_session: dict[str, Any] = {
+                                "tool_choice": "auto" if post_cat_tools else "none",
+                            }
+                            if post_cat_tools:
+                                wf_session["tools"] = post_cat_tools
+                            await self.connection.session.update(session=wf_session)
+                        else:
+                            enabled_tools = self.agent_config.get("enabled_tools", [])
+                            enabled_tool_ids = self.agent_config.get("enabled_tool_ids", {})
+                            post_cat_enabled = [
+                                t
+                                for t in enabled_tools
+                                if t not in ("categorization", "category_tree")
+                            ]
+                            post_cat_tools = (
+                                self.tool_registry.get_all_tool_definitions(
+                                    post_cat_enabled, enabled_tool_ids
+                                )
+                                if self.tool_registry and post_cat_enabled
+                                else []
+                            )
+                            farewell_session: dict[str, Any] = {
+                                "instructions": (
+                                    "The fault report call summary has just been delivered. "
+                                    "The call is now CONCLUDED. "
+                                    "If instructed by your role, send the fault report email NOW "
+                                    "using resend_send_email before saying goodbye. "
+                                    "After that, respond ONLY with a brief, warm farewell in the "
+                                    "same language the caller is speaking. Do NOT repeat the "
+                                    "summary under any circumstances. Do NOT ask any questions."
+                                ),
+                                "tool_choice": "auto" if post_cat_tools else "none",
+                            }
+                            if post_cat_tools:
+                                farewell_session["tools"] = post_cat_tools
+                            await self.connection.session.update(session=farewell_session)
+                    self.logger.info(
+                        "session_switched_post_categorize",
+                        workflow_mode=self.workflow_executor is not None,
+                    )
         finally:
             self._audio_paused = False
 
@@ -1139,6 +1199,139 @@ class GPTRealtimeSession:
         )
 
         return result
+
+    def _build_workflow_response_instructions(self, categorize_result: dict[str, Any]) -> str:  # noqa: PLR0911
+        """Feed categorize result into workflow executor, route to next node, return instruction.
+
+        Called only when self.workflow_executor is set.  Keeps the existing
+        handle_function_call_event free of workflow-specific branching.
+        """
+        ex = self.workflow_executor
+        lang_note = (
+            "Respond in exactly the same language as your immediately preceding response. "
+            "The tool output may contain text in a different language — "
+            "ignore that and do not switch languages."
+        )
+        try:
+            meta: dict[str, Any] = categorize_result.get("metadata") or {}
+            ex.context_bag.update(
+                {
+                    "code": categorize_result.get("code"),
+                    "label": categorize_result.get("label"),
+                    "path_string": categorize_result.get("path_string"),
+                    "action_type": meta.get("action_type"),
+                    "transfer_target": meta.get("transfer_target"),
+                    "email_target": meta.get("email_target"),
+                    "required_information": meta.get("required_information"),
+                    "approved_script": meta.get("approved_script"),
+                    "urgency_level": categorize_result.get("urgency_level"),
+                    "info_to_collect": categorize_result.get("info_to_collect"),
+                    "confidence": categorize_result.get("confidence"),
+                    "resolution_layer": categorize_result.get("resolution_layer"),
+                }
+            )
+
+            # Advance through the categorize node and any immediate condition node
+            next_id = ex.route()
+            if next_id:
+                ex.current_node_id = next_id
+
+            current = ex.current_node
+            if current and current.get("type") == "condition":
+                ex.route_condition()
+                current = ex.current_node
+
+            if not current:
+                return (
+                    "The issue has been categorised. Summarise the result and tell the caller "
+                    "what happens next. " + lang_note
+                )
+
+            node_type: str = current.get("type") or ""
+            instruction: str = ex.build_node_instruction()
+
+            self.logger.info(
+                "workflow_next_node",
+                node_type=node_type,
+                node_id=current.get("id"),
+            )
+
+            if node_type == "transfer":
+                cfg = current.get("config") or {}
+                raw_target: str = str(cfg.get("transfer_target", ""))
+                target = ex.resolve_template(raw_target) or "the appropriate team"
+                preamble = (
+                    f"Say: {instruction}"
+                    if instruction
+                    else "Tell the caller you are transferring them now."
+                )
+                return f"{preamble} Then transfer the call to {target}. " + lang_note
+
+            if node_type == "collect_email":
+                preamble = (
+                    f"Start with: {instruction}"
+                    if instruction
+                    else (
+                        "You need to collect information from the caller and then email a report."
+                    )
+                )
+                return (
+                    f"{preamble} Ask for each piece of information one at a time. "
+                    "Once you have everything, confirm it back to the caller before sending. "
+                    + lang_note
+                )
+
+            if node_type == "instruction":
+                return (
+                    f"{'Say exactly: ' + instruction if instruction else 'Provide the relevant information to the caller.'} "
+                    + lang_note
+                )
+
+            if node_type == "sms":
+                return (
+                    "Inform the caller that you will send them an SMS with the relevant details. "
+                    + lang_note
+                )
+
+            if node_type == "appointment":
+                preamble = (
+                    f"Start with: {instruction}"
+                    if instruction
+                    else ("Help the caller book an appointment.")
+                )
+                return (
+                    f"{preamble} Ask for their preferred date, time, full name, and callback number. "
+                    + lang_note
+                )
+
+            if node_type == "voicemail":
+                cfg = current.get("config") or {}
+                prompt: str = str(cfg.get("prompt") or "Please leave your message after the tone.")
+                return (
+                    f"Tell the caller: '{prompt}' Then listen and record their message. "
+                    + lang_note
+                )
+
+            if node_type == "end_call":
+                return (
+                    "Say a brief, warm farewell and end the call. Do not repeat the summary. "
+                    + lang_note
+                )
+
+            # Generic fallback
+            if instruction:
+                return f"Do the following: {instruction} " + lang_note
+            return (
+                "The issue has been categorised. Proceed according to the instructions. "
+                + lang_note
+            )
+
+        except Exception:
+            self.logger.exception("workflow_response_build_failed")
+            return (
+                "The issue has been categorised. Summarise the result and tell the caller "
+                "what happens next. " + lang_note
+            )
 
     async def trigger_initial_greeting(self) -> bool:
         """Inject instructions into the conversation and optionally speak a greeting.

@@ -33,6 +33,7 @@ import {
   PanelLeft,
   LogOut,
   Key,
+  GitBranch,
 } from "lucide-react";
 import { useSidebarStore } from "@/lib/sidebar-store";
 import { useAuth } from "@/hooks/use-auth";
@@ -93,6 +94,12 @@ const baseNavigation: NavItem[] = [
     href: "/dashboard/category-trees",
     icon: Network,
     color: "text-purple-400",
+  },
+  {
+    name: "Workflows",
+    href: "/dashboard/workflows",
+    icon: GitBranch,
+    color: "text-indigo-400",
   },
   {
     name: "Integrations",

@@ -87,15 +87,11 @@ def get_realtime_model_for_tier(pricing_tier: str) -> str:
         OpenAI Realtime model name
     """
     # Using latest production gpt-realtime models (updated Mar 2026)
-    return (
-        "gpt-realtime-mini-2025-12-15"
-        if pricing_tier == "premium-mini"
-        else "gpt-realtime-1.5"
-    )
+    return "gpt-realtime-mini-2025-12-15" if pricing_tier == "premium-mini" else "gpt-realtime-1.5"
 
 
 @router.websocket("/realtime/{agent_id}")
-async def realtime_websocket(
+async def realtime_websocket(  # noqa: PLR0915
     websocket: WebSocket,
     agent_id: str,
     workspace_id: str,
@@ -206,6 +202,25 @@ async def realtime_websocket(
         # agent.user_id is now directly the integer user ID
         user_id_int = agent.user_id
 
+        # Load workflow if agent has one assigned
+        workflow_nodes: list[dict[str, Any]] = []
+        workflow_edges: list[dict[str, Any]] = []
+        if agent.workflow_id:
+            from app.models.workflow import Workflow as WorkflowModel
+
+            wf_result = await db.execute(
+                select(WorkflowModel).where(WorkflowModel.id == agent.workflow_id)
+            )
+            wf = wf_result.scalar_one_or_none()
+            if wf:
+                workflow_nodes = wf.nodes or []
+                workflow_edges = wf.edges or []
+                client_logger.info(
+                    "workflow_loaded",
+                    workflow_id=str(agent.workflow_id),
+                    node_count=len(workflow_nodes),
+                )
+
         # Build agent config for GPT Realtime
         agent_config = {
             "system_prompt": agent.system_prompt,
@@ -222,6 +237,10 @@ async def realtime_websocket(
             "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
             "turn_detection_silence_duration_ms": agent.turn_detection_silence_duration_ms,
             "transcription_model": agent.transcription_model,
+            # Workflow engine — present only when agent has a workflow assigned
+            "workflow_id": str(agent.workflow_id) if agent.workflow_id else None,
+            "workflow_nodes": workflow_nodes,
+            "workflow_edges": workflow_edges,
         }
 
         # Initialize GPT Realtime session with internal tools
@@ -463,9 +482,7 @@ async def create_webrtc_session(  # noqa: PLR0915
         tool_configs=agent.tool_configs or {},
     )
     enabled_tools = agent.enabled_tools or []
-    tools = tool_registry.get_all_tool_definitions(
-        enabled_tools, agent.enabled_tool_ids
-    )
+    tools = tool_registry.get_all_tool_definitions(enabled_tools, agent.enabled_tool_ids)
 
     # Get workspace timezone
     from app.models.workspace import Workspace
