@@ -673,7 +673,6 @@ export default function TestAgentPage() {
 
       console.log("[WebRTC] Got ephemeral token:", ephemeralKey.substring(0, 10) + "...");
 
-      // Manual WebRTC connection since SDK doesn't include required OpenAI-Beta header
       const pc = new RTCPeerConnection();
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioTrack = micStream.getAudioTracks()[0];
@@ -705,14 +704,13 @@ export default function TestAgentPage() {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Connect to OpenAI Realtime API with required header
       const response = await fetch("https://api.openai.com/v1/realtime/calls", {
         method: "POST",
-        body: offer.sdp,
+        body: JSON.stringify({ sdp: offer.sdp }),
         headers: {
-          "Content-Type": "application/sdp",
+          "Content-Type": "application/json",
+          Accept: "application/sdp",
           Authorization: `Bearer ${ephemeralKey}`,
-          "OpenAI-Beta": "realtime=v1",
         },
       });
 

@@ -502,14 +502,13 @@ export default function EmbedPage() {
         return;
       }
 
-      // Connect to OpenAI Realtime API with required header
       const response = await fetch("https://api.openai.com/v1/realtime/calls", {
         method: "POST",
-        body: offer.sdp,
+        body: JSON.stringify({ sdp: offer.sdp }),
         headers: {
-          "Content-Type": "application/sdp",
+          "Content-Type": "application/json",
+          Accept: "application/sdp",
           Authorization: `Bearer ${ephemeralKey}`,
-          "OpenAI-Beta": "realtime=v1",
         },
         signal: abortController.signal,
       });
