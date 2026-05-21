@@ -449,6 +449,77 @@ class ToolRegistry:
         """Return the prewarmed node list for a tree, or [] if not loaded."""
         return self._prewarmed_trees.get(tree_name) or []
 
+    async def prewarm_tree_embeddings(self, tree_name: str, llm_config: Any) -> None:
+        """Compute and cache OpenAI embeddings for every node in *tree_name*.
+
+        Embeddings are stored inside the in-memory prewarmed node dicts so
+        matcher.py layer-0.5 (cosine similarity) is available without extra
+        DB or API calls during the call.  Results are cached in Redis for 24 h
+        so cold-start overhead only applies on the first session after a deploy.
+
+        Only flat trees (≤ 30 nodes) are embedded here; deep hierarchical trees
+        (k2A style) use the LLM traversal path which doesn't need embeddings.
+        """
+        nodes = self._prewarmed_trees.get(tree_name)
+        if not nodes:
+            return
+
+        # Only embed small flat trees; skip large hierarchical ones
+        if len(nodes) > 30:  # noqa: PLR2004
+            return
+
+        log = structlog.get_logger().bind(
+            component="prewarm_tree_embeddings",
+            tree_name=tree_name,
+            workspace_id=str(self.workspace_id),
+        )
+
+        redis_key = f"tree_embeddings:{self.workspace_id}:{tree_name}"
+
+        # Check Redis cache first
+        cached = await self._redis_get(redis_key)
+        if cached and isinstance(cached.get("embeddings"), dict):
+            emb_map: dict[str, list[float]] = cached["embeddings"]
+            for node in nodes:
+                if node["id"] in emb_map:
+                    node["embedding"] = emb_map[node["id"]]
+            log.info("tree_embeddings_loaded_from_redis", count=len(emb_map))
+            return
+
+        # Compute embeddings for all nodes
+        from app.services.workflow_engine.llm_client import embed_text
+
+        emb_map = {}
+        errors = 0
+        for node in nodes:
+            meta = node.get("metadata") or {}
+            text_parts = [
+                node.get("label", ""),
+                meta.get("example_query", ""),
+                meta.get("detection_signals_en", ""),
+                meta.get("detection_signals_de", ""),
+            ]
+            text = " ".join(p for p in text_parts if p).strip()
+            if not text:
+                continue
+            try:
+                vec = await embed_text(llm_config, text)
+                node["embedding"] = vec
+                emb_map[node["id"]] = vec
+            except Exception:
+                errors += 1
+                log.warning("embed_node_failed", node_id=node["id"])
+
+        # Persist to Redis (24 h TTL)
+        if emb_map:
+            await self._redis_set(redis_key, {"embeddings": emb_map}, ttl=86400)
+
+        log.info(
+            "tree_embeddings_computed",
+            count=len(emb_map),
+            errors=errors,
+        )
+
     def get_all_tool_definitions(  # noqa: PLR0912, PLR0915
         self,
         enabled_tools: list[str],

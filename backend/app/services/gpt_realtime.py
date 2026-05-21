@@ -711,6 +711,22 @@ class GPTRealtimeSession:
                     workflow_id=workflow_id_str,
                     nodes=len(workflow_nodes),
                 )
+                # Pre-warm embeddings for any categorize node's tree so layer-0.5
+                # (cosine similarity) is ready without extra API calls mid-call.
+                if self.tool_registry:
+                    for wf_node in workflow_nodes:
+                        if wf_node.get("type") == "categorize":
+                            tree_nm = (wf_node.get("config") or {}).get("tree_name", "")
+                            if tree_nm:
+                                try:
+                                    await self.tool_registry.prewarm_tree_embeddings(
+                                        tree_nm, wf_llm_config
+                                    )
+                                except Exception:
+                                    self.logger.exception(
+                                        "embedding_prewarm_failed_continuing",
+                                        tree_name=tree_nm,
+                                    )
             except Exception:
                 self.logger.exception("workflow_executor_init_failed_continuing")
 
