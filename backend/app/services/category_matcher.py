@@ -42,16 +42,14 @@ async def match_category(
 ) -> tuple[MatchedNode | None, float | None, str]:
     """Match input text against an active category tree.
 
-    Matching strategy:
-      1. Postgres FTS — fast exact/stem match. If a deep node (depth >= 2) scores
-         above threshold, return it directly.
-      2. Hierarchical LLM traversal — load full tree, drill down level by level
-         (roots → children of best root → grandchildren). Each step the LLM sees
-         only sibling nodes so it can't pick a parent over a more specific child.
+    Matching strategy — hierarchical LLM traversal:
+      Load full tree, drill down level by level (roots → children of best root →
+      grandchildren). At each step the LLM sees only sibling nodes and the path
+      chosen so far, so it can't be distracted by unrelated branches.
 
     Returns:
         (matched_node | None, confidence | None, resolution_layer)
-        resolution_layer: "fts" | "llm" | "none"
+        resolution_layer: "llm" | "none"
     """
     log = logger.bind(
         component="category_matcher",
@@ -59,9 +57,6 @@ async def match_category(
         tree_name=tree_name,
     )
 
-    # ------------------------------------------------------------------
-    # LLM traversal — always use LLM for accurate categorization
-    # ------------------------------------------------------------------
     if not openai_api_key:
         log.info("llm_skipped_no_api_key")
         return None, None, "none"
@@ -109,131 +104,133 @@ async def match_category(
         return None, None, "none"
 
     total = sum(len(v) for v in children_map.values())
-    log.info("llm_flat_start", total_nodes=total)
+    log.info("llm_hierarchical_start", total_nodes=total)
 
     try:
+        # Allow ~7 s per level for up to 3 levels of depth
         matched = await asyncio.wait_for(
-            _llm_flat_select(text, children_map, log, openai_api_key),
-            timeout=10.0,
+            _llm_hierarchical_select(text, children_map, log, openai_api_key),
+            timeout=25.0,
         )
     except TimeoutError:
-        log.warning("llm_flat_timeout")
+        log.warning("llm_hierarchical_timeout")
         return None, None, "none"
 
     if matched:
-        log.info("llm_flat_matched", label=matched.label, depth=matched.depth)
+        log.info("llm_hierarchical_matched", label=matched.label, depth=matched.depth)
         return matched, 0.85, "llm"
 
     return None, None, "none"
 
 
-async def _llm_flat_select(
+async def _llm_hierarchical_select(
     text: str,
     children_map: dict[uuid.UUID | None, list[_NodeProxy]],
     log: Any,
     openai_api_key: str,
 ) -> _NodeProxy | None:
-    """Pick the best category with a single LLM call showing all full category paths.
+    """Pick the best category by drilling down one level at a time.
 
-    Instead of drilling down level-by-level (which cascades wrong root picks into wrong
-    leaf picks), show the LLM every leaf's complete path at once so it can make a
-    holistic decision. The description "EV charger not working in parking" will see both
-    "El → Elfel" and "Parkering → Fel på parkeringsplats" side-by-side and pick correctly.
+    At each level, the LLM sees only the sibling candidates (children of the previously
+    chosen node) plus the path already chosen, so context narrows progressively.
+
+    Example: "crack in kitchen window"
+      Level 1 — sees all roots → picks "Damage / surface / windows / interior"
+      Level 2 — sees its children → picks "Windows / balcony door" (not "Walls / floors")
+      Level 3 — sees its children → picks "Damaged window"
     """
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=openai_api_key)
 
-    # Build a flat id→node map for path reconstruction
-    all_nodes: dict[uuid.UUID, _NodeProxy] = {
-        n.id: n for siblings in children_map.values() for n in siblings
-    }
-    if not all_nodes:
+    if not any(True for _ in children_map.values()):
         return None
-
-    # Collect leaf nodes (nodes that have no children in the tree)
-    leaf_nodes = [n for n in all_nodes.values() if n.id not in children_map]
-    if not leaf_nodes:
-        # Degenerate tree — all nodes are roots; treat them all as candidates
-        leaf_nodes = list(all_nodes.values())
-
-    # Build full ancestor path for each leaf: ["Root", "Child", "Leaf"]
-    def _full_path(node: _NodeProxy) -> list[str]:
-        path: list[str] = [node.label]
-        current = node
-        while current.parent_id is not None:
-            parent = all_nodes.get(current.parent_id)
-            if parent is None:
-                break
-            path.insert(0, parent.label)
-            current = parent
-        return path
-
-    # Stable sort: depth ascending then label for reproducible numbering
-    leaf_nodes.sort(key=lambda n: (n.depth, n.label))
-
-    candidate_lines: list[str] = []
-    for i, leaf in enumerate(leaf_nodes):
-        path_str = " → ".join(_full_path(leaf))
-        line = f"{i + 1}. {path_str}"
-        if leaf.example_query:
-            line += f"  [{leaf.example_query}]"
-        candidate_lines.append(line)
-
-    candidate_list = "\n".join(candidate_lines)
-    log.info("llm_flat_input", text=text, num_candidates=len(leaf_nodes))
 
     system_prompt = (
         "You are a category classifier for a property management system. "
-        "Given a problem description and a numbered list of categories shown as full hierarchical paths, "
-        "pick the number of the best matching category. "
-        "Each entry shows the complete path from the top-level group down to the specific issue type. "
-        "Match by BOTH the type of problem AND its location — "
-        "a category whose path mentions the right location (e.g. parking, garage, stairwell) "
-        "beats a category that only matches the problem type (e.g. electrical fault). "
+        "You are shown a problem description and a numbered list of options at the current level of a category tree. "
+        "The path chosen so far (if any) tells you which branch you are already in. "
+        "Pick the number of the option that best matches the problem at this level. "
+        "Prefer the option that names the specific damaged component or object "
+        "(e.g. 'window', 'door', 'pipe') over one that only describes the symptom "
+        "(e.g. 'crack', 'leak', 'noise'). A cracked window belongs under 'window', not 'cracks/holes'. "
+        "Prefer a location-specific option (e.g. 'parking', 'stairwell') when the issue is location-specific. "
         "Categories may be in a different language than the description — match by meaning. "
-        "Return 0 only if no category is a reasonable fit. "
+        "Return 0 if none of the options fit. "
         "Respond with ONLY the number."
     )
-    user_message = (
-        f"Description: {text!r}\n\nCategories:\n{candidate_list}\n\nBest match number (0 if none):"
-    )
 
-    for attempt in range(2):
-        try:
-            response = await client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-                max_tokens=5,
-                temperature=0,
-            )
-            raw = (response.choices[0].message.content or "").strip()
-            idx = int(raw)
-            if idx == 0:
-                log.info("llm_flat_no_match", text=text)
-                return None
-            if 1 <= idx <= len(leaf_nodes):
-                chosen = leaf_nodes[idx - 1]
-                log.info(
-                    "llm_flat_pick",
-                    text=text,
-                    picked=" → ".join(_full_path(chosen)),
-                    depth=chosen.depth,
+    current_parent_id: uuid.UUID | None = None  # start at roots
+    best_node: _NodeProxy | None = None
+    chosen_path: list[str] = []
+
+    while True:
+        candidates = children_map.get(current_parent_id, [])
+        if not candidates:
+            # No children — best_node is the deepest match (a leaf)
+            break
+
+        candidates = sorted(candidates, key=lambda n: n.label)
+
+        candidate_lines: list[str] = []
+        for i, node in enumerate(candidates):
+            line = f"{i + 1}. {node.label}"
+            if node.example_query:
+                line += f"  [{node.example_query}]"
+            candidate_lines.append(line)
+
+        path_context = (
+            f"Path chosen so far: {' → '.join(chosen_path)}\n" if chosen_path else ""
+        )
+        user_message = (
+            f"Problem: {text!r}\n"
+            f"{path_context}"
+            f"Options:\n{'\n'.join(candidate_lines)}\n\nBest match number (0 if none):"
+        )
+
+        log.info(
+            "llm_hierarchical_level",
+            depth=len(chosen_path),
+            num_candidates=len(candidates),
+            path_so_far=chosen_path,
+        )
+
+        raw = ""
+        idx = 0
+        for attempt in range(2):
+            try:
+                response = await client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    max_tokens=5,
+                    temperature=0,
                 )
-                return chosen
-        except (ValueError, IndexError):
-            log.warning(
-                "llm_flat_bad_response",
-                raw=raw if "raw" in dir() else None,
-                attempt=attempt,
-            )
-            if attempt == 1:
-                return None
-        except Exception:
-            log.exception("llm_flat_error")
-            return None
+                raw = (response.choices[0].message.content or "").strip()
+                idx = int(raw)
+                break
+            except (ValueError, IndexError):
+                log.warning("llm_hierarchical_bad_response", raw=raw, attempt=attempt)
+                if attempt == 1:
+                    return best_node
+                continue
+            except Exception:
+                log.exception("llm_hierarchical_error")
+                return best_node
 
-    return None
+        if idx == 0:
+            log.info("llm_hierarchical_no_match_at_level", depth=len(chosen_path))
+            break  # no better match at this level — stop with best so far
+
+        if not (1 <= idx <= len(candidates)):
+            log.warning("llm_hierarchical_out_of_range", idx=idx, num=len(candidates))
+            break
+
+        best_node = candidates[idx - 1]
+        chosen_path.append(best_node.label)
+        current_parent_id = best_node.id
+        log.info("llm_hierarchical_pick", label=best_node.label, depth=best_node.depth)
+
+    return best_node

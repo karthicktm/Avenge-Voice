@@ -348,6 +348,7 @@ async def embed_websocket(
 
         agent, workspace_id, user_id_int = context
         agent_config = {
+            "agent_id": str(agent.id),
             "system_prompt": agent.system_prompt,
             "enabled_tools": agent.enabled_tools,
             "enabled_tool_ids": agent.enabled_tool_ids,

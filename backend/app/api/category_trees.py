@@ -307,42 +307,64 @@ async def download_template(
     # Shared column structure — matches the export format exactly so exported files
     # can be edited and re-imported without column mapping issues.
     template_header_cols = [
+        # Structural / tree hierarchy
         "code",
         "level_1",
         "level_2",
         "level_3",
         "level_4",
+        # Detection signals — example phrases the caller might say (multilingual)
         "level_1_example_query",
         "level_2_example_query",
         "level_3_example_query",
         "example_query",
+        "detection_signals_en",
+        "detection_signals_de",
+        # Legacy classification metadata (k2A / property management style)
         "urgency_level",
         "self_resolution",
         "requires_property_info",
         "can_report_fault",
         "requires_manual_support",
         "info_to_collect",
+        # Workflow action fields (AMEDTEC / generic multi-action style)
+        "action_type",
+        "transfer_target",
+        "email_target",
+        "required_information",
+        "approved_script",
+        "priority_order",
+        "safety_boundary",
     ]
 
-    # Example rows aligned to template_header_cols
-    # code | l1 | l2 | l3 | l4 | l1_eq | l2_eq | l3_eq | eq | urgency | self | prop | fault | manual | info
+    # Example rows: two k2A-style deep-tree rows, then two AMEDTEC-style flat rows
     template_example_rows: list[list[str]] = [
+        # ── k2A style (hierarchical, 3 levels) ──────────────────────────────
         [
-            "W001",
-            "Water/leakage",
-            "Bathroom",
-            "Tap",
-            "",
-            "water leakage flooding drip",
-            "bathroom shower toilet tiles",
-            "tap faucet dripping running",
-            "The tap in my bathroom is dripping constantly",
-            "Prio 3",
-            "JA",
-            "NEJ",
-            "JA",
-            "NEJ",
-            "Ask how long it has been dripping and whether it is getting worse.",
+            "W001",  # code
+            "Water/leakage",  # level_1
+            "Bathroom",  # level_2
+            "Tap",  # level_3
+            "",  # level_4
+            "water leakage flooding drip",  # l1_example_query
+            "bathroom shower toilet tiles",  # l2_example_query
+            "tap faucet dripping running",  # l3_example_query
+            "The tap in my bathroom is dripping",  # example_query
+            "",  # detection_signals_en
+            "",  # detection_signals_de
+            "Prio 3",  # urgency_level
+            "JA",  # self_resolution
+            "NEJ",  # requires_property_info
+            "JA",  # can_report_fault
+            "NEJ",  # requires_manual_support
+            "Ask how long it has been dripping and whether it is getting worse.",  # info_to_collect
+            "",  # action_type
+            "",  # transfer_target
+            "",  # email_target
+            "",  # required_information
+            "",  # approved_script
+            "",  # priority_order
+            "",  # safety_boundary
         ],
         [
             "W002",
@@ -353,30 +375,75 @@ async def download_template(
             "water leakage flooding drip",
             "bathroom shower toilet tiles",
             "ceiling wet stain",
-            "There is water dripping from my bathroom ceiling",
+            "Water dripping from my bathroom ceiling",
+            "",
+            "",
             "Prio 1",
             "NEJ",
             "JA",
             "JA",
             "JA",
             "Ask which floor they are on and whether the apartment above is aware.",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ],
+        # ── AMEDTEC style (flat, action_type-driven) ─────────────────────────
+        [
+            "SW001",  # code
+            "Software issue",  # level_1
+            "",  # level_2
+            "",  # level_3
+            "",  # level_4
+            "",  # l1_example_query
+            "",  # l2_example_query
+            "",  # l3_example_query
+            "The software is not starting",  # example_query
+            "software crash error frozen not responding not starting",  # detection_signals_en
+            "Software startet nicht Absturz Fehlermeldung",  # detection_signals_de
+            "",  # urgency_level
+            "",  # self_resolution
+            "",  # requires_property_info
+            "",  # can_report_fault
+            "",  # requires_manual_support
+            "",  # info_to_collect
+            "collect_then_email",  # action_type
+            "",  # transfer_target
+            "support@example.com",  # email_target
+            "customer_number, device_serial, error_description",  # required_information
+            "I understand. Let me collect your details so our support team can follow up.",  # approved_script
+            "1",  # priority_order
+            "",  # safety_boundary
         ],
         [
-            "H001",
-            "Heat/ventilation",
-            "Radiator",
+            "HW001",
+            "Hardware defect",
             "",
             "",
-            "heat ventilation cold warm temperature",
-            "radiator heating panel",
             "",
-            "The radiator in my living room is not working",
-            "Prio 2",
-            "JA",
-            "NEJ",
-            "JA",
-            "NEJ",
-            "Ask if all radiators are affected or just this one.",
+            "",
+            "",
+            "",
+            "The device is damaged",
+            "broken damaged defective hardware physical",
+            "defekt beschädigt kaputt Hardware",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "transfer",
+            "+4989123456789",  # transfer_target
+            "",
+            "",
+            "Please hold while I connect you to our hardware support team.",  # approved_script
+            "2",
+            "",
         ],
     ]
 
@@ -413,8 +480,8 @@ async def download_template(
 
     else:  # xlsx — real workbook with all metadata columns
         try:
-            import openpyxl  # type: ignore[import-untyped]
-            from openpyxl.styles import Font, PatternFill  # type: ignore[import-untyped]
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill
         except ImportError as exc:
             raise HTTPException(
                 status_code=500, detail="openpyxl not installed — cannot generate Excel template"

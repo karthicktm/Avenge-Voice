@@ -91,7 +91,7 @@ def get_realtime_model_for_tier(pricing_tier: str) -> str:
 
 
 @router.websocket("/realtime/{agent_id}")
-async def realtime_websocket(  # noqa: PLR0915
+async def realtime_websocket(
     websocket: WebSocket,
     agent_id: str,
     workspace_id: str,
@@ -202,26 +202,9 @@ async def realtime_websocket(  # noqa: PLR0915
         # agent.user_id is now directly the integer user ID
         user_id_int = agent.user_id
 
-        # Load workflow if agent has one assigned
-        workflow_nodes: list[dict[str, Any]] = []
-        workflow_edges: list[dict[str, Any]] = []
-        if agent.workflow_id:
-            from app.models.workflow import Workflow as WorkflowModel
-
-            wf_result = await db.execute(
-                select(WorkflowModel).where(WorkflowModel.id == agent.workflow_id)
-            )
-            wf = wf_result.scalar_one_or_none()
-            if wf:
-                workflow_nodes = wf.nodes or []
-                workflow_edges = wf.edges or []
-                client_logger.info(
-                    "workflow_loaded",
-                    workflow_id=str(agent.workflow_id),
-                    node_count=len(workflow_nodes),
-                )
-
         # Build agent config for GPT Realtime
+        # Workflow loading is handled lazily inside GPTRealtimeSession.initialize()
+        # using the agent_id, so it covers all session paths (WS, telephony, embed).
         agent_config = {
             "system_prompt": agent.system_prompt,
             "enabled_tools": agent.enabled_tools,
@@ -237,10 +220,6 @@ async def realtime_websocket(  # noqa: PLR0915
             "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
             "turn_detection_silence_duration_ms": agent.turn_detection_silence_duration_ms,
             "transcription_model": agent.transcription_model,
-            # Workflow engine — present only when agent has a workflow assigned
-            "workflow_id": str(agent.workflow_id) if agent.workflow_id else None,
-            "workflow_nodes": workflow_nodes,
-            "workflow_edges": workflow_edges,
         }
 
         # Initialize GPT Realtime session with internal tools
