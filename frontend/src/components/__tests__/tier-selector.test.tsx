@@ -71,7 +71,7 @@ describe("TierSelector", () => {
     // Check for LLM models
     expect(screen.getByText("llama-3.3-70b")).toBeInTheDocument();
     expect(screen.getByText("gemini-2.5-flash")).toBeInTheDocument();
-    expect(screen.getByText("gpt-realtime-2025-08-28")).toBeInTheDocument();
+    expect(screen.getByText("gpt-realtime")).toBeInTheDocument();
   });
 
   it("highlights the selected tier", () => {

@@ -554,15 +554,18 @@ async def get_embed_ephemeral_token(  # noqa: PLR0915
     realtime_model = (
         "gpt-realtime-mini-2025-12-15"
         if agent.pricing_tier == "premium-mini"
-        else "gpt-realtime-1.5"
+        else "gpt-realtime"
     )
 
-    # Build session configuration
+    # Build session configuration (v2 GA API)
     agent_voice = agent.voice or "marin"
     session_config: dict[str, Any] = {
+        "type": "realtime",
         "model": realtime_model,
-        "modalities": ["audio", "text"],
-        "voice": agent_voice,
+        "output_modalities": ["audio"],
+        "audio": {
+            "output": {"voice": agent_voice},
+        },
     }
 
     log.info("requesting_ephemeral_token", model=realtime_model)

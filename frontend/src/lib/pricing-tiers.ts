@@ -27,7 +27,7 @@ export const PRICING_TIERS: PricingTier[] = [
   {
     id: "premium",
     name: "Premium",
-    description: "Best quality with OpenAI's latest gpt-realtime-1.5 model",
+    description: "Best quality with OpenAI's latest gpt-realtime GA model",
     costPerHour: 1.92,
     costPerMinute: 0.032,
     recommended: true,
@@ -36,11 +36,11 @@ export const PRICING_TIERS: PricingTier[] = [
       "Most natural & expressive voice",
       "Best instruction following",
       "New voices: marin, cedar",
-      "Latest: gpt-realtime-1.5 (Feb 2026)",
+      "Latest: gpt-realtime (GA)",
     ],
     config: {
       llmProvider: "openai-realtime",
-      llmModel: "gpt-realtime-1.5",
+      llmModel: "gpt-realtime",
       sttProvider: "openai",
       sttModel: "built-in",
       ttsProvider: "openai",

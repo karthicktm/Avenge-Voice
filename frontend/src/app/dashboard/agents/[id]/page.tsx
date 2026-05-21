@@ -484,7 +484,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
       sttProvider: "deepgram",
       deepgramModel: "nova-3",
       llmProvider: "openai-realtime",
-      llmModel: "gpt-realtime-2025-08-28",
+      llmModel: "gpt-realtime",
       aiProvider: "openai",
       systemPrompt: "",
       initialGreeting: "",
@@ -540,7 +540,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
         sttProvider: "deepgram",
         deepgramModel: "nova-3",
         llmProvider: agent.pricing_tier === "premium" ? "openai-realtime" : "openai",
-        llmModel: agent.pricing_tier === "premium" ? "gpt-realtime-2025-08-28" : "gpt-4o",
+        llmModel: agent.pricing_tier === "premium" ? "gpt-realtime" : "gpt-4o",
         aiProvider:
           (agent.provider_config?.provider as "openai" | "gemini-live" | undefined) ===
           "gemini-live"
@@ -732,7 +732,7 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
     previousProvider.current = llmProvider;
 
     const defaultModels: Record<string, string> = {
-      "openai-realtime": "gpt-realtime-2025-08-28",
+      "openai-realtime": "gpt-realtime",
       openai: "gpt-4o",
       anthropic: "claude-sonnet-4-5",
       google: "gemini-2.5-flash",
@@ -1433,9 +1433,14 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
                             </FormControl>
                             <SelectContent>
                               {llmProvider === "openai-realtime" && (
-                                <SelectItem value="gpt-realtime-2025-08-28">
-                                  gpt-realtime (Latest - Best Voice)
-                                </SelectItem>
+                                <>
+                                  <SelectItem value="gpt-realtime">
+                                    gpt-realtime (GA - Best Voice)
+                                  </SelectItem>
+                                  <SelectItem value="gpt-realtime-mini">
+                                    gpt-realtime-mini (Cost-efficient)
+                                  </SelectItem>
+                                </>
                               )}
                               {llmProvider === "openai" && (
                                 <>

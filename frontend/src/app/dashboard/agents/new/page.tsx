@@ -508,7 +508,7 @@ export default function NewAgentPage() {
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="gpt-realtime">
-                              gpt-realtime (Best for Voice - Nov 2025)
+                              gpt-realtime (GA - Best for Voice)
                             </SelectItem>
                             <SelectItem value="gpt-4o">
                               GPT-4o (Multimodal - 232ms latency)

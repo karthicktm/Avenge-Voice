@@ -740,12 +740,12 @@ class GPTRealtimeSession:
         if not self.client:
             raise ValueError("OpenAI client not initialized")
 
-        model = self.agent_config.get("llm_model", "gpt-realtime-1.5")
+        model = self.agent_config.get("llm_model", "gpt-realtime")
         self.logger.warning("connecting_to_openai_realtime", model=model)
 
         try:
-            # Use official SDK's realtime.connect() method
-            self.connection = await self.client.beta.realtime.connect(model=model).__aenter__()
+            # Use GA realtime API (not beta)
+            self.connection = await self.client.realtime.connect(model=model).__aenter__()
 
             self.logger.info("realtime_connection_established")
 
@@ -820,7 +820,7 @@ class GPTRealtimeSession:
         temperature = self.agent_config.get("temperature", 0.6)
         # gpt-realtime-2025-08-28 (telephony) requires temperature >= 0.6.
         # Clamp silently so a low UI value doesn't reject the entire session.update().
-        model = self.agent_config.get("llm_model", "gpt-realtime-1.5")
+        model = self.agent_config.get("llm_model", "gpt-realtime")
         _telephony_min_temp = 0.6
         if model == "gpt-realtime-2025-08-28" and temperature < _telephony_min_temp:
             self.logger.warning(
@@ -873,7 +873,7 @@ class GPTRealtimeSession:
         # triggers server_vad immediately after response.created, cancelling function
         # call responses before response.function_call_arguments.done fires. Force
         # semantic_vad for telephony to prevent false triggers breaking tool calls.
-        model = self.agent_config.get("llm_model", "gpt-realtime-1.5")
+        model = self.agent_config.get("llm_model", "gpt-realtime")
         if model == "gpt-realtime-2025-08-28" and turn_detection_mode == "normal":
             turn_detection_mode = "semantic"
             self.logger.warning(
@@ -900,26 +900,35 @@ class GPTRealtimeSession:
                 "silence_duration_ms": vad_silence_duration_ms,
             }
 
-        session_config: dict[str, Any] = {
-            "modalities": ["text", "audio"],
-            "instructions": instructions,
-            "voice": voice,
-            "speed": 1.0,  # Natural pace for telephony (1.1 sounds rushed over mulaw)
-            "temperature": temperature,  # Lower for consistent, natural delivery
-            # Telephony model uses g711_ulaw (8kHz mulaw) — the native format of both Twilio
-            # and Telnyx — so no audioop conversion is needed in the WS handlers and
-            # semantic_vad won't misinterpret PCMU silence bytes as loud PCM16 signal.
-            # All other models (WebRTC) keep pcm16.
-            "input_audio_format": "g711_ulaw" if model == "gpt-realtime-2025-08-28" else "pcm16",
-            "output_audio_format": "g711_ulaw" if model == "gpt-realtime-2025-08-28" else "pcm16",
-            "input_audio_transcription": {
+        # Telephony model uses G.711 μ-law (audio/pcmu) — native PSTN format for Twilio/Telnyx.
+        # All other models (WebRTC) keep PCM at 24kHz.
+        is_telephony = model == "gpt-realtime-2025-08-28"
+        audio_fmt: dict[str, Any] = {"type": "audio/pcmu"} if is_telephony else {"type": "audio/pcm"}
+
+        audio_input: dict[str, Any] = {
+            "format": audio_fmt,
+            "transcription": {
                 "model": self.agent_config.get("transcription_model", "gpt-4o-transcribe")
+            },
+        }
+        if turn_detection is not None:
+            audio_input["turn_detection"] = turn_detection
+
+        session_config: dict[str, Any] = {
+            "type": "realtime",
+            "output_modalities": ["audio"],
+            "instructions": instructions,
+            "audio": {
+                "input": audio_input,
+                "output": {
+                    "format": audio_fmt,
+                    "voice": voice,
+                    "speed": 1.0,  # Natural pace for telephony (1.1 sounds rushed over mulaw)
+                },
             },
             "tools": tools,
             "tool_choice": "auto",
         }
-        if turn_detection is not None:
-            session_config["turn_detection"] = turn_detection
 
         self.logger.warning(
             "configuring_session",

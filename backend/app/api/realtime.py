@@ -500,33 +500,44 @@ async def create_webrtc_session(  # noqa: PLR0915
         use_best_practices=agent.use_best_practices,
     )
 
-    # Build session configuration for OpenAI Realtime
-    # Use agent's configured voice (default to marin for natural conversational tone)
+    # Build session configuration for OpenAI Realtime v2 GA API
     agent_voice = agent.voice or "marin"
-    session_config: dict[str, Any] = {
-        "type": "realtime",
-        "model": realtime_model,
-        "instructions": instructions,
-        "voice": agent_voice,
-        "speed": 1.1,  # Slightly faster speech (1.0 = normal, range: 0.25-1.5)
-        "temperature": agent.temperature
-        if agent.temperature
-        else 0.6,  # Lower for consistent delivery
-        "input_audio_transcription": {"model": agent.transcription_model or "gpt-4o-transcribe"},
-    }
 
     turn_mode = agent.turn_detection_mode or "normal"
+    turn_detection: dict[str, Any] | None
     if turn_mode == "disabled":
-        pass  # omit turn_detection (push-to-talk)
+        turn_detection = None
     elif turn_mode == "semantic":
-        session_config["turn_detection"] = {"type": "semantic_vad", "eagerness": "medium"}
+        turn_detection = {"type": "semantic_vad", "eagerness": "medium"}
     else:  # "normal"
-        session_config["turn_detection"] = {
+        turn_detection = {
             "type": "server_vad",
             "threshold": agent.turn_detection_threshold or 0.5,
             "prefix_padding_ms": agent.turn_detection_prefix_padding_ms or 300,
             "silence_duration_ms": agent.turn_detection_silence_duration_ms or 500,
         }
+
+    audio_input: dict[str, Any] = {
+        "format": {"type": "audio/pcm"},
+        "transcription": {"model": agent.transcription_model or "gpt-4o-transcribe"},
+    }
+    if turn_detection is not None:
+        audio_input["turn_detection"] = turn_detection
+
+    session_config: dict[str, Any] = {
+        "type": "realtime",
+        "model": realtime_model,
+        "instructions": instructions,
+        "output_modalities": ["audio"],
+        "audio": {
+            "input": audio_input,
+            "output": {
+                "format": {"type": "audio/pcm"},
+                "voice": agent_voice,
+                "speed": 1.1,
+            },
+        },
+    }
 
     # Add tools if any are enabled
     if tools:
@@ -629,13 +640,16 @@ async def get_ephemeral_token(  # noqa: PLR0915
     workspace_uuid = uuid.UUID(workspace_id) if workspace_id else None
     api_key = await get_openai_api_key_for_workspace(user_uuid, workspace_uuid, db, token_logger)
 
-    # Build minimal session configuration for ephemeral token request
-    # The SDK will configure instructions, voice, tools etc. after connection via data channel
-    agent_voice = agent.voice or "shimmer"
+    # Build minimal session configuration for ephemeral token request (v2 GA API)
+    # The SDK configures instructions, voice, tools etc. after connection via data channel
+    agent_voice = agent.voice or "marin"
     session_config: dict[str, Any] = {
+        "type": "realtime",
         "model": realtime_model,
-        "modalities": ["audio", "text"],
-        "voice": agent_voice,
+        "output_modalities": ["audio"],
+        "audio": {
+            "output": {"voice": agent_voice},
+        },
     }
 
     token_logger.info(

@@ -52,14 +52,14 @@ describe("PRICING_TIERS", () => {
   it("has correct configuration for premium tier", () => {
     const premiumTier = PRICING_TIERS.find((t) => t.id === "premium");
     expect(premiumTier?.config.llmProvider).toBe("openai-realtime");
-    expect(premiumTier?.config.llmModel).toBe("gpt-realtime-2025-08-28");
+    expect(premiumTier?.config.llmModel).toBe("gpt-realtime");
   });
 
   it("has correct configuration for premium-mini tier", () => {
     const premiumMiniTier = PRICING_TIERS.find((t) => t.id === "premium-mini");
     expect(premiumMiniTier).toBeDefined();
     expect(premiumMiniTier?.config.llmProvider).toBe("openai-realtime");
-    expect(premiumMiniTier?.config.llmModel).toBe("gpt-4o-mini-realtime");
+    expect(premiumMiniTier?.config.llmModel).toBe("gpt-realtime-mini-2025-12-15");
   });
 
   it("has performance metrics for all tiers", () => {
@@ -228,12 +228,12 @@ describe("compareTiers", () => {
     expect(long[0]?.cost.totalCost).toBeGreaterThan(short[0]?.cost.totalCost ?? 0);
   });
 
-  it("maintains tier order (budget, balanced, premium-mini, premium)", () => {
+  it("maintains tier order (premium, premium-mini, balanced, budget)", () => {
     const comparison = compareTiers(1000, 5);
-    expect(comparison[0]?.tier.id).toBe("budget");
-    expect(comparison[1]?.tier.id).toBe("balanced");
-    expect(comparison[2]?.tier.id).toBe("premium-mini");
-    expect(comparison[3]?.tier.id).toBe("premium");
+    expect(comparison[0]?.tier.id).toBe("premium");
+    expect(comparison[1]?.tier.id).toBe("premium-mini");
+    expect(comparison[2]?.tier.id).toBe("balanced");
+    expect(comparison[3]?.tier.id).toBe("budget");
   });
 
   it("includes full cost breakdown for each tier", () => {
