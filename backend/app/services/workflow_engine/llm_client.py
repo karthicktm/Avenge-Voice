@@ -56,7 +56,7 @@ async def _call_openai(config: LLMConfig, system: str, user: str, max_tokens: in
 
 async def _call_anthropic(config: LLMConfig, system: str, user: str, max_tokens: int) -> str:
     try:
-        import anthropic  # type: ignore[import-not-found]
+        import anthropic
     except ImportError as exc:
         raise RuntimeError("anthropic SDK not installed — add it to dependencies") from exc
 
@@ -73,7 +73,7 @@ async def _call_anthropic(config: LLMConfig, system: str, user: str, max_tokens:
 
 async def _call_google(config: LLMConfig, system: str, user: str, max_tokens: int) -> str:
     try:
-        import google.generativeai as genai  # type: ignore[import-untyped]
+        import google.generativeai as genai
     except ImportError as exc:
         raise RuntimeError(
             "google-generativeai SDK not installed — add it to dependencies"

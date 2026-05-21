@@ -3555,6 +3555,7 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "aiosqlite" },
     { name = "fakeredis" },
     { name = "mypy" },
     { name = "ruff" },
@@ -3627,6 +3628,7 @@ provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aiosqlite", specifier = ">=0.22.0" },
     { name = "fakeredis", specifier = ">=2.32.1" },
     { name = "mypy", specifier = ">=1.18.2" },
     { name = "ruff", specifier = ">=0.14.6" },
