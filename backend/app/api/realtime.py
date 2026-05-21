@@ -662,12 +662,12 @@ async def get_ephemeral_token(  # noqa: PLR0915
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "https://api.openai.com/v1/realtime/sessions",
+                "https://api.openai.com/v1/realtime/client_secrets",
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                json=session_config,
+                json={"session": session_config},
                 timeout=30.0,
             )
 
@@ -758,8 +758,12 @@ async def get_ephemeral_token(  # noqa: PLR0915
             )
 
             # Return token data with agent info and tools
+            # GA /client_secrets response: {value: "ek_...", expires_at: ..., session: {...}}
             return {
-                "client_secret": token_data.get("client_secret", {}),
+                "client_secret": {
+                    "value": token_data.get("value", ""),
+                    "expires_at": token_data.get("expires_at", 0),
+                },
                 "agent": {
                     "id": str(agent.id),
                     "name": agent.name,

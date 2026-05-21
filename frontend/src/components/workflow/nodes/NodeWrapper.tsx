@@ -31,21 +31,20 @@ export function NodeWrapper({
 }: NodeWrapperProps) {
   return (
     <div
-      className={`relative min-w-[200px] max-w-[240px] rounded-xl border bg-white shadow-sm transition-shadow ${
+      className={`relative min-w-[200px] max-w-[240px] rounded-lg border bg-card shadow-sm transition-shadow ${
         selected ? "shadow-lg ring-2 ring-offset-1" : "hover:shadow-md"
-      } ${selected ? accentColor.replace("bg-", "ring-") : ""}`}
-      style={{ borderColor: selected ? undefined : "#e5e7eb" }}
+      } ${selected ? accentColor.replace("bg-", "ring-") : "border-border"}`}
     >
       {hasTarget && (
         <Handle
           type="target"
           position={Position.Top}
-          className="!h-3 !w-3 !rounded-full !border-2 !border-white !bg-gray-400"
+          className="!h-3 !w-3 !rounded-full !border-2 !border-background !bg-muted-foreground"
         />
       )}
 
       {/* Colored top bar */}
-      <div className={`flex items-center gap-2 rounded-t-xl px-3 py-2 ${accentColor}`}>
+      <div className={`flex items-center gap-2 rounded-t-lg px-3 py-2 ${accentColor}`}>
         <span className="text-white opacity-90">{icon}</span>
         <span className="text-xs font-semibold uppercase tracking-wider text-white opacity-90">
           {badge}
@@ -54,8 +53,8 @@ export function NodeWrapper({
 
       {/* Content */}
       <div className="px-3 py-2">
-        <p className="truncate text-sm font-semibold text-gray-800">{label}</p>
-        {preview && <p className="mt-0.5 truncate text-xs text-gray-400">{preview}</p>}
+        <p className="truncate text-sm font-semibold text-foreground">{label}</p>
+        {preview && <p className="mt-0.5 truncate text-xs text-muted-foreground">{preview}</p>}
         {children}
       </div>
 
@@ -63,7 +62,7 @@ export function NodeWrapper({
         <Handle
           type="source"
           position={Position.Bottom}
-          className="!h-3 !w-3 !rounded-full !border-2 !border-white !bg-gray-400"
+          className="!h-3 !w-3 !rounded-full !border-2 !border-background !bg-muted-foreground"
         />
       )}
 
@@ -73,7 +72,7 @@ export function NodeWrapper({
           id={h.id}
           type="source"
           position={h.position}
-          className={`!h-3 !w-3 !rounded-full !border-2 !border-white ${h.style ?? "!bg-gray-400"}`}
+          className={`!h-3 !w-3 !rounded-full !border-2 !border-background ${h.style ?? "!bg-muted-foreground"}`}
         />
       ))}
     </div>

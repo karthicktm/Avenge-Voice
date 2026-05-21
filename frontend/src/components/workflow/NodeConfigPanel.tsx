@@ -77,7 +77,7 @@ function TemplateField({
           <button
             key={v}
             type="button"
-            className="rounded bg-gray-100 px-2 py-0.5 font-mono text-[10px] text-gray-600 hover:bg-gray-200"
+            className="rounded bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground hover:bg-muted/80"
             onClick={() => onChange(`${value}{{${v}}}`)}
           >
             {`{{${v}}}`}
@@ -116,7 +116,7 @@ export function NodeConfigPanel({
             <Button
               variant="ghost"
               size="icon"
-              className="text-red-500 hover:bg-red-50 hover:text-red-600"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
               title="Delete node"
               onClick={() => onDelete(node.id)}
             >
@@ -199,7 +199,7 @@ export function NodeConfigPanel({
                 placeholder="action_type == transfer"
                 className="font-mono text-xs"
               />
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Supports: <code>key == value</code> or <code>key != value</code>.<br />
                 The <strong>Yes</strong> (left) handle fires when true; <strong>No</strong> (right)
                 when false.
@@ -302,7 +302,7 @@ export function NodeConfigPanel({
                 placeholder="webhook_result"
                 className="font-mono text-xs"
               />
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="mt-1 text-xs text-muted-foreground">
                 The response body is stored under this key in the context bag.
               </p>
             </div>
@@ -402,7 +402,7 @@ export function NodeConfigPanel({
                 rows={5}
                 placeholder="You are a specialist in…"
               />
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Replaces the agent system prompt for this step only.
               </p>
             </div>

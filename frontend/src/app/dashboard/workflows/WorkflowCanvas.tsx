@@ -416,13 +416,13 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
   }
 
   return (
-    <div className="flex h-full flex-col bg-gray-50">
+    <div className="flex h-full flex-col bg-background">
       {/* ── Toolbar ── */}
-      <div className="flex items-center gap-3 border-b bg-white px-4 py-2.5 shadow-sm">
+      <div className="flex items-center gap-3 border-b bg-card px-4 py-2.5 shadow-sm">
         <Button variant="ghost" size="icon" onClick={onBack} title="Back to workflows">
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <span className="font-semibold text-gray-800">{workflow.name}</span>
+        <span className="font-semibold text-foreground">{workflow.name}</span>
 
         {dirty && (
           <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-600">
@@ -433,7 +433,7 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
 
         <div className="flex-1" />
 
-        <span className="text-xs text-gray-400">⌘S to save · Delete to remove node</span>
+        <span className="text-xs text-muted-foreground">⌘S to save · Delete to remove node</span>
 
         <Button
           size="sm"
@@ -449,21 +449,23 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
       {/* ── Main area ── */}
       <div className="flex flex-1 overflow-hidden">
         {/* ── Node Palette ── */}
-        <aside className="flex w-56 shrink-0 flex-col border-r bg-white">
+        <aside className="flex w-56 shrink-0 flex-col border-r bg-card">
           <div className="border-b px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Nodes</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Nodes
+            </p>
           </div>
           <div className="flex-1 overflow-y-auto py-2">
             {PALETTE_GROUPS.map((group) => (
               <div key={group.group} className="mb-1">
-                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                   {group.group}
                 </p>
                 {group.items.map((item) => (
                   <button
                     key={item.type}
                     type="button"
-                    className="group flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-gray-50 active:bg-gray-100"
+                    className="group flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent active:bg-accent/80"
                     onClick={() => addNode(item)}
                     title={item.description}
                   >
@@ -473,10 +475,12 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
                       {item.icon}
                     </span>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-gray-800">{item.label}</p>
-                      <p className="truncate text-[10px] text-gray-400">{item.description}</p>
+                      <p className="text-xs font-medium text-foreground">{item.label}</p>
+                      <p className="truncate text-[10px] text-muted-foreground">
+                        {item.description}
+                      </p>
                     </div>
-                    <ChevronRight className="ml-auto h-3 w-3 shrink-0 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100" />
+                    <ChevronRight className="ml-auto h-3 w-3 shrink-0 text-muted-foreground/30 opacity-0 transition-opacity group-hover:opacity-100" />
                   </button>
                 ))}
               </div>
@@ -501,9 +505,9 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
             proOptions={{ hideAttribution: true }}
           >
             <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#d1d5db" />
-            <Controls className="rounded-lg border bg-white shadow-sm" />
+            <Controls className="rounded-lg border bg-card shadow-sm" />
             <MiniMap
-              className="rounded-lg border bg-white shadow-sm"
+              className="rounded-lg border bg-card shadow-sm"
               nodeColor={(n) => {
                 const map: Record<string, string> = {
                   entry: "#22c55e",
@@ -527,7 +531,7 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
             {/* Empty state */}
             {nodes.length === 0 && (
               <Panel position="top-center" className="pointer-events-none select-none">
-                <div className="mt-32 flex flex-col items-center gap-2 text-gray-400">
+                <div className="mt-32 flex flex-col items-center gap-2 text-muted-foreground">
                   <GitBranch className="h-10 w-10 opacity-30" />
                   <p className="text-sm font-medium">Click a node in the sidebar to add it</p>
                 </div>
@@ -538,7 +542,7 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
 
         {/* ── Config Panel ── */}
         {selectedNode && (
-          <div className="w-72 shrink-0 border-l bg-white shadow-sm">
+          <div className="w-72 shrink-0 border-l bg-card shadow-sm">
             <NodeConfigPanel
               node={selectedNode}
               availableTrees={trees}
