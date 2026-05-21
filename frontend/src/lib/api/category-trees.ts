@@ -22,6 +22,7 @@ export interface TreeMeta {
 }
 
 export interface CategoryNodeMetadata {
+  // k2A fields
   example_query?: string;
   urgency_level?: string;
   self_resolution?: boolean;
@@ -29,6 +30,16 @@ export interface CategoryNodeMetadata {
   can_report_fault?: boolean;
   requires_manual_support?: boolean;
   info_to_collect?: string;
+  // Workflow / AMEDTEC fields
+  action_type?: string;
+  transfer_target?: string;
+  email_target?: string;
+  required_information?: string;
+  approved_script?: string;
+  detection_signals_en?: string;
+  detection_signals_de?: string;
+  priority_order?: number;
+  safety_boundary?: string;
   // Arbitrary additional fields from custom import columns
   [key: string]: unknown;
 }

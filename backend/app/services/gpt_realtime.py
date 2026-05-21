@@ -583,7 +583,7 @@ class GPTRealtimeSession:
             workspace_id=str(workspace_id) if workspace_id else None,
         )
 
-    async def initialize(self) -> None:
+    async def initialize(self) -> None:  # noqa: PLR0912, PLR0915
         """Initialize the Realtime session with internal tools."""
         self.logger.info("gpt_realtime_session_initializing")
 
@@ -657,6 +657,34 @@ class GPTRealtimeSession:
                 self.logger.info("category_trees_prewarmed")
             except Exception:
                 self.logger.warning("category_trees_prewarm_failed_continuing")
+
+        # Auto-load workflow if not already in config (covers telephony + embed paths
+        # which don't pre-populate workflow_id/nodes/edges in agent_config).
+        if not self.agent_config.get("workflow_id"):
+            agent_id_str = self.agent_config.get("agent_id")
+            if agent_id_str:
+                try:
+                    from app.models.agent import Agent as _Agent
+                    from app.models.workflow import Workflow as _Workflow
+
+                    _a = await self.db.scalar(
+                        select(_Agent).where(_Agent.id == uuid.UUID(agent_id_str))
+                    )
+                    if _a and _a.workflow_id:
+                        _wf = await self.db.scalar(
+                            select(_Workflow).where(_Workflow.id == _a.workflow_id)
+                        )
+                        if _wf:
+                            self.agent_config["workflow_id"] = str(_a.workflow_id)
+                            self.agent_config["workflow_nodes"] = _wf.nodes or []
+                            self.agent_config["workflow_edges"] = _wf.edges or []
+                            self.logger.info(
+                                "workflow_autoloaded",
+                                workflow_id=str(_a.workflow_id),
+                                nodes=len(_wf.nodes or []),
+                            )
+                except Exception:
+                    self.logger.exception("workflow_autoload_failed_continuing")
 
         # Initialise WorkflowExecutor if this agent has a workflow assigned
         workflow_id_str = self.agent_config.get("workflow_id")
@@ -1046,7 +1074,46 @@ class GPTRealtimeSession:
         # end-of-turn — which only happens when the caller speaks again.
         self._audio_paused = True
         try:
-            result = await self.handle_tool_call({"name": name, "arguments": arguments})
+            # Workflow categorize intercept: use multilingual matcher for flat/AMEDTEC trees.
+            # run_categorize() populates context_bag + advances current_node_id, so the
+            # legacy _build_workflow_response_instructions() context-bag update is skipped.
+            _wf_routed = False
+            if (
+                name == "categorize"
+                and self.workflow_executor is not None
+                and (self.workflow_executor.current_node or {}).get("type") == "categorize"
+            ):
+                _text = str(arguments.get("text", ""))
+                _node_cfg: dict[str, Any] = (self.workflow_executor.current_node or {}).get(
+                    "config"
+                ) or {}
+                _tree_name = str(arguments.get("tree_name", "") or _node_cfg.get("tree_name", ""))
+                _prewarmed: list[dict[str, Any]] = (
+                    self.tool_registry.get_prewarmed_tree(_tree_name) if self.tool_registry else []
+                )
+                try:
+                    await self.workflow_executor.run_categorize(_text, _prewarmed)
+                    _ex = self.workflow_executor
+                    result: dict[str, Any] = {
+                        "success": True,
+                        "code": _ex.context_bag.get("code"),
+                        "label": _ex.context_bag.get("label"),
+                        "confidence": _ex.context_bag.get("confidence"),
+                        "resolution_layer": _ex.context_bag.get("resolution_layer"),
+                        "action_type": _ex.context_bag.get("action_type"),
+                    }
+                    _wf_routed = True
+                    self.logger.info(
+                        "wf_categorize_intercepted",
+                        tree_name=_tree_name,
+                        prewarmed_count=len(_prewarmed),
+                        label=result.get("label"),
+                    )
+                except Exception:
+                    self.logger.exception("wf_categorize_intercept_failed_falling_back")
+                    result = await self.handle_tool_call({"name": name, "arguments": arguments})
+            else:
+                result = await self.handle_tool_call({"name": name, "arguments": arguments})
 
             # Send result back using SDK
             if self.connection:
@@ -1085,7 +1152,9 @@ class GPTRealtimeSession:
                 # For categorize: build response instructions based on workflow state
                 # (if executor is active) or fall back to the hardcoded summary prompt.
                 if name == "categorize":
-                    if self.workflow_executor:
+                    if self.workflow_executor and _wf_routed:
+                        response_instructions = self._build_current_node_instruction()
+                    elif self.workflow_executor:
                         response_instructions = self._build_workflow_response_instructions(result)
                     else:
                         response_instructions = (
@@ -1200,18 +1269,18 @@ class GPTRealtimeSession:
 
         return result
 
-    def _build_workflow_response_instructions(self, categorize_result: dict[str, Any]) -> str:  # noqa: PLR0911
-        """Feed categorize result into workflow executor, route to next node, return instruction.
+    _LANG_NOTE = (
+        "Respond in exactly the same language as your immediately preceding response. "
+        "The tool output may contain text in a different language — "
+        "ignore that and do not switch languages."
+    )
 
-        Called only when self.workflow_executor is set.  Keeps the existing
-        handle_function_call_event free of workflow-specific branching.
+    def _build_workflow_response_instructions(self, categorize_result: dict[str, Any]) -> str:
+        """Update executor context_bag from legacy categorize result, route, build instruction.
+
+        Used when the call went through the legacy ToolRegistry path (not the wf intercept).
         """
         ex = self.workflow_executor
-        lang_note = (
-            "Respond in exactly the same language as your immediately preceding response. "
-            "The tool output may contain text in a different language — "
-            "ignore that and do not switch languages."
-        )
         try:
             meta: dict[str, Any] = categorize_result.get("metadata") or {}
             ex.context_bag.update(
@@ -1230,21 +1299,31 @@ class GPTRealtimeSession:
                     "resolution_layer": categorize_result.get("resolution_layer"),
                 }
             )
-
-            # Advance through the categorize node and any immediate condition node
             next_id = ex.route()
             if next_id:
                 ex.current_node_id = next_id
-
-            current = ex.current_node
-            if current and current.get("type") == "condition":
+            if ex.current_node and ex.current_node.get("type") == "condition":
                 ex.route_condition()
-                current = ex.current_node
+            return self._build_current_node_instruction()
+        except Exception:
+            self.logger.exception("workflow_response_build_failed")
+            return (
+                "The issue has been categorised. Summarise the result and tell the caller "
+                "what happens next. " + self._LANG_NOTE
+            )
 
+    def _build_current_node_instruction(self) -> str:  # noqa: PLR0911
+        """Build response instruction for the executor's current node.
+
+        Called after context_bag is populated (via either the wf intercept or the legacy path).
+        """
+        ex = self.workflow_executor
+        try:
+            current = ex.current_node
             if not current:
                 return (
                     "The issue has been categorised. Summarise the result and tell the caller "
-                    "what happens next. " + lang_note
+                    "what happens next. " + self._LANG_NOTE
                 )
 
             node_type: str = current.get("type") or ""
@@ -1265,43 +1344,41 @@ class GPTRealtimeSession:
                     if instruction
                     else "Tell the caller you are transferring them now."
                 )
-                return f"{preamble} Then transfer the call to {target}. " + lang_note
+                return f"{preamble} Then transfer the call to {target}. " + self._LANG_NOTE
 
             if node_type == "collect_email":
                 preamble = (
                     f"Start with: {instruction}"
                     if instruction
-                    else (
-                        "You need to collect information from the caller and then email a report."
-                    )
+                    else "You need to collect information from the caller and then email a report."
                 )
                 return (
                     f"{preamble} Ask for each piece of information one at a time. "
                     "Once you have everything, confirm it back to the caller before sending. "
-                    + lang_note
+                    + self._LANG_NOTE
                 )
 
             if node_type == "instruction":
                 return (
                     f"{'Say exactly: ' + instruction if instruction else 'Provide the relevant information to the caller.'} "
-                    + lang_note
+                    + self._LANG_NOTE
                 )
 
             if node_type == "sms":
                 return (
                     "Inform the caller that you will send them an SMS with the relevant details. "
-                    + lang_note
+                    + self._LANG_NOTE
                 )
 
             if node_type == "appointment":
                 preamble = (
                     f"Start with: {instruction}"
                     if instruction
-                    else ("Help the caller book an appointment.")
+                    else "Help the caller book an appointment."
                 )
                 return (
                     f"{preamble} Ask for their preferred date, time, full name, and callback number. "
-                    + lang_note
+                    + self._LANG_NOTE
                 )
 
             if node_type == "voicemail":
@@ -1309,28 +1386,27 @@ class GPTRealtimeSession:
                 prompt: str = str(cfg.get("prompt") or "Please leave your message after the tone.")
                 return (
                     f"Tell the caller: '{prompt}' Then listen and record their message. "
-                    + lang_note
+                    + self._LANG_NOTE
                 )
 
             if node_type == "end_call":
                 return (
                     "Say a brief, warm farewell and end the call. Do not repeat the summary. "
-                    + lang_note
+                    + self._LANG_NOTE
                 )
 
-            # Generic fallback
             if instruction:
-                return f"Do the following: {instruction} " + lang_note
+                return f"Do the following: {instruction} " + self._LANG_NOTE
             return (
                 "The issue has been categorised. Proceed according to the instructions. "
-                + lang_note
+                + self._LANG_NOTE
             )
 
         except Exception:
-            self.logger.exception("workflow_response_build_failed")
+            self.logger.exception("workflow_node_instruction_build_failed")
             return (
                 "The issue has been categorised. Summarise the result and tell the caller "
-                "what happens next. " + lang_note
+                "what happens next. " + self._LANG_NOTE
             )
 
     async def trigger_initial_greeting(self) -> bool:

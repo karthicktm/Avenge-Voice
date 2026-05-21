@@ -634,7 +634,23 @@ const KNOWN_KEYS = new Set([
   "requires_manual_support",
   "info_to_collect",
   "example_query",
+  "action_type",
+  "transfer_target",
+  "email_target",
+  "required_information",
+  "approved_script",
+  "detection_signals_en",
+  "detection_signals_de",
+  "priority_order",
+  "safety_boundary",
 ]);
+
+const ACTION_TYPE_COLORS: Record<string, string> = {
+  transfer: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  collect_then_email: "bg-violet-500/20 text-violet-400 border-violet-500/30",
+  give_instruction: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  lookup_transfer: "bg-teal-500/20 text-teal-400 border-teal-500/30",
+};
 
 function NodeMetadataPanel({ metadata }: { metadata: CategoryNodeMetadata }) {
   const extraKeys = Object.keys(metadata).filter((k) => !KNOWN_KEYS.has(k));
@@ -677,6 +693,49 @@ function NodeMetadataPanel({ metadata }: { metadata: CategoryNodeMetadata }) {
         <div className="space-y-0.5">
           <p className="text-[10px] font-medium text-muted-foreground">Questions to ask caller:</p>
           <p className="text-xs leading-relaxed text-foreground/80">{metadata.info_to_collect}</p>
+        </div>
+      )}
+
+      {metadata.action_type && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground">Action:</span>
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${ACTION_TYPE_COLORS[metadata.action_type] ?? "border-border bg-muted text-muted-foreground"}`}
+          >
+            {metadata.action_type}
+          </span>
+          {metadata.priority_order !== undefined && (
+            <span className="text-[10px] text-muted-foreground">#{metadata.priority_order}</span>
+          )}
+        </div>
+      )}
+
+      {(metadata.transfer_target ?? metadata.email_target) && (
+        <p className="text-xs text-muted-foreground">
+          {metadata.transfer_target && (
+            <>
+              <span className="font-medium">→ </span>
+              {metadata.transfer_target}
+            </>
+          )}
+          {metadata.email_target && (
+            <>
+              {metadata.transfer_target ? "  " : <span className="font-medium">✉ </span>}
+              {metadata.email_target}
+            </>
+          )}
+        </p>
+      )}
+
+      {(metadata.detection_signals_en ?? metadata.detection_signals_de) && (
+        <div className="space-y-0.5">
+          <p className="text-[10px] font-medium text-muted-foreground">Detection signals:</p>
+          {metadata.detection_signals_en && (
+            <p className="text-xs text-muted-foreground">EN: {metadata.detection_signals_en}</p>
+          )}
+          {metadata.detection_signals_de && (
+            <p className="text-xs text-muted-foreground">DE: {metadata.detection_signals_de}</p>
+          )}
         </div>
       )}
 
@@ -725,6 +784,20 @@ function NodeEditModal({
     node?.metadata?.requires_property_info ?? false
   );
   const [infoToCollect, setInfoToCollect] = useState(node?.metadata?.info_to_collect ?? "");
+  // Workflow / AMEDTEC fields
+  const [actionType, setActionType] = useState(node?.metadata?.action_type ?? "");
+  const [transferTarget, setTransferTarget] = useState(node?.metadata?.transfer_target ?? "");
+  const [emailTarget, setEmailTarget] = useState(node?.metadata?.email_target ?? "");
+  const [requiredInformation, setRequiredInformation] = useState(
+    node?.metadata?.required_information ?? ""
+  );
+  const [approvedScript, setApprovedScript] = useState(node?.metadata?.approved_script ?? "");
+  const [signalsEn, setSignalsEn] = useState(node?.metadata?.detection_signals_en ?? "");
+  const [signalsDe, setSignalsDe] = useState(node?.metadata?.detection_signals_de ?? "");
+  const [priorityOrder, setPriorityOrder] = useState(
+    node?.metadata?.priority_order != null ? String(node.metadata.priority_order) : ""
+  );
+  const [safetyBoundary, setSafetyBoundary] = useState(node?.metadata?.safety_boundary ?? "");
   const [saving, setSaving] = useState(false);
 
   // Reset when node changes
@@ -740,6 +813,17 @@ function NodeEditModal({
     setRequiresManualSupport(node?.metadata?.requires_manual_support ?? false);
     setRequiresPropertyInfo(node?.metadata?.requires_property_info ?? false);
     setInfoToCollect(node?.metadata?.info_to_collect ?? "");
+    setActionType(node?.metadata?.action_type ?? "");
+    setTransferTarget(node?.metadata?.transfer_target ?? "");
+    setEmailTarget(node?.metadata?.email_target ?? "");
+    setRequiredInformation(node?.metadata?.required_information ?? "");
+    setApprovedScript(node?.metadata?.approved_script ?? "");
+    setSignalsEn(node?.metadata?.detection_signals_en ?? "");
+    setSignalsDe(node?.metadata?.detection_signals_de ?? "");
+    setPriorityOrder(
+      node?.metadata?.priority_order != null ? String(node.metadata.priority_order) : ""
+    );
+    setSafetyBoundary(node?.metadata?.safety_boundary ?? "");
   }
 
   async function handleSave() {
@@ -749,6 +833,7 @@ function NodeEditModal({
     }
     setSaving(true);
     try {
+      const parsedPriority = priorityOrder.trim() ? parseInt(priorityOrder.trim(), 10) : undefined;
       await updateCategoryNode(workspaceId, node.tree_name, node.id, {
         label: label.trim(),
         code: code.trim() || null,
@@ -760,6 +845,17 @@ function NodeEditModal({
           requires_manual_support: requiresManualSupport,
           requires_property_info: requiresPropertyInfo,
           ...(infoToCollect.trim() ? { info_to_collect: infoToCollect.trim() } : {}),
+          ...(actionType ? { action_type: actionType } : {}),
+          ...(transferTarget.trim() ? { transfer_target: transferTarget.trim() } : {}),
+          ...(emailTarget.trim() ? { email_target: emailTarget.trim() } : {}),
+          ...(requiredInformation.trim()
+            ? { required_information: requiredInformation.trim() }
+            : {}),
+          ...(approvedScript.trim() ? { approved_script: approvedScript.trim() } : {}),
+          ...(signalsEn.trim() ? { detection_signals_en: signalsEn.trim() } : {}),
+          ...(signalsDe.trim() ? { detection_signals_de: signalsDe.trim() } : {}),
+          ...(!isNaN(parsedPriority ?? NaN) ? { priority_order: parsedPriority } : {}),
+          ...(safetyBoundary.trim() ? { safety_boundary: safetyBoundary.trim() } : {}),
         },
       });
       toast.success("Node updated");
@@ -853,6 +949,117 @@ function NodeEditModal({
                   <span className="text-xs text-muted-foreground">{lbl}</span>
                 </label>
               ))}
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-md border border-border/60 bg-muted/20 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Workflow action
+            </p>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Action type</Label>
+              <select
+                value={actionType}
+                onChange={(e) => setActionType(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+              >
+                <option value="">— not set —</option>
+                <option value="transfer">transfer</option>
+                <option value="collect_then_email">collect_then_email</option>
+                <option value="give_instruction">give_instruction</option>
+                <option value="lookup_transfer">lookup_transfer</option>
+              </select>
+            </div>
+
+            {(actionType === "transfer" || actionType === "lookup_transfer") && (
+              <div className="space-y-1">
+                <Label className="text-xs">Transfer target (number or SIP)</Label>
+                <Input
+                  value={transferTarget}
+                  onChange={(e) => setTransferTarget(e.target.value)}
+                  placeholder="+4915123456789"
+                  className="text-sm"
+                />
+              </div>
+            )}
+
+            {actionType === "collect_then_email" && (
+              <div className="space-y-1">
+                <Label className="text-xs">Email target</Label>
+                <Input
+                  value={emailTarget}
+                  onChange={(e) => setEmailTarget(e.target.value)}
+                  placeholder="support@example.com"
+                  className="text-sm"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <Label className="text-xs">Required information (comma-separated)</Label>
+              <Input
+                value={requiredInformation}
+                onChange={(e) => setRequiredInformation(e.target.value)}
+                placeholder="customer_number, problem_description"
+                className="text-sm"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Approved script</Label>
+              <textarea
+                value={approvedScript}
+                onChange={(e) => setApprovedScript(e.target.value)}
+                placeholder="Script the agent should say..."
+                rows={2}
+                className="w-full resize-none rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Detection signals EN</Label>
+                <textarea
+                  value={signalsEn}
+                  onChange={(e) => setSignalsEn(e.target.value)}
+                  placeholder="software, update, install"
+                  rows={2}
+                  className="w-full resize-none rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Detection signals DE</Label>
+                <textarea
+                  value={signalsDe}
+                  onChange={(e) => setSignalsDe(e.target.value)}
+                  placeholder="Software, Update, Installation"
+                  rows={2}
+                  className="w-full resize-none rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Priority order</Label>
+                <Input
+                  type="number"
+                  value={priorityOrder}
+                  onChange={(e) => setPriorityOrder(e.target.value)}
+                  placeholder="1"
+                  className="text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Safety boundary</Label>
+                <Input
+                  value={safetyBoundary}
+                  onChange={(e) => setSafetyBoundary(e.target.value)}
+                  placeholder="Do not transfer minors"
+                  className="text-sm"
+                />
+              </div>
             </div>
           </div>
         </div>

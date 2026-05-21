@@ -445,6 +445,10 @@ class ToolRegistry:
             total_nodes=len(all_nodes),
         )
 
+    def get_prewarmed_tree(self, tree_name: str) -> list[dict[str, Any]]:
+        """Return the prewarmed node list for a tree, or [] if not loaded."""
+        return self._prewarmed_trees.get(tree_name) or []
+
     def get_all_tool_definitions(  # noqa: PLR0912, PLR0915
         self,
         enabled_tools: list[str],
