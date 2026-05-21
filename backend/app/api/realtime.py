@@ -87,7 +87,7 @@ def get_realtime_model_for_tier(pricing_tier: str) -> str:
         OpenAI Realtime model name
     """
     # Using latest production gpt-realtime models (updated Mar 2026)
-    return "gpt-realtime-mini-2025-12-15" if pricing_tier == "premium-mini" else "gpt-realtime-1.5"
+    return "gpt-realtime-mini-2025-12-15" if pricing_tier == "premium-mini" else "gpt-realtime"
 
 
 @router.websocket("/realtime/{agent_id}")
@@ -214,7 +214,7 @@ async def realtime_websocket(
             "voice": agent.voice or "shimmer",
             "temperature": agent.temperature,
             "agent_id": str(agent.id),
-            "llm_model": agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
+            "llm_model": agent.provider_config.get("llm_model", "gpt-realtime"),
             "turn_detection_mode": agent.turn_detection_mode,
             "turn_detection_threshold": agent.turn_detection_threshold,
             "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,

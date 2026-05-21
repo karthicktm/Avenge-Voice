@@ -35,9 +35,7 @@ router = APIRouter(prefix="/ws/telephony", tags=["telephony-ws"])
 # Models optimised for WebRTC/REST that don't reliably apply session.update()
 # instructions over WebSocket. Map to telephony-compatible equivalents so the
 # same agent config works for both web (WebRTC) and telephony (WebSocket).
-_TELEPHONY_MODEL_MAP: dict[str, str] = {
-    "gpt-realtime-1.5": "gpt-realtime-2025-08-28",
-}
+_TELEPHONY_MODEL_MAP: dict[str, str] = {}
 logger = structlog.get_logger()
 
 # Constants for event logging
@@ -251,8 +249,8 @@ async def twilio_media_stream(  # noqa: PLR0915
             "transcription_model": agent.transcription_model,
             "initial_greeting": agent.initial_greeting,
             "llm_model": _TELEPHONY_MODEL_MAP.get(
-                agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
-                agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
+                agent.provider_config.get("llm_model", "gpt-realtime"),
+                agent.provider_config.get("llm_model", "gpt-realtime"),
             ),
             "turn_detection_mode": agent.turn_detection_mode,
             "turn_detection_threshold": agent.turn_detection_threshold,
@@ -713,8 +711,8 @@ async def telnyx_media_stream(
             "transcription_model": agent.transcription_model,
             "initial_greeting": agent.initial_greeting,
             "llm_model": _TELEPHONY_MODEL_MAP.get(
-                agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
-                agent.provider_config.get("llm_model", "gpt-realtime-1.5"),
+                agent.provider_config.get("llm_model", "gpt-realtime"),
+                agent.provider_config.get("llm_model", "gpt-realtime"),
             ),
             "turn_detection_mode": agent.turn_detection_mode,
             "turn_detection_threshold": agent.turn_detection_threshold,
