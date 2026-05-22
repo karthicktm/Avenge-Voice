@@ -891,10 +891,11 @@ class GPTRealtimeSession:
             # gpt-realtime-2025-08-28 (telephony) rejects silence_duration_ms on semantic_vad
             # with "Unknown parameter" — which causes session.update() to silently drop the
             # entire config including tools, leaving the model unable to call any functions.
-            # eagerness "medium" (not "high") to avoid wind/outdoor noise triggering false turns.
+            # eagerness "high" for low-latency turn detection; acceptable for typical call
+            # environments (office/indoor). Revert to "medium" if noise causes false triggers.
             turn_detection = {
                 "type": "semantic_vad",
-                "eagerness": "medium",
+                "eagerness": "high",
             }
         else:
             turn_detection = {
@@ -906,7 +907,9 @@ class GPTRealtimeSession:
         # Telephony sessions (Twilio/Telnyx) use G.711 μ-law (audio/pcmu) — native PSTN format.
         # WebRTC sessions keep PCM at 24kHz. agent_config["is_telephony"] is set by telephony_ws.py.
         is_telephony = _is_telephony_session
-        audio_fmt: dict[str, Any] = {"type": "audio/pcmu"} if is_telephony else {"type": "audio/pcm"}
+        audio_fmt: dict[str, Any] = (
+            {"type": "audio/pcmu"} if is_telephony else {"type": "audio/pcm"}
+        )
 
         audio_input: dict[str, Any] = {
             "format": audio_fmt,
