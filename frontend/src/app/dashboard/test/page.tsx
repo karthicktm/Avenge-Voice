@@ -70,6 +70,16 @@ type AudioVisualizerResources = {
   source: MediaStreamAudioSourceNode | null;
 };
 
+// Turn detection config for OpenAI Realtime v2
+type TurnDetectionConfig =
+  | { type: "semantic_vad"; eagerness: "low" | "medium" | "high" | "auto" }
+  | {
+      type: "server_vad";
+      threshold: number;
+      prefix_padding_ms: number;
+      silence_duration_ms: number;
+    };
+
 // Real-time audio visualizer component using Web Audio API
 function AudioVisualizer({
   stream,
@@ -770,14 +780,6 @@ export default function TestAgentPage() {
           "You are a helpful voice assistant.";
 
         // Build turn detection config for v2 audio.input format
-        type TurnDetectionConfig =
-          | { type: "semantic_vad"; eagerness: string }
-          | {
-              type: "server_vad";
-              threshold: number;
-              prefix_padding_ms: number;
-              silence_duration_ms: number;
-            };
         const turnDetectionConfig: TurnDetectionConfig | undefined =
           turnDetection === "disabled"
             ? undefined
