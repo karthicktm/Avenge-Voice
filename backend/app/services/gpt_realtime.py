@@ -900,9 +900,11 @@ class GPTRealtimeSession:
                 "silence_duration_ms": vad_silence_duration_ms,
             }
 
-        # Telephony model uses G.711 μ-law (audio/pcmu) — native PSTN format for Twilio/Telnyx.
-        # All other models (WebRTC) keep PCM at 24kHz.
-        is_telephony = model == "gpt-realtime-2025-08-28"
+        # Telephony sessions (Twilio/Telnyx) use G.711 μ-law (audio/pcmu) — native PSTN format.
+        # WebRTC sessions keep PCM at 24kHz. agent_config["is_telephony"] is set by telephony_ws.py.
+        is_telephony = model == "gpt-realtime-2025-08-28" or bool(
+            self.agent_config.get("is_telephony")
+        )
         audio_fmt: dict[str, Any] = {"type": "audio/pcmu"} if is_telephony else {"type": "audio/pcm"}
 
         audio_input: dict[str, Any] = {

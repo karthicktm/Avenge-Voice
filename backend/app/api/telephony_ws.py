@@ -252,6 +252,7 @@ async def twilio_media_stream(  # noqa: PLR0915
                 agent.provider_config.get("llm_model", "gpt-realtime"),
                 agent.provider_config.get("llm_model", "gpt-realtime"),
             ),
+            "is_telephony": True,  # Forces audio/pcmu (g711 mulaw) for Twilio/Telnyx
             "turn_detection_mode": agent.turn_detection_mode,
             "turn_detection_threshold": agent.turn_detection_threshold,
             "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
@@ -714,6 +715,7 @@ async def telnyx_media_stream(
                 agent.provider_config.get("llm_model", "gpt-realtime"),
                 agent.provider_config.get("llm_model", "gpt-realtime"),
             ),
+            "is_telephony": True,  # Forces audio/pcmu (g711 mulaw) for Twilio/Telnyx
             "turn_detection_mode": agent.turn_detection_mode,
             "turn_detection_threshold": agent.turn_detection_threshold,
             "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
