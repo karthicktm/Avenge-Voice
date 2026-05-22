@@ -1038,7 +1038,7 @@ class GPTRealtimeSession:
                         )
 
                     # Log what the LLM said (full response text, fires once per response)
-                    elif event_type == "response.audio_transcript.done":
+                    elif event_type == "response.output_audio_transcript.done":
                         transcript = getattr(event, "transcript", "") or ""
                         self.logger.warning(
                             "llm_said",

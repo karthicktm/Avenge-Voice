@@ -779,13 +779,13 @@ export default function EmbedPage() {
             if (userText?.trim()) {
               transcriptRef.current.push({ role: "user", content: userText.trim() });
             }
-          } else if (data.type === "response.audio_transcript.delta") {
+          } else if (data.type === "response.output_audio_transcript.delta") {
             // Assistant speech transcript delta
             const delta = data.delta as string;
             if (delta) {
               currentAssistantTextRef.current += delta;
             }
-          } else if (data.type === "response.audio_transcript.done") {
+          } else if (data.type === "response.output_audio_transcript.done") {
             // Assistant speech transcript complete - flush to transcript
             if (currentAssistantTextRef.current.trim()) {
               transcriptRef.current.push({

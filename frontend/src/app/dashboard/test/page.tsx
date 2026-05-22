@@ -912,7 +912,7 @@ export default function TestAgentPage() {
                 content: data.transcript.trim(),
               });
             }
-          } else if (data.type === "response.audio_transcript.done") {
+          } else if (data.type === "response.output_audio_transcript.done") {
             addTranscriptImmediate("assistant", data.transcript);
             // Also capture for saving to backend
             if (data.transcript?.trim()) {
