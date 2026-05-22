@@ -917,6 +917,10 @@ class GPTRealtimeSession:
                 "model": self.agent_config.get("transcription_model", "gpt-4o-transcribe")
             },
         }
+        if is_telephony:
+            # near_field: filter PSTN line noise before VAD and the model.
+            # Reduces false turn triggers and improves model comprehension over mulaw.
+            audio_input["noise_reduction"] = {"type": "near_field"}
         if turn_detection is not None:
             audio_input["turn_detection"] = turn_detection
 
