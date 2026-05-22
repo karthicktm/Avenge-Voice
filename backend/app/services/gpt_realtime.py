@@ -818,11 +818,14 @@ class GPTRealtimeSession:
         # Default to marin for natural conversational tone
         voice = self.agent_config.get("voice", "marin")
         temperature = self.agent_config.get("temperature", 0.6)
-        # gpt-realtime-2025-08-28 (telephony) requires temperature >= 0.6.
-        # Clamp silently so a low UI value doesn't reject the entire session.update().
+        # Telephony requires temperature >= 0.6. Clamp silently so a low UI value
+        # doesn't reject the entire session.update().
         model = self.agent_config.get("llm_model", "gpt-realtime")
+        _is_telephony_session = model == "gpt-realtime-2025-08-28" or bool(
+            self.agent_config.get("is_telephony")
+        )
         _telephony_min_temp = 0.6
-        if model == "gpt-realtime-2025-08-28" and temperature < _telephony_min_temp:
+        if _is_telephony_session and temperature < _telephony_min_temp:
             self.logger.warning(
                 "temperature_clamped_for_telephony",
                 original=temperature,
@@ -874,7 +877,7 @@ class GPTRealtimeSession:
         # call responses before response.function_call_arguments.done fires. Force
         # semantic_vad for telephony to prevent false triggers breaking tool calls.
         model = self.agent_config.get("llm_model", "gpt-realtime")
-        if model == "gpt-realtime-2025-08-28" and turn_detection_mode == "normal":
+        if _is_telephony_session and turn_detection_mode == "normal":
             turn_detection_mode = "semantic"
             self.logger.warning(
                 "vad_overridden_for_telephony",
@@ -902,9 +905,7 @@ class GPTRealtimeSession:
 
         # Telephony sessions (Twilio/Telnyx) use G.711 μ-law (audio/pcmu) — native PSTN format.
         # WebRTC sessions keep PCM at 24kHz. agent_config["is_telephony"] is set by telephony_ws.py.
-        is_telephony = model == "gpt-realtime-2025-08-28" or bool(
-            self.agent_config.get("is_telephony")
-        )
+        is_telephony = _is_telephony_session
         audio_fmt: dict[str, Any] = {"type": "audio/pcmu"} if is_telephony else {"type": "audio/pcm"}
 
         audio_input: dict[str, Any] = {
