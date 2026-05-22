@@ -521,13 +521,13 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     if enable_transcript and transcript_text:
                         realtime_session.add_user_transcript(transcript_text)
 
-                elif event_type == "response.audio_transcript.delta":
+                elif event_type == "response.output_audio_transcript.delta":
                     if enable_transcript:
                         delta = getattr(event, "delta", "") or ""
                         if delta:
                             realtime_session.accumulate_assistant_text(delta)
 
-                elif event_type == "response.audio_transcript.done":
+                elif event_type == "response.output_audio_transcript.done":
                     transcript_text = getattr(event, "transcript", "") or ""
                     log.warning("llm_said", transcript=transcript_text)
                     if enable_transcript:
@@ -839,19 +839,22 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
             greeting_triggered = False  # Track if we've triggered the greeting
             greeting_complete = False  # True after first response.done — greeting gate released
 
+            # Trigger the initial greeting immediately — session.updated is consumed
+            # internally by the OpenAI SDK's session.update() call and never arrives
+            # in our event loop, so we cannot rely on that event as a trigger.
+            if not greeting_triggered:
+                greeting_triggered = True
+                triggered = await realtime_session.trigger_initial_greeting()
+                log.warning(
+                    "greeting_triggered_before_loop",
+                    triggered=triggered,
+                )
+
             async for event in realtime_session.connection:
                 event_type = event.type
 
-                # Trigger initial greeting after session is configured
-                # This avoids race condition where audio events arrive before listener is ready
-                if event_type == "session.updated" and not greeting_triggered:
-                    greeting_triggered = True
-                    triggered = await realtime_session.trigger_initial_greeting()
-                    if triggered:
-                        log.info("initial_greeting_triggered_after_session_update")
-
                 # Handle audio output
-                elif event_type == "response.audio.delta":
+                if event_type == "response.audio.delta":
                     if hasattr(event, "delta") and event.delta:
                         # OpenAI outputs g711_ulaw (8kHz mulaw) — already base64-encoded
                         # in the format Telnyx expects, so use event.delta directly.
@@ -924,13 +927,13 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                     if enable_transcript and transcript_text:
                         realtime_session.add_user_transcript(transcript_text)
 
-                elif event_type == "response.audio_transcript.delta":
+                elif event_type == "response.output_audio_transcript.delta":
                     if enable_transcript:
                         delta = getattr(event, "delta", "") or ""
                         if delta:
                             realtime_session.accumulate_assistant_text(delta)
 
-                elif event_type == "response.audio_transcript.done":
+                elif event_type == "response.output_audio_transcript.done":
                     transcript_text = getattr(event, "transcript", "") or ""
                     log.warning("llm_said", transcript=transcript_text)
                     if enable_transcript:
