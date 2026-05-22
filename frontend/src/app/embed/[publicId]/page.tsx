@@ -567,38 +567,79 @@ export default function EmbedPage() {
         setStatus("connected");
         setAgentState("listening");
 
-        // Build session config with tools
-        const sessionConfig: Record<string, unknown> = {
-          instructions: tokenData.agent.instructions,
-          voice: tokenData.agent.voice,
-          input_audio_transcription: {
-            model: "whisper-1",
-          },
-          turn_detection: {
-            type: "server_vad",
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 200,
-          },
-        };
+        // Derive ISO 639-1 language code for transcription hint (e.g. "sv-SE" → "sv")
+        const transcriptionLanguage = tokenData.agent.language
+          ? tokenData.agent.language.split("-")[0]
+          : undefined;
 
-        sessionConfig.tools = agentTools;
-        sessionConfig.tool_choice = "auto";
-
+        // OpenAI Realtime v2 session.update format — audio config nested under audio.input/output
         const sessionUpdate = {
           type: "session.update",
-          session: sessionConfig,
+          session: {
+            instructions: tokenData.agent.instructions,
+            output_modalities: ["audio"],
+            audio: {
+              input: {
+                format: { type: "audio/pcm" },
+                transcription: {
+                  model: "gpt-4o-transcribe",
+                  language: transcriptionLanguage,
+                },
+                turn_detection: {
+                  type: "server_vad",
+                  threshold: 0.5,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 200,
+                },
+              },
+              output: {
+                format: { type: "audio/pcm" },
+                voice: tokenData.agent.voice,
+                speed: 1.0,
+              },
+            },
+            tools: agentTools,
+            tool_choice: "auto",
+          },
         };
         dataChannel.send(JSON.stringify(sessionUpdate));
 
-        // Only trigger initial greeting if one is configured
-        // Without this, the agent waits for the user to speak first
+        // Inject full instructions + greeting as a conversation item (v2 pattern).
+        // Using response.create with per-response instructions before session is applied
+        // causes the model to default to English — inject context into conversation history instead.
         if (tokenData.agent.initial_greeting) {
+          const contextText = `${tokenData.agent.instructions}\n\nNow begin the call by saying exactly: "${tokenData.agent.initial_greeting}"`;
           dataChannel.send(
             JSON.stringify({
-              type: "response.create",
-              response: {
-                instructions: `You MUST respond in the same language as your session instructions. Start the conversation by saying exactly this (do not add anything else): "${tokenData.agent.initial_greeting}"`,
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: contextText }],
+              },
+            })
+          );
+          dataChannel.send(JSON.stringify({ type: "response.create" }));
+        } else {
+          // No greeting — inject instructions as a synthetic exchange so the model
+          // has language context in conversation history, not just session settings.
+          dataChannel.send(
+            JSON.stringify({
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: tokenData.agent.instructions }],
+              },
+            })
+          );
+          dataChannel.send(
+            JSON.stringify({
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "text", text: "Understood. I'm ready." }],
               },
             })
           );
