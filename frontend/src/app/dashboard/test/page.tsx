@@ -763,53 +763,109 @@ export default function TestAgentPage() {
 
         console.log("[WebRTC] Configuring session with", allTools.length, "tools");
 
-        // Send session update with agent config and tools
         // Use compiled instructions from backend (includes KB context, language best practices)
-        // Falls back to raw edited prompt only if backend instructions unavailable
         const instructions =
           tokenData.agent?.instructions ??
           editedSystemPrompt ??
           "You are a helpful voice assistant.";
+
+        // Build turn detection config for v2 audio.input format
+        type TurnDetectionConfig =
+          | { type: "semantic_vad"; eagerness: string }
+          | {
+              type: "server_vad";
+              threshold: number;
+              prefix_padding_ms: number;
+              silence_duration_ms: number;
+            };
+        const turnDetectionConfig: TurnDetectionConfig | undefined =
+          turnDetection === "disabled"
+            ? undefined
+            : turnDetection === "semantic"
+              ? { type: "semantic_vad", eagerness: "medium" }
+              : {
+                  type: "server_vad",
+                  threshold: threshold,
+                  prefix_padding_ms: prefixPadding,
+                  silence_duration_ms: silenceDuration,
+                };
+
+        // OpenAI Realtime v2 session.update format — audio config nested under audio.input/output
+        const audioInput: Record<string, unknown> = {
+          format: { type: "audio/pcm" },
+          transcription: {
+            model: "gpt-4o-transcribe",
+            language: getWhisperCode(language) ?? undefined,
+          },
+        };
+        if (turnDetectionConfig !== undefined) {
+          audioInput.turn_detection = turnDetectionConfig;
+        }
+
         const sessionUpdate = {
           type: "session.update",
           session: {
             instructions: instructions,
-            voice: voice,
-            input_audio_transcription: {
-              model: "whisper-1",
-              language: getWhisperCode(language) ?? undefined,
+            output_modalities: ["audio"],
+            audio: {
+              input: audioInput,
+              output: {
+                format: { type: "audio/pcm" },
+                voice: voice,
+                speed: 1.0,
+              },
             },
-            turn_detection:
-              turnDetection === "disabled"
-                ? null
-                : {
-                    type: turnDetection === "semantic" ? "semantic_vad" : "server_vad",
-                    threshold: threshold,
-                    prefix_padding_ms: prefixPadding,
-                    silence_duration_ms: silenceDuration,
-                  },
             tools: allTools,
             tool_choice: "auto",
           },
         };
         dataChannel.send(JSON.stringify(sessionUpdate));
         console.log(
-          "[WebRTC] Sent session.update with tools:",
+          "[WebRTC] Sent v2 session.update with tools:",
           tools.map((t: { name: string }) => t.name)
         );
 
-        // Trigger initial greeting if one is configured
+        // Inject full instructions + greeting as a conversation item (v2 pattern).
+        // Using response.create with per-response instructions before session is applied
+        // causes the model to default to English — inject context into conversation history instead.
         const initialGreeting = tokenData.agent?.initial_greeting;
         if (initialGreeting) {
+          const contextText = `${instructions}\n\nNow begin the call by saying exactly: "${initialGreeting}"`;
           dataChannel.send(
             JSON.stringify({
-              type: "response.create",
-              response: {
-                instructions: `You MUST respond in the same language as your session instructions. Start the conversation by saying exactly this (do not add anything else): "${initialGreeting}"`,
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: contextText }],
               },
             })
           );
-          console.log("[WebRTC] Sent initial greeting:", initialGreeting);
+          dataChannel.send(JSON.stringify({ type: "response.create" }));
+          console.log("[WebRTC] Injected greeting context and triggered response");
+        } else {
+          // No greeting — inject instructions as a synthetic exchange so the model
+          // has language context in conversation history, not just session settings.
+          dataChannel.send(
+            JSON.stringify({
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: instructions }],
+              },
+            })
+          );
+          dataChannel.send(
+            JSON.stringify({
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "text", text: "Understood. I'm ready." }],
+              },
+            })
+          );
         }
       };
 
