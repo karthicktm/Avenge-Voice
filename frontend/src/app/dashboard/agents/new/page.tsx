@@ -196,6 +196,7 @@ export default function NewAgentPage() {
       enable_recording: data.enableRecording,
       enable_transcript: data.enableTranscript,
       initial_greeting: data.initialGreeting?.trim() ? data.initialGreeting.trim() : undefined,
+      provider_config: { telephony_provider: data.telephonyProvider },
     };
 
     createAgentMutation.mutate(request);

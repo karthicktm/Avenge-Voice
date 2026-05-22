@@ -551,7 +551,9 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
         initialGreeting: agent.initial_greeting ?? "",
         temperature: agent.temperature,
         maxTokens: agent.max_tokens,
-        telephonyProvider: "telnyx",
+        telephonyProvider:
+          (agent.provider_config?.telephony_provider as "telnyx" | "twilio" | undefined) ??
+          "telnyx",
         phoneNumberId: agent.phone_number_id ?? undefined,
         enableRecording: agent.enable_recording,
         enableTranscript: agent.enable_transcript,
@@ -867,13 +869,15 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
       turn_detection_mode: data.turnDetectionMode,
       turn_detection_threshold: data.turnDetectionThreshold,
       turn_detection_silence_duration_ms: data.turnDetectionSilenceDurationMs,
-      // For premium tier, propagate AI provider choice into provider_config
-      provider_config:
-        pricingTier === "premium" ||
+      // Persist telephony provider and (for premium) AI provider into provider_config
+      provider_config: {
+        ...(pricingTier === "premium" ||
         agent?.pricing_tier === "premium" ||
         agent?.pricing_tier === "premium-mini"
           ? { provider: data.aiProvider }
-          : undefined,
+          : {}),
+        telephony_provider: data.telephonyProvider,
+      },
     };
 
     // Update agent, workspaces, and embed settings
