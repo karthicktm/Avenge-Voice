@@ -425,11 +425,11 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                 event_count += 1
 
                 # Log every non-audio event at WARNING so they show up in Railway
-                if event_type != "response.audio.delta":
+                if event_type != "response.output_audio.delta":
                     log.warning("realtime_event", event_type=event_type, count=event_count)
 
                 # Handle audio output
-                if event_type == "response.audio.delta":
+                if event_type == "response.output_audio.delta":
                     # Get audio delta and send to Twilio
                     # Check various possible attribute names for the audio data
                     delta_data = getattr(event, "delta", None)
@@ -597,7 +597,7 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     asyncio.create_task(realtime_session.post_turn_clear())  # noqa: RUF006
 
                 elif event_type in [
-                    "response.audio.done",
+                    "response.output_audio.done",
                     "input_audio_buffer.speech_stopped",
                 ]:
                     pass  # logged by the catch-all above
@@ -856,7 +856,7 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                 event_type = event.type
 
                 # Handle audio output
-                if event_type == "response.audio.delta":
+                if event_type == "response.output_audio.delta":
                     if hasattr(event, "delta") and event.delta:
                         # OpenAI outputs g711_ulaw (8kHz mulaw) — already base64-encoded
                         # in the format Telnyx expects, so use event.delta directly.
@@ -1002,7 +1002,7 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                     asyncio.create_task(realtime_session.post_turn_clear())  # noqa: RUF006
 
                 elif event_type in [
-                    "response.audio.done",
+                    "response.output_audio.done",
                     "input_audio_buffer.speech_stopped",
                 ]:
                     log.debug("realtime_event", event_type=event_type)
