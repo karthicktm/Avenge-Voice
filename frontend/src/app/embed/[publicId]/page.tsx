@@ -576,6 +576,7 @@ export default function EmbedPage() {
         const sessionUpdate = {
           type: "session.update",
           session: {
+            type: "realtime",
             instructions: tokenData.agent.instructions,
             output_modalities: ["audio"],
             audio: {

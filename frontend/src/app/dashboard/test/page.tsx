@@ -807,6 +807,7 @@ export default function TestAgentPage() {
         const sessionUpdate = {
           type: "session.update",
           session: {
+            type: "realtime",
             instructions: instructions,
             output_modalities: ["audio"],
             audio: {
