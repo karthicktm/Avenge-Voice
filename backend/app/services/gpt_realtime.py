@@ -912,11 +912,16 @@ class GPTRealtimeSession:
             {"type": "audio/pcmu"} if is_telephony else {"type": "audio/pcm"}
         )
 
+        transcription_model = self.agent_config.get("transcription_model") or "gpt-4o-transcribe"
+        transcription_cfg: dict[str, Any] = {"model": transcription_model}
+        agent_language = self.agent_config.get("language")
+        if agent_language and agent_language != "auto":
+            # ISO-639-1 hint improves accuracy and latency for non-English agents
+            transcription_cfg["language"] = agent_language
+
         audio_input: dict[str, Any] = {
             "format": audio_fmt,
-            "transcription": {
-                "model": self.agent_config.get("transcription_model", "gpt-4o-transcribe")
-            },
+            "transcription": transcription_cfg,
         }
         if is_telephony:
             # near_field: filter PSTN line noise before VAD and the model.
@@ -959,6 +964,8 @@ class GPTRealtimeSession:
                 tool_count=len(tools),
                 instructions_applied=True,
                 session_keys=list(session_config.keys()),
+                transcription_model=transcription_model,
+                transcription_language=transcription_cfg.get("language"),
             )
 
             # Store initial greeting for later - triggered after event loop starts
