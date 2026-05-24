@@ -942,13 +942,16 @@ class GPTRealtimeSession:
                     "speed": 1.0,  # Natural pace for telephony (1.1 sounds rushed over mulaw)
                 },
             },
-            "tools": tools,
-            "tool_choice": "auto",
         }
+        if tools:
+            session_config["tools"] = tools
+            session_config["tool_choice"] = "auto"
 
+        tool_names = [t.get("name") for t in tools[:5]]
         self.logger.warning(
             "configuring_session",
             tool_count=len(tools),
+            tool_names=tool_names,
             enabled_tools=enabled_tools,
             instructions_len=len(instructions),
             instructions_preview=instructions[:150],
