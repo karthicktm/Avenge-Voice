@@ -63,137 +63,125 @@ class CalendlyTools:
         return [
             {
                 "type": "function",
-                "function": {
-                    "name": "calendly_get_event_types",
-                    "description": "Get available event types (meeting types) that can be scheduled",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "active": {
-                                "type": "boolean",
-                                "description": "Filter by active status (default: true)",
-                            },
+                "name": "calendly_get_event_types",
+                "description": "Get available event types (meeting types) that can be scheduled",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "active": {
+                            "type": "boolean",
+                            "description": "Filter by active status (default: true)",
                         },
-                        "required": [],
                     },
+                    "required": [],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "calendly_get_availability",
-                    "description": "Get available time slots for a specific event type",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "event_type_uri": {
-                                "type": "string",
-                                "description": "The event type URI (from calendly_get_event_types)",
-                            },
-                            "start_time": {
-                                "type": "string",
-                                "description": "Start of availability window (ISO 8601 format)",
-                            },
-                            "end_time": {
-                                "type": "string",
-                                "description": "End of availability window (ISO 8601 format)",
-                            },
+                "name": "calendly_get_availability",
+                "description": "Get available time slots for a specific event type",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "event_type_uri": {
+                            "type": "string",
+                            "description": "The event type URI (from calendly_get_event_types)",
                         },
-                        "required": ["event_type_uri", "start_time", "end_time"],
+                        "start_time": {
+                            "type": "string",
+                            "description": "Start of availability window (ISO 8601 format)",
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "description": "End of availability window (ISO 8601 format)",
+                        },
                     },
+                    "required": ["event_type_uri", "start_time", "end_time"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "calendly_create_scheduling_link",
-                    "description": "Generate a one-time booking link to send to a customer. The link allows them to choose an available time slot. Note: Calendly API does not support direct booking - customers must use the link to self-schedule.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "invitee_email": {
-                                "type": "string",
-                                "description": "Email of the person being invited (pre-fills the booking form)",
-                            },
-                            "invitee_name": {
-                                "type": "string",
-                                "description": "Name of the person being invited (pre-fills the booking form)",
-                            },
+                "name": "calendly_create_scheduling_link",
+                "description": "Generate a one-time booking link to send to a customer. The link allows them to choose an available time slot. Note: Calendly API does not support direct booking - customers must use the link to self-schedule.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "invitee_email": {
+                            "type": "string",
+                            "description": "Email of the person being invited (pre-fills the booking form)",
                         },
-                        "required": ["invitee_email"],
+                        "invitee_name": {
+                            "type": "string",
+                            "description": "Name of the person being invited (pre-fills the booking form)",
+                        },
                     },
+                    "required": ["invitee_email"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "calendly_list_events",
-                    "description": "List scheduled events/appointments",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": ["active", "canceled"],
-                                "description": "Filter by event status",
-                            },
-                            "min_start_time": {
-                                "type": "string",
-                                "description": "Filter events starting after this time (ISO 8601)",
-                            },
-                            "max_start_time": {
-                                "type": "string",
-                                "description": "Filter events starting before this time (ISO 8601)",
-                            },
-                            "invitee_email": {
-                                "type": "string",
-                                "description": "Filter by invitee email",
-                            },
-                            "count": {
-                                "type": "integer",
-                                "description": "Number of results (max 100, default 20)",
-                            },
+                "name": "calendly_list_events",
+                "description": "List scheduled events/appointments",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "canceled"],
+                            "description": "Filter by event status",
                         },
-                        "required": [],
+                        "min_start_time": {
+                            "type": "string",
+                            "description": "Filter events starting after this time (ISO 8601)",
+                        },
+                        "max_start_time": {
+                            "type": "string",
+                            "description": "Filter events starting before this time (ISO 8601)",
+                        },
+                        "invitee_email": {
+                            "type": "string",
+                            "description": "Filter by invitee email",
+                        },
+                        "count": {
+                            "type": "integer",
+                            "description": "Number of results (max 100, default 20)",
+                        },
                     },
+                    "required": [],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "calendly_get_event",
-                    "description": "Get details of a specific scheduled event",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "event_uuid": {
-                                "type": "string",
-                                "description": "The event UUID",
-                            },
+                "name": "calendly_get_event",
+                "description": "Get details of a specific scheduled event",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "event_uuid": {
+                            "type": "string",
+                            "description": "The event UUID",
                         },
-                        "required": ["event_uuid"],
                     },
+                    "required": ["event_uuid"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "calendly_cancel_event",
-                    "description": "Cancel a scheduled event",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "event_uuid": {
-                                "type": "string",
-                                "description": "The event UUID to cancel",
-                            },
-                            "reason": {
-                                "type": "string",
-                                "description": "Reason for cancellation",
-                            },
+                "name": "calendly_cancel_event",
+                "description": "Cancel a scheduled event",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "event_uuid": {
+                            "type": "string",
+                            "description": "The event UUID to cancel",
                         },
-                        "required": ["event_uuid"],
+                        "reason": {
+                            "type": "string",
+                            "description": "Reason for cancellation",
+                        },
                     },
+                    "required": ["event_uuid"],
                 },
             },
         ]

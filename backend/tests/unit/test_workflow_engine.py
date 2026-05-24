@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import uuid
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -19,7 +19,6 @@ from app.services.workflow_engine.matcher import (
     match,
     select_strategy,
 )
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 

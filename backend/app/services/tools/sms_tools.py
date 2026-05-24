@@ -58,40 +58,36 @@ class TwilioSMSTools:
         return [
             {
                 "type": "function",
-                "function": {
-                    "name": "twilio_send_sms",
-                    "description": "Send an SMS message to a phone number",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "to": {
-                                "type": "string",
-                                "description": "Recipient phone number (E.164 format, e.g., +14155551234)",
-                            },
-                            "body": {
-                                "type": "string",
-                                "description": "Message content (max 1600 characters)",
-                            },
+                "name": "twilio_send_sms",
+                "description": "Send an SMS message to a phone number",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "to": {
+                            "type": "string",
+                            "description": "Recipient phone number (E.164 format, e.g., +14155551234)",
                         },
-                        "required": ["to", "body"],
+                        "body": {
+                            "type": "string",
+                            "description": "Message content (max 1600 characters)",
+                        },
                     },
+                    "required": ["to", "body"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "twilio_get_message_status",
-                    "description": "Get the delivery status of a sent SMS message",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "message_sid": {
-                                "type": "string",
-                                "description": "The Twilio message SID (starts with SM)",
-                            },
+                "name": "twilio_get_message_status",
+                "description": "Get the delivery status of a sent SMS message",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "message_sid": {
+                            "type": "string",
+                            "description": "The Twilio message SID (starts with SM)",
                         },
-                        "required": ["message_sid"],
                     },
+                    "required": ["message_sid"],
                 },
             },
         ]
@@ -233,40 +229,36 @@ class TelnyxSMSTools:
         return [
             {
                 "type": "function",
-                "function": {
-                    "name": "telnyx_send_sms",
-                    "description": "Send an SMS message to a phone number via Telnyx",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "to": {
-                                "type": "string",
-                                "description": "Recipient phone number (E.164 format, e.g., +14155551234)",
-                            },
-                            "body": {
-                                "type": "string",
-                                "description": "Message content",
-                            },
+                "name": "telnyx_send_sms",
+                "description": "Send an SMS message to a phone number via Telnyx",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "to": {
+                            "type": "string",
+                            "description": "Recipient phone number (E.164 format, e.g., +14155551234)",
                         },
-                        "required": ["to", "body"],
+                        "body": {
+                            "type": "string",
+                            "description": "Message content",
+                        },
                     },
+                    "required": ["to", "body"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "telnyx_get_message_status",
-                    "description": "Get the delivery status of a sent SMS message via Telnyx",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "message_id": {
-                                "type": "string",
-                                "description": "The Telnyx message ID (UUID)",
-                            },
+                "name": "telnyx_get_message_status",
+                "description": "Get the delivery status of a sent SMS message via Telnyx",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "message_id": {
+                            "type": "string",
+                            "description": "The Telnyx message ID (UUID)",
                         },
-                        "required": ["message_id"],
                     },
+                    "required": ["message_id"],
                 },
             },
         ]

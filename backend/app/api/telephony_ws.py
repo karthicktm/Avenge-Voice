@@ -496,24 +496,41 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                         name=event.name,
                         arguments_len=len(event.arguments or ""),
                     )
-                    result = await realtime_session.handle_function_call_event(event)
-                    log.warning(
-                        "tool_call_result",
-                        name=event.name,
-                        success=result.get("success"),
-                        result_keys=list(result.keys()),
-                    )
-                    # Check if this is an end_call action
-                    if result.get("action") == "end_call":
-                        log.info("end_call_action_received", reason=result.get("reason"))
-                        pending_end_call = True
-                    # Handle disposition tool result
-                    elif result.get("action") == "set_disposition":
-                        await realtime_session.save_campaign_disposition(
-                            disposition=result.get("disposition", ""),
-                            notes=result.get("notes"),
+                    try:
+                        result = await realtime_session.handle_function_call_event(event)
+                        log.warning(
+                            "tool_call_result",
+                            name=event.name,
+                            success=result.get("success"),
+                            result_keys=list(result.keys()),
                         )
-                        log.info("disposition_saved", disposition=result.get("disposition"))
+                        # Check if this is an end_call action
+                        if result.get("action") == "end_call":
+                            log.info("end_call_action_received", reason=result.get("reason"))
+                            pending_end_call = True
+                        # Handle disposition tool result
+                        elif result.get("action") == "set_disposition":
+                            await realtime_session.save_campaign_disposition(
+                                disposition=result.get("disposition", ""),
+                                notes=result.get("notes"),
+                            )
+                            log.info("disposition_saved", disposition=result.get("disposition"))
+                    except Exception as tool_err:
+                        log.exception(
+                            "tool_call_handler_error", name=event.name, error=str(tool_err)
+                        )
+
+                # Confirm session config was applied (verify tool_count > 0 if tools are enabled)
+                elif event_type == "session.updated":
+                    session_data = getattr(event, "session", None)
+                    tool_count = len(getattr(session_data, "tools", []) or [])
+                    audio_data = getattr(session_data, "audio", None)
+                    audio_input = getattr(audio_data, "input", None) if audio_data else None
+                    log.warning(
+                        "session_applied",
+                        tool_count=tool_count,
+                        has_transcription=bool(getattr(audio_input, "transcription", None)),
+                    )
 
                 # Log user speech and optionally capture for transcript feature
                 elif event_type == "conversation.item.input_audio_transcription.completed":
@@ -521,6 +538,10 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     log.warning("user_said", transcript=transcript_text)
                     if enable_transcript and transcript_text:
                         realtime_session.add_user_transcript(transcript_text)
+
+                elif event_type == "conversation.item.input_audio_transcription.failed":
+                    err = getattr(event, "error", None)
+                    log.warning("transcription_failed", error=str(err))
 
                 elif event_type == "response.output_audio_transcript.delta":
                     if enable_transcript:
@@ -903,24 +924,41 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                         name=event.name,
                         arguments_len=len(event.arguments or ""),
                     )
-                    result = await realtime_session.handle_function_call_event(event)
-                    log.warning(
-                        "tool_call_result",
-                        name=event.name,
-                        success=result.get("success"),
-                        result_keys=list(result.keys()),
-                    )
-                    # Check if this is an end_call action
-                    if result.get("action") == "end_call":
-                        log.info("end_call_action_received", reason=result.get("reason"))
-                        pending_end_call = True
-                    # Handle disposition tool result
-                    elif result.get("action") == "set_disposition":
-                        await realtime_session.save_campaign_disposition(
-                            disposition=result.get("disposition", ""),
-                            notes=result.get("notes"),
+                    try:
+                        result = await realtime_session.handle_function_call_event(event)
+                        log.warning(
+                            "tool_call_result",
+                            name=event.name,
+                            success=result.get("success"),
+                            result_keys=list(result.keys()),
                         )
-                        log.info("disposition_saved", disposition=result.get("disposition"))
+                        # Check if this is an end_call action
+                        if result.get("action") == "end_call":
+                            log.info("end_call_action_received", reason=result.get("reason"))
+                            pending_end_call = True
+                        # Handle disposition tool result
+                        elif result.get("action") == "set_disposition":
+                            await realtime_session.save_campaign_disposition(
+                                disposition=result.get("disposition", ""),
+                                notes=result.get("notes"),
+                            )
+                            log.info("disposition_saved", disposition=result.get("disposition"))
+                    except Exception as tool_err:
+                        log.exception(
+                            "tool_call_handler_error", name=event.name, error=str(tool_err)
+                        )
+
+                # Confirm session config was applied (verify tool_count > 0 if tools are enabled)
+                elif event_type == "session.updated":
+                    session_data = getattr(event, "session", None)
+                    tool_count = len(getattr(session_data, "tools", []) or [])
+                    audio_data = getattr(session_data, "audio", None)
+                    audio_input = getattr(audio_data, "input", None) if audio_data else None
+                    log.warning(
+                        "session_applied",
+                        tool_count=tool_count,
+                        has_transcription=bool(getattr(audio_input, "transcription", None)),
+                    )
 
                 # Log user speech and optionally capture for transcript feature
                 elif event_type == "conversation.item.input_audio_transcription.completed":
@@ -928,6 +966,10 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                     log.warning("user_said", transcript=transcript_text)
                     if enable_transcript and transcript_text:
                         realtime_session.add_user_transcript(transcript_text)
+
+                elif event_type == "conversation.item.input_audio_transcription.failed":
+                    err = getattr(event, "error", None)
+                    log.warning("transcription_failed", error=str(err))
 
                 elif event_type == "response.output_audio_transcript.delta":
                     if enable_transcript:

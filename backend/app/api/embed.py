@@ -441,7 +441,7 @@ async def _bridge_embed_streams(
                     event_type = event.type
 
                     # Log non-audio events (audio deltas are too frequent)
-                    if event_type != "response.audio.delta":
+                    if event_type != "response.output_audio.delta":
                         logger.info("realtime_event", event_type=event_type)
                     else:
                         logger.debug("audio_delta_received")
@@ -552,9 +552,7 @@ async def get_embed_ephemeral_token(  # noqa: PLR0915
 
     # Determine model based on tier (updated Mar 2026)
     realtime_model = (
-        "gpt-realtime-mini-2025-12-15"
-        if agent.pricing_tier == "premium-mini"
-        else "gpt-realtime"
+        "gpt-realtime-mini-2025-12-15" if agent.pricing_tier == "premium-mini" else "gpt-realtime"
     )
 
     # Build session configuration (v2 GA API)

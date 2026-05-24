@@ -62,142 +62,128 @@ class ShopifyTools:
         return [
             {
                 "type": "function",
-                "function": {
-                    "name": "shopify_search_orders",
-                    "description": "Search for orders by order number, email, or phone number",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Search query (order number, email, phone)",
-                            },
-                            "status": {
-                                "type": "string",
-                                "enum": ["any", "open", "closed", "cancelled"],
-                                "description": "Filter by order status (default: any)",
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Max results (default 10, max 50)",
-                            },
+                "name": "shopify_search_orders",
+                "description": "Search for orders by order number, email, or phone number",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (order number, email, phone)",
                         },
-                        "required": ["query"],
+                        "status": {
+                            "type": "string",
+                            "enum": ["any", "open", "closed", "cancelled"],
+                            "description": "Filter by order status (default: any)",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 10, max 50)",
+                        },
                     },
+                    "required": ["query"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "shopify_get_order",
-                    "description": "Get detailed order information including items, shipping, and payment status",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "order_id": {
-                                "type": "string",
-                                "description": "The Shopify order ID or order number",
-                            },
+                "name": "shopify_get_order",
+                "description": "Get detailed order information including items, shipping, and payment status",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "order_id": {
+                            "type": "string",
+                            "description": "The Shopify order ID or order number",
                         },
-                        "required": ["order_id"],
                     },
+                    "required": ["order_id"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "shopify_get_order_tracking",
-                    "description": "Get shipping/tracking information for an order",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "order_id": {
-                                "type": "string",
-                                "description": "The Shopify order ID",
-                            },
+                "name": "shopify_get_order_tracking",
+                "description": "Get shipping/tracking information for an order",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "order_id": {
+                            "type": "string",
+                            "description": "The Shopify order ID",
                         },
-                        "required": ["order_id"],
                     },
+                    "required": ["order_id"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "shopify_search_products",
-                    "description": "Search for products by name or SKU",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Product name or SKU to search for",
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Max results (default 10, max 50)",
-                            },
+                "name": "shopify_search_products",
+                "description": "Search for products by name or SKU",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Product name or SKU to search for",
                         },
-                        "required": ["query"],
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 10, max 50)",
+                        },
                     },
+                    "required": ["query"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "shopify_check_inventory",
-                    "description": "Check inventory/stock levels for a product",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "product_id": {
-                                "type": "string",
-                                "description": "The Shopify product ID",
-                            },
+                "name": "shopify_check_inventory",
+                "description": "Check inventory/stock levels for a product",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "product_id": {
+                            "type": "string",
+                            "description": "The Shopify product ID",
                         },
-                        "required": ["product_id"],
                     },
+                    "required": ["product_id"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "shopify_search_customers",
-                    "description": "Search for customers by email, phone, or name",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Customer email, phone, or name",
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Max results (default 10, max 50)",
-                            },
+                "name": "shopify_search_customers",
+                "description": "Search for customers by email, phone, or name",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Customer email, phone, or name",
                         },
-                        "required": ["query"],
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 10, max 50)",
+                        },
                     },
+                    "required": ["query"],
                 },
             },
             {
                 "type": "function",
-                "function": {
-                    "name": "shopify_get_customer_orders",
-                    "description": "Get order history for a specific customer",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "customer_id": {
-                                "type": "string",
-                                "description": "The Shopify customer ID",
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Max results (default 10, max 50)",
-                            },
+                "name": "shopify_get_customer_orders",
+                "description": "Get order history for a specific customer",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "customer_id": {
+                            "type": "string",
+                            "description": "The Shopify customer ID",
                         },
-                        "required": ["customer_id"],
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 10, max 50)",
+                        },
                     },
+                    "required": ["customer_id"],
                 },
             },
         ]

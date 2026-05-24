@@ -267,7 +267,7 @@ async def realtime_websocket(
         client_logger.info("websocket_closed")
 
 
-async def _bridge_audio_streams(
+async def _bridge_audio_streams(  # noqa: PLR0915
     client_ws: WebSocket,
     realtime_session: GPTRealtimeSession,
     logger: Any,
@@ -335,6 +335,17 @@ async def _bridge_audio_streams(
                         )
                         await realtime_session.handle_function_call_event(event)
 
+                    elif event_type == "session.updated":
+                        session_data = getattr(event, "session", None)
+                        tool_count = len(getattr(session_data, "tools", []) or [])
+                        audio_data = getattr(session_data, "audio", None)
+                        audio_input = getattr(audio_data, "input", None) if audio_data else None
+                        logger.warning(
+                            "session_applied",
+                            tool_count=tool_count,
+                            has_transcription=bool(getattr(audio_input, "transcription", None)),
+                        )
+
                     # Forward events to client as JSON
                     await client_ws.send_json(
                         {
@@ -377,7 +388,7 @@ async def _bridge_audio_streams(
 
 
 @webrtc_router.post("/session/{agent_id}")
-async def create_webrtc_session(  # noqa: PLR0915
+async def create_webrtc_session(  # noqa: PLR0912, PLR0915
     agent_id: str,
     workspace_id: str,
     request: Request,

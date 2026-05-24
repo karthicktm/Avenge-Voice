@@ -896,6 +896,7 @@ class GPTRealtimeSession:
             turn_detection = {
                 "type": "semantic_vad",
                 "eagerness": "high",
+                "interrupt_response": False,  # v2 default is True; PSTN noise can cancel mid-tool-call responses
             }
         else:
             turn_detection = {
@@ -1012,59 +1013,6 @@ class GPTRealtimeSession:
         )
 
         return result
-
-    async def process_realtime_events(self) -> None:
-        """Process events from OpenAI Realtime API using official SDK.
-
-        This is the main event loop that:
-        1. Receives events from OpenAI
-        2. Handles tool calls by routing to internal tool handlers
-        3. Sends responses back to OpenAI
-        """
-        if not self.connection:
-            raise RuntimeError("Realtime connection not established")
-
-        try:
-            async for event in self.connection:
-                try:
-                    event_type = event.type
-
-                    self.logger.debug("realtime_event_received", event_type=event_type)
-
-                    # Handle function/tool calls
-                    if event_type == "response.function_call_arguments.done":
-                        await self.handle_function_call_event(event)
-
-                    # Handle audio output
-                    elif event_type == "response.audio.delta":
-                        pass
-
-                    # Log what the user said
-                    elif event_type == "conversation.item.input_audio_transcription.completed":
-                        transcript = getattr(event, "transcript", "") or ""
-                        self.logger.warning(
-                            "user_said",
-                            transcript=transcript,
-                        )
-
-                    # Log what the LLM said (full response text, fires once per response)
-                    elif event_type == "response.output_audio_transcript.done":
-                        transcript = getattr(event, "transcript", "") or ""
-                        self.logger.warning(
-                            "llm_said",
-                            transcript=transcript,
-                        )
-
-                    # Handle errors
-                    elif event_type == "error":
-                        self.logger.error("realtime_api_error", error=event.error)
-
-                except Exception as e:
-                    self.logger.exception("event_processing_error", error=str(e))
-
-        except Exception as e:
-            self.logger.exception("realtime_event_loop_error", error=str(e))
-            raise
 
     async def handle_function_call_event(self, event: Any) -> dict[str, Any]:  # noqa: PLR0912, PLR0915
         """Handle function call from GPT Realtime.
@@ -1252,6 +1200,7 @@ class GPTRealtimeSession:
                                 else []
                             )
                             wf_session: dict[str, Any] = {
+                                "type": "realtime",
                                 "tool_choice": "auto" if post_cat_tools else "none",
                             }
                             if post_cat_tools:
@@ -1273,6 +1222,7 @@ class GPTRealtimeSession:
                                 else []
                             )
                             farewell_session: dict[str, Any] = {
+                                "type": "realtime",
                                 "instructions": (
                                     "The fault report call summary has just been delivered. "
                                     "The call is now CONCLUDED. "
@@ -1508,7 +1458,7 @@ class GPTRealtimeSession:
                     item={
                         "type": "message",
                         "role": "assistant",
-                        "content": [{"type": "text", "text": "Understood. I'm ready."}],
+                        "content": [{"type": "output_text", "text": "Understood. I'm ready."}],
                     }
                 )
 
