@@ -539,9 +539,21 @@ async def _handle_twilio_stream(  # noqa: PLR0915
                     if enable_transcript and transcript_text:
                         realtime_session.add_user_transcript(transcript_text)
 
+                elif event_type == "conversation.item.input_audio_transcription.delta":
+                    # Streaming delta — presence confirms transcription IS running
+                    delta = getattr(event, "delta", "") or ""
+                    if delta:
+                        log.warning("user_transcription_delta", delta_len=len(delta))
+
                 elif event_type == "conversation.item.input_audio_transcription.failed":
                     err = getattr(event, "error", None)
                     log.warning("transcription_failed", error=str(err))
+
+                elif event_type == "conversation.item.created":
+                    # Fired whenever a conversation item is created (user audio, tool result, etc.)
+                    item = getattr(event, "item", None)
+                    item_type = getattr(item, "type", "unknown") if item else "unknown"
+                    log.warning("conversation_item_created", item_type=item_type)
 
                 elif event_type == "response.output_audio_transcript.delta":
                     if enable_transcript:
@@ -966,6 +978,16 @@ async def _handle_telnyx_stream(  # noqa: PLR0915
                     log.warning("user_said", transcript=transcript_text)
                     if enable_transcript and transcript_text:
                         realtime_session.add_user_transcript(transcript_text)
+
+                elif event_type == "conversation.item.input_audio_transcription.delta":
+                    delta = getattr(event, "delta", "") or ""
+                    if delta:
+                        log.warning("user_transcription_delta", delta_len=len(delta))
+
+                elif event_type == "conversation.item.created":
+                    item = getattr(event, "item", None)
+                    item_type = getattr(item, "type", "unknown") if item else "unknown"
+                    log.warning("conversation_item_created", item_type=item_type)
 
                 elif event_type == "conversation.item.input_audio_transcription.failed":
                     err = getattr(event, "error", None)
