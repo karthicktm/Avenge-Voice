@@ -909,7 +909,7 @@ class GPTRealtimeSession:
         # WebRTC sessions keep PCM at 24kHz. agent_config["is_telephony"] is set by telephony_ws.py.
         is_telephony = _is_telephony_session
         audio_fmt: dict[str, Any] = (
-            {"type": "audio/pcmu"} if is_telephony else {"type": "audio/pcm"}
+            {"type": "audio/pcmu"} if is_telephony else {"type": "audio/pcm", "rate": 24000}
         )
 
         transcription_model = self.agent_config.get("transcription_model") or "gpt-4o-transcribe"
