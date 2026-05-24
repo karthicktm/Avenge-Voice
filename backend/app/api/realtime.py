@@ -528,8 +528,10 @@ async def create_webrtc_session(  # noqa: PLR0912, PLR0915
             "silence_duration_ms": agent.turn_detection_silence_duration_ms or 500,
         }
 
+    pcm_fmt: dict[str, Any] = {"type": "audio/pcm", "rate": 24000}
+
     audio_input: dict[str, Any] = {
-        "format": {"type": "audio/pcm"},
+        "format": pcm_fmt,
         "transcription": {"model": agent.transcription_model or "gpt-4o-transcribe"},
     }
     if turn_detection is not None:
@@ -543,7 +545,7 @@ async def create_webrtc_session(  # noqa: PLR0912, PLR0915
         "audio": {
             "input": audio_input,
             "output": {
-                "format": {"type": "audio/pcm"},
+                "format": pcm_fmt,
                 "voice": agent_voice,
                 "speed": 1.1,
             },
