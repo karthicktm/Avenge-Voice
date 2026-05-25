@@ -256,3 +256,35 @@ async def debug_lookup_scope(
         "visible_collections": collections,
         "total_collections": len(collections),
     }
+
+
+class EnrichTreeRequest(BaseModel):
+    workspace_id: str
+    tree_name: str
+    user_id: int
+    overwrite: bool = False
+
+
+@router.post("/category-trees/enrich", dependencies=[Depends(_verify_internal_secret)])
+async def enrich_category_tree(
+    body: EnrichTreeRequest,
+) -> dict[str, Any]:
+    """Trigger metadata enrichment (including action_type) for a category tree.
+
+    Runs synchronously — may take several minutes for large trees.
+    """
+    from app.core.config import settings
+    from app.services.category_enrichment import enrich_example_queries
+
+    openai_api_key = settings.OPENAI_API_KEY
+    if not openai_api_key:
+        raise HTTPException(status_code=500, detail="No OPENAI_API_KEY configured")
+
+    result = await enrich_example_queries(
+        workspace_id=uuid.UUID(body.workspace_id),
+        tree_name=body.tree_name,
+        user_id=body.user_id,
+        openai_api_key=openai_api_key,
+        overwrite=body.overwrite,
+    )
+    return result

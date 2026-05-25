@@ -32,6 +32,7 @@ _MODEL = "gpt-4o"
 # Fields that enrich() will generate. Order matters for the prompt.
 _ENRICH_FIELDS = [
     "example_query",
+    "action_type",
     "urgency_level",
     "self_resolution",
     "requires_property_info",
@@ -112,7 +113,11 @@ async def enrich_example_queries(  # noqa: PLR0912,PLR0915
             # If the node has a support_type field (from "Felanmälan / Support" XLSX column),
             # skip generating can_report_fault and requires_manual_support — those are covered.
             if is_leaf:
-                excluded = {"can_report_fault", "requires_manual_support"} if meta.get("support_type") else set()
+                excluded = (
+                    {"can_report_fault", "requires_manual_support"}
+                    if meta.get("support_type")
+                    else set()
+                )
                 eligible_fields = [f for f in _ENRICH_FIELDS if f not in excluded]
             else:
                 eligible_fields = ["example_query"]
@@ -167,6 +172,18 @@ async def _generate_metadata(
             "10 short search terms (single words or 2-word phrases) a tenant might say "
             "or type when reporting this issue. Use the same language as the category path. "
             "Return as a single space-separated string."
+        ),
+        "action_type": (
+            "Workflow routing type for this category. Return exactly one of: "
+            "emergency (fire, gas leak, explosion, evacuation, immediate danger to life), "
+            "fault (any maintenance request, repair, broken equipment, leaks, elevator, "
+            "heating, plumbing, electrical, noise, mold, appliances), "
+            "support (billing, payments, invoices, rent, deposits, manual handling), "
+            "information (general questions answerable from knowledge base), "
+            "lookup (questions needing property-specific data), "
+            "transfer (caller wants a human agent), "
+            "appointment (scheduling a visit or appointment). "
+            "Return only the single lowercase keyword."
         ),
         "urgency_level": (
             "Issue urgency/priority. Use 'Prio 1' for urgent (health/safety risk, major damage), "
