@@ -272,19 +272,23 @@ async def enrich_category_tree(
     """Trigger metadata enrichment (including action_type) for a category tree.
 
     Runs synchronously — may take several minutes for large trees.
+    Uses the workspace-scoped OpenAI key (same as the normal enrich endpoint).
     """
-    from app.core.config import settings
+    from app.core.config import settings as app_settings
+    from app.services.category_discovery_worker import _get_openai_key
     from app.services.category_enrichment import enrich_example_queries
 
-    openai_api_key = settings.OPENAI_API_KEY
+    workspace_uuid = uuid.UUID(body.workspace_id)
+    openai_api_key = await _get_openai_key(body.user_id, workspace_uuid)
+    if not openai_api_key:
+        openai_api_key = app_settings.OPENAI_API_KEY
     if not openai_api_key:
         raise HTTPException(status_code=500, detail="No OPENAI_API_KEY configured")
 
-    result = await enrich_example_queries(
-        workspace_id=uuid.UUID(body.workspace_id),
+    return await enrich_example_queries(
+        workspace_id=workspace_uuid,
         tree_name=body.tree_name,
         user_id=body.user_id,
         openai_api_key=openai_api_key,
         overwrite=body.overwrite,
     )
-    return result
