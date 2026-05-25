@@ -1404,6 +1404,35 @@ class GPTRealtimeSession:
                 "what happens next. " + self._LANG_NOTE
             )
 
+    def _build_workflow_entry_routing_note(self) -> str:
+        """Return a mandatory routing instruction for the first agent turn.
+
+        When a workflow is active the executor starts at the entry node.
+        If the next node is a categorize node we tell the agent to call
+        `categorize` immediately after the caller states their reason for
+        calling — without this the agent free-styles instead of routing.
+        """
+        if not self.workflow_executor:
+            return ""
+        ex = self.workflow_executor
+        next_id = ex.route()
+        if not next_id:
+            return ""
+        next_node = ex.nodes_by_id.get(next_id)
+        if not next_node or next_node.get("type") != "categorize":
+            return ""
+        cfg = next_node.get("config") or {}
+        tree_name = cfg.get("tree_name", "")
+        if not tree_name:
+            return ""
+        return (
+            f"\n\nWORKFLOW ROUTING (mandatory): After the caller tells you why they are "
+            f"calling, you MUST call the `categorize` tool immediately with "
+            f'tree_name="{tree_name}" and the caller\'s words as the `text` argument. '
+            f"Do NOT use any other tool or give a conversational reply until `categorize` "
+            f"has been called. The result will tell you exactly what to do next."
+        )
+
     async def trigger_initial_greeting(self) -> bool:
         """Inject instructions into the conversation and optionally speak a greeting.
 
@@ -1441,10 +1470,13 @@ class GPTRealtimeSession:
             # triggering VAD and cancelling the greeting response.
             await self.connection.input_audio_buffer.clear()
 
+            wf_routing = self._build_workflow_entry_routing_note()
+
             if greeting:
                 # Inject instructions + greeting command as a single user message.
                 context_text = (
                     f'{instructions}\n\nNow begin the call by saying exactly: "{greeting}"'
+                    + wf_routing
                 ).strip()
                 await self.connection.conversation.item.create(
                     item={
@@ -1457,11 +1489,12 @@ class GPTRealtimeSession:
             else:
                 # No greeting — still inject instructions as a synthetic exchange so
                 # the model has them in conversation context, not just session settings.
+                context_text = (instructions + wf_routing).strip()
                 await self.connection.conversation.item.create(
                     item={
                         "type": "message",
                         "role": "user",
-                        "content": [{"type": "input_text", "text": instructions}],
+                        "content": [{"type": "input_text", "text": context_text}],
                     }
                 )
                 await self.connection.conversation.item.create(
