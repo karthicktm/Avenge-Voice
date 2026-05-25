@@ -601,7 +601,7 @@ async def create_webrtc_session(  # noqa: PLR0912, PLR0915
 
 
 @webrtc_router.get("/token/{agent_id}")
-async def get_ephemeral_token(  # noqa: PLR0915
+async def get_ephemeral_token(  # noqa: PLR0912,PLR0915
     agent_id: str,
     current_user: VerifiedUser,
     db: AsyncSession = Depends(get_db),
@@ -770,6 +770,53 @@ async def get_ephemeral_token(  # noqa: PLR0915
                 use_best_practices=agent.use_best_practices,
             )
 
+            # Workflow initialisation — if agent has a workflow, build executor,
+            # append routing note to instructions, and store state in Redis so
+            # tool calls can restore the executor without a persistent session.
+            wf_session_id: str | None = None
+            if agent.workflow_id:
+                try:
+                    import json as _json
+
+                    from app.models.workflow import Workflow as _Workflow
+                    from app.services.workflow_engine.executor import WorkflowExecutor
+                    from app.services.workflow_engine.llm_client import LLMConfig
+
+                    wf_result = await db.execute(
+                        select(_Workflow).where(_Workflow.id == agent.workflow_id)
+                    )
+                    wf = wf_result.scalar_one_or_none()
+                    if wf and wf.nodes:
+                        wf_llm_config = LLMConfig(
+                            provider="openai", model="gpt-4o-mini", api_key=api_key
+                        )
+                        executor = WorkflowExecutor(
+                            workflow_id=agent.workflow_id,
+                            nodes=wf.nodes,
+                            edges=wf.edges or [],
+                            llm_config=wf_llm_config,
+                        )
+                        routing_note = executor.build_entry_routing_note()
+                        if routing_note:
+                            instructions_with_language += routing_note
+
+                        wf_session_id = str(uuid.uuid4())
+                        from app.db.redis import get_redis
+
+                        redis = await get_redis()
+                        await redis.set(
+                            f"wf_session:{wf_session_id}",
+                            _json.dumps(executor.to_state()),
+                            ex=3600,
+                        )
+                        token_logger.warning(
+                            "wf_session_created",
+                            wf_session_id=wf_session_id,
+                            workflow_id=str(agent.workflow_id),
+                        )
+                except Exception:
+                    token_logger.exception("wf_session_init_failed_continuing")
+
             # Return token data with agent info and tools
             # GA /client_secrets response: {value: "ek_...", expires_at: ..., session: {...}}
             return {
@@ -790,6 +837,7 @@ async def get_ephemeral_token(  # noqa: PLR0915
                 },
                 "session_config": session_config,
                 "tools": tools,
+                "wf_session_id": wf_session_id,
             }
 
     except httpx.RequestError as e:

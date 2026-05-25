@@ -676,9 +676,14 @@ export default function TestAgentPage() {
 
       const tokenData = await tokenResponse.json();
       const ephemeralKey = tokenData.client_secret?.value;
+      const wfSessionId: string | null = tokenData.wf_session_id ?? null;
 
       if (!ephemeralKey) {
         throw new Error("No ephemeral key received from server");
+      }
+
+      if (wfSessionId) {
+        console.log("[WebRTC] Workflow session initialised:", wfSessionId);
       }
 
       console.log("[WebRTC] Got ephemeral token:", ephemeralKey.substring(0, 10) + "...");
@@ -970,11 +975,18 @@ export default function TestAgentPage() {
                   tool_name: name,
                   arguments: JSON.parse(argsJson),
                   agent_id: selectedAgentId,
+                  ...(wfSessionId && { wf_session_id: wfSessionId }),
                 }),
               });
 
               const toolResult = await toolResponse.json();
               console.log("[WebRTC] Tool result:", toolResult);
+
+              // Extract and strip workflow_instruction before sending result to model
+              const workflowInstruction: string | null = toolResult.workflow_instruction ?? null;
+              if (workflowInstruction) {
+                delete toolResult.workflow_instruction;
+              }
 
               // Send function call output back to the model
               const outputEvent = {
@@ -986,6 +998,22 @@ export default function TestAgentPage() {
                 },
               };
               dataChannel.send(JSON.stringify(outputEvent));
+
+              // If the workflow returned a next-node instruction, inject it as a
+              // synthetic user turn so the model follows the routing immediately.
+              if (workflowInstruction) {
+                dataChannel.send(
+                  JSON.stringify({
+                    type: "conversation.item.create",
+                    item: {
+                      type: "message",
+                      role: "user",
+                      content: [{ type: "input_text", text: workflowInstruction }],
+                    },
+                  })
+                );
+                console.log("[WebRTC] Injected workflow instruction for next node");
+              }
 
               // Trigger response generation
               const responseCreate = { type: "response.create" };

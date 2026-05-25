@@ -27,6 +27,7 @@ class ToolExecuteRequest(BaseModel):
     tool_name: str
     arguments: dict[str, Any]
     agent_id: str
+    wf_session_id: str | None = None
 
 
 @router.post("/execute")
@@ -98,7 +99,7 @@ async def execute_tool(
         # Get tool_configs from agent if available
         tool_configs = agent.tool_configs if agent else {}
 
-        # Create tool registry and execute tool
+        # Create tool registry (needed for prewarmed tree even in workflow path)
         tool_registry = ToolRegistry(
             db,
             user_id,
@@ -108,6 +109,25 @@ async def execute_tool(
             openai_api_key=openai_api_key,
             tool_configs=tool_configs or {},
         )
+
+        # Workflow intercept — if this is a categorize call inside a workflow session,
+        # run it through the WorkflowExecutor instead of the bare tool registry.
+        if request.tool_name == "categorize" and request.wf_session_id:
+            wf_result = await _run_workflow_categorize(
+                wf_session_id=request.wf_session_id,
+                arguments=request.arguments,
+                tool_registry=tool_registry,
+                openai_api_key=openai_api_key or "",
+                log=tool_logger,
+            )
+            if wf_result is not None:
+                tool_logger.warning(
+                    "wf_categorize_intercepted_webrtc",
+                    label=wf_result.get("label"),
+                    action_type=wf_result.get("action_type"),
+                )
+                return wf_result
+
         result = await tool_registry.execute_tool(request.tool_name, request.arguments)
 
         tool_logger.info("tool_execution_completed", success=result.get("success", False))
@@ -117,3 +137,80 @@ async def execute_tool(
     except Exception as e:
         tool_logger.exception("tool_execution_failed", error=str(e))
         raise HTTPException(status_code=500, detail=f"Tool execution failed: {e!s}") from e
+
+
+async def _run_workflow_categorize(
+    wf_session_id: str,
+    arguments: dict[str, Any],
+    tool_registry: ToolRegistry,
+    openai_api_key: str,
+    log: Any,
+) -> dict[str, Any] | None:
+    """Run a categorize tool call through the WorkflowExecutor for a WebRTC session.
+
+    Loads executor state from Redis, runs categorize, persists updated state,
+    and returns the tool result plus the next node's resolved instruction.
+    Returns None if the session is not found or an error occurs (caller falls back).
+    """
+    import json as _json
+
+    try:
+        from app.db.redis import get_redis
+        from app.services.workflow_engine.executor import WorkflowExecutor
+        from app.services.workflow_engine.llm_client import LLMConfig
+
+        redis = await get_redis()
+        raw = await redis.get(f"wf_session:{wf_session_id}")
+        if not raw:
+            log.warning("wf_session_not_found", wf_session_id=wf_session_id)
+            return None
+
+        state = _json.loads(raw)
+        llm_config = LLMConfig(provider="openai", model="gpt-4o-mini", api_key=openai_api_key)
+        executor = WorkflowExecutor.from_state(state, llm_config)
+
+        # Auto-advance from entry to categorize node (same as telephony path)
+        cur_type = (executor.current_node or {}).get("type", "")
+        if cur_type == "entry":
+            next_id = executor.route()
+            if next_id and (executor.nodes_by_id.get(next_id) or {}).get("type") == "categorize":
+                executor.current_node_id = next_id
+                cur_type = "categorize"
+
+        if cur_type != "categorize":
+            log.warning("wf_session_not_at_categorize", cur_type=cur_type)
+            return None
+
+        text = str(arguments.get("text", ""))
+        node_cfg: dict[str, Any] = (executor.current_node or {}).get("config") or {}
+        tree_name = str(arguments.get("tree_name", "") or node_cfg.get("tree_name", ""))
+        prewarmed = tool_registry.get_prewarmed_tree(tree_name) if tree_name else []
+
+        await executor.run_categorize(text, prewarmed)
+
+        # Persist updated state back to Redis
+        await redis.set(
+            f"wf_session:{wf_session_id}",
+            _json.dumps(executor.to_state()),
+            ex=3600,
+        )
+
+        result: dict[str, Any] = {
+            "success": True,
+            "code": executor.context_bag.get("code"),
+            "label": executor.context_bag.get("label"),
+            "confidence": executor.context_bag.get("confidence"),
+            "resolution_layer": executor.context_bag.get("resolution_layer"),
+            "action_type": executor.context_bag.get("action_type"),
+        }
+
+        # Include next node instruction so the frontend can inject it into the session
+        workflow_instruction = executor.build_node_instruction()
+        if workflow_instruction:
+            result["workflow_instruction"] = workflow_instruction
+
+        return result
+
+    except Exception:
+        log.exception("wf_categorize_webrtc_failed")
+        return None

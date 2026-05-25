@@ -308,3 +308,52 @@ class WorkflowExecutor:
         cfg = node.get("config") or {}
         template = cfg.get("template", "")
         return self.resolve_template(template) if template else ""
+
+    def build_entry_routing_note(self) -> str:
+        """Return a routing instruction to inject at session start.
+
+        Tells the model which tool to call once the caller has stated their
+        issue.  Returns empty string if the next node is not a categorize node.
+        """
+        next_id = self.route()
+        if not next_id:
+            return ""
+        next_node = self.nodes_by_id.get(next_id)
+        if not next_node or next_node.get("type") != "categorize":
+            return ""
+        cfg = next_node.get("config") or {}
+        tree_name = cfg.get("tree_name", "")
+        if not tree_name:
+            return ""
+        return (
+            f"\n\nWORKFLOW ROUTING: Once the caller has clearly stated their issue or "
+            f"reason for calling, call the `categorize` tool with "
+            f'tree_name="{tree_name}" and quote the caller\'s actual words verbatim as '
+            f"the `text` argument. Use only what the caller actually said — do not "
+            f"paraphrase or invent details. The result will tell you what to do next."
+        )
+
+    def to_state(self) -> dict[str, Any]:
+        """Serialise mutable state for Redis storage."""
+        return {
+            "workflow_id": str(self.workflow_id),
+            "nodes": list(self.nodes_by_id.values()),
+            "edges": self.edges,
+            "current_node_id": self.current_node_id,
+            "context_bag": self.context_bag,
+        }
+
+    @classmethod
+    def from_state(cls, state: dict[str, Any], llm_config: LLMConfig) -> WorkflowExecutor:
+        """Restore an executor from a serialised state dict."""
+        import uuid as _uuid
+
+        ex = cls(
+            workflow_id=_uuid.UUID(state["workflow_id"]),
+            nodes=state["nodes"],
+            edges=state["edges"],
+            llm_config=llm_config,
+        )
+        ex.current_node_id = state["current_node_id"]
+        ex.context_bag = state["context_bag"]
+        return ex
