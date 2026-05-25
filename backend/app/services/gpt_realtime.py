@@ -916,8 +916,8 @@ class GPTRealtimeSession:
         transcription_cfg: dict[str, Any] = {"model": transcription_model}
         agent_language = self.agent_config.get("language")
         if agent_language and agent_language != "auto":
-            # ISO-639-1 hint improves accuracy and latency for non-English agents
-            transcription_cfg["language"] = agent_language
+            # OpenAI Realtime API only accepts ISO-639-1 base codes (e.g. "sv", not "sv-SE")
+            transcription_cfg["language"] = agent_language.split("-")[0]
 
         audio_input: dict[str, Any] = {
             "format": audio_fmt,
