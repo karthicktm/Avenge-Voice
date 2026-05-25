@@ -1070,40 +1070,59 @@ class GPTRealtimeSession:
             # Workflow categorize intercept: use multilingual matcher for flat/AMEDTEC trees.
             # run_categorize() populates context_bag + advances current_node_id, so the
             # legacy _build_workflow_response_instructions() context-bag update is skipped.
+            #
+            # If the executor is still on the entry node (session start), auto-advance to
+            # the first reachable categorize node so a single agent call covers both the
+            # advance step and the full executor intercept (no two-call bootstrap needed).
             _wf_routed = False
-            if (
-                name == "categorize"
-                and self.workflow_executor is not None
-                and (self.workflow_executor.current_node or {}).get("type") == "categorize"
-            ):
-                _text = str(arguments.get("text", ""))
-                _node_cfg: dict[str, Any] = (self.workflow_executor.current_node or {}).get(
-                    "config"
-                ) or {}
-                _tree_name = str(arguments.get("tree_name", "") or _node_cfg.get("tree_name", ""))
-                _prewarmed: list[dict[str, Any]] = (
-                    self.tool_registry.get_prewarmed_tree(_tree_name) if self.tool_registry else []
-                )
-                try:
-                    await self.workflow_executor.run_categorize(_text, _prewarmed)
-                    _ex = self.workflow_executor
-                    result: dict[str, Any] = {
-                        "success": True,
-                        "code": _ex.context_bag.get("code"),
-                        "label": _ex.context_bag.get("label"),
-                        "confidence": _ex.context_bag.get("confidence"),
-                        "resolution_layer": _ex.context_bag.get("resolution_layer"),
-                        "action_type": _ex.context_bag.get("action_type"),
-                    }
-                    _wf_routed = True
-                    self.logger.warning(
-                        "wf_categorize_intercepted",
-                        tree_name=_tree_name,
-                        prewarmed_count=len(_prewarmed),
-                        label=result.get("label"),
+            if name == "categorize" and self.workflow_executor is not None:
+                _ex = self.workflow_executor
+                _cur_type = (_ex.current_node or {}).get("type", "")
+                if _cur_type == "entry":
+                    _next_id = _ex.route()
+                    if (
+                        _next_id
+                        and (_ex.nodes_by_id.get(_next_id) or {}).get("type") == "categorize"
+                    ):
+                        _ex.current_node_id = _next_id
+                        _cur_type = "categorize"
+                        self.logger.warning(
+                            "wf_entry_advanced_to_categorize", next_node_id=_next_id
+                        )
+
+                if _cur_type == "categorize":
+                    _text = str(arguments.get("text", ""))
+                    _node_cfg: dict[str, Any] = (_ex.current_node or {}).get("config") or {}
+                    _tree_name = str(
+                        arguments.get("tree_name", "") or _node_cfg.get("tree_name", "")
                     )
-                except Exception:
-                    self.logger.exception("wf_categorize_intercept_failed_falling_back")
+                    _prewarmed: list[dict[str, Any]] = (
+                        self.tool_registry.get_prewarmed_tree(_tree_name)
+                        if self.tool_registry
+                        else []
+                    )
+                    try:
+                        await _ex.run_categorize(_text, _prewarmed)
+                        result: dict[str, Any] = {
+                            "success": True,
+                            "code": _ex.context_bag.get("code"),
+                            "label": _ex.context_bag.get("label"),
+                            "confidence": _ex.context_bag.get("confidence"),
+                            "resolution_layer": _ex.context_bag.get("resolution_layer"),
+                            "action_type": _ex.context_bag.get("action_type"),
+                        }
+                        _wf_routed = True
+                        self.logger.warning(
+                            "wf_categorize_intercepted",
+                            tree_name=_tree_name,
+                            prewarmed_count=len(_prewarmed),
+                            label=result.get("label"),
+                            action_type=_ex.context_bag.get("action_type"),
+                        )
+                    except Exception:
+                        self.logger.exception("wf_categorize_intercept_failed_falling_back")
+                        result = await self.handle_tool_call({"name": name, "arguments": arguments})
+                else:
                     result = await self.handle_tool_call({"name": name, "arguments": arguments})
             else:
                 result = await self.handle_tool_call({"name": name, "arguments": arguments})
@@ -1426,11 +1445,11 @@ class GPTRealtimeSession:
         if not tree_name:
             return ""
         return (
-            f"\n\nWORKFLOW ROUTING (mandatory): After the caller tells you why they are "
-            f"calling, you MUST call the `categorize` tool immediately with "
-            f'tree_name="{tree_name}" and the caller\'s words as the `text` argument. '
-            f"Do NOT use any other tool or give a conversational reply until `categorize` "
-            f"has been called. The result will tell you exactly what to do next."
+            f"\n\nWORKFLOW ROUTING: Once the caller has clearly stated their issue or "
+            f"reason for calling, call the `categorize` tool with "
+            f'tree_name="{tree_name}" and quote the caller\'s actual words verbatim as '
+            f"the `text` argument. Use only what the caller actually said — do not "
+            f"paraphrase or invent details. The result will tell you what to do next."
         )
 
     async def trigger_initial_greeting(self) -> bool:
