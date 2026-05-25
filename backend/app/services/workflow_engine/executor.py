@@ -56,6 +56,79 @@ class WorkflowExecutor:
         first = next(iter(self.nodes_by_id), "")
         return str(first)
 
+    # ── action_type inference ─────────────────────────────────────────────────
+
+    _EMERGENCY_KEYWORDS: frozenset[str] = frozenset(
+        ["brand", "nödsituation", "gasutsläpp", "gasläcka", "explosion", "evakuering"]
+    )
+    _FAULT_KEYWORDS: frozenset[str] = frozenset(
+        [
+            "felanmälan",
+            "hiss",
+            "hissfråga",
+            "ventilation",
+            "värme",
+            "vatten",
+            "avlopp",
+            "läcka",
+            "läckage",
+            "el ",
+            "elfel",
+            "belysning",
+            "dörr",
+            "fönster",
+            "lås",
+            "kök",
+            "badrum",
+            "toalett",
+            "balkong",
+            "trasig",
+            "reparation",
+            "underhåll",
+            "skada",
+            "buller",
+            "störning",
+            "fukt",
+            "mögel",
+            "brand",
+            "tvättmaskin",
+            "diskmaskin",
+            "spis",
+            "kyl",
+            "frys",
+        ]
+    )
+    _SUPPORT_KEYWORDS: frozenset[str] = frozenset(
+        [
+            "betalning",
+            "betala hyra",
+            "hyresavi",
+            "faktura",
+            "avi",
+            "deposition",
+            "skuld",
+            "inkasso",
+            "hyresrabatt",
+            "autogiro",
+            "bankgiro",
+        ]
+    )
+
+    def _infer_action_type(self, label: str, path_string: str) -> str:
+        """Infer action_type from category label/path when not set in tree metadata.
+
+        Used as a fallback when the category tree was built without action_type
+        metadata. Keyword rules cover the most common real-estate support scenarios.
+        """
+        text = (label + " " + path_string).lower()
+        if any(kw in text for kw in self._EMERGENCY_KEYWORDS):
+            return "emergency"
+        if any(kw in text for kw in self._FAULT_KEYWORDS):
+            return "fault"
+        if any(kw in text for kw in self._SUPPORT_KEYWORDS):
+            return "support"
+        return "information"
+
     # ── categorize step ───────────────────────────────────────────────────────
 
     async def run_categorize(
@@ -85,12 +158,27 @@ class WorkflowExecutor:
 
         if matched_node:
             meta = matched_node.get("metadata") or {}
+            action_type = meta.get("action_type")
+            label = matched_node.get("label") or ""
+            path_string = matched_node.get("path", "") or ""
+
+            # When the category tree doesn't have action_type set in metadata,
+            # infer it from the matched label and path using keyword rules.
+            if not action_type:
+                action_type = self._infer_action_type(label, path_string)
+                self._log.warning(
+                    "wf_action_type_inferred",
+                    label=label,
+                    path=path_string,
+                    inferred=action_type,
+                )
+
             self.context_bag.update(
                 {
                     "code": matched_node.get("code"),
-                    "label": matched_node.get("label"),
-                    "path_string": matched_node.get("path", ""),
-                    "action_type": meta.get("action_type"),
+                    "label": label,
+                    "path_string": path_string,
+                    "action_type": action_type,
                     "priority_order": meta.get("priority_order"),
                     "transfer_target": meta.get("transfer_target"),
                     "email_target": meta.get("email_target"),
@@ -106,8 +194,8 @@ class WorkflowExecutor:
             )
             self._log.info(
                 "wf_categorize_done",
-                label=matched_node.get("label"),
-                action_type=meta.get("action_type"),
+                label=label,
+                action_type=action_type,
                 layer=layer,
             )
         else:
