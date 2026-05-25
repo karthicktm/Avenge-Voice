@@ -261,7 +261,8 @@ async def debug_lookup_scope(
 class EnrichTreeRequest(BaseModel):
     workspace_id: str
     tree_name: str
-    user_id: int
+    user_id: int = 1
+    openai_api_key: str | None = None
     overwrite: bool = False
 
 
@@ -279,7 +280,9 @@ async def enrich_category_tree(
     from app.services.category_enrichment import enrich_example_queries
 
     workspace_uuid = uuid.UUID(body.workspace_id)
-    openai_api_key = await _get_openai_key(body.user_id, workspace_uuid)
+    openai_api_key = body.openai_api_key
+    if not openai_api_key:
+        openai_api_key = await _get_openai_key(body.user_id, workspace_uuid)
     if not openai_api_key:
         openai_api_key = app_settings.OPENAI_API_KEY
     if not openai_api_key:
