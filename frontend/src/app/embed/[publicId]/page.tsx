@@ -573,6 +573,9 @@ export default function EmbedPage() {
           : undefined;
 
         // OpenAI Realtime v2 session.update format — audio config nested under audio.input/output
+        // rate: 24000 is required for audio/pcm in v2; omitting it causes the API to silently
+        // drop the entire audio.input section, disabling transcription.
+        const pcmFmt = { type: "audio/pcm", rate: 24000 };
         const sessionUpdate = {
           type: "session.update",
           session: {
@@ -581,7 +584,7 @@ export default function EmbedPage() {
             output_modalities: ["audio"],
             audio: {
               input: {
-                format: { type: "audio/pcm" },
+                format: pcmFmt,
                 transcription: {
                   model: "gpt-4o-transcribe",
                   language: transcriptionLanguage,
@@ -594,7 +597,7 @@ export default function EmbedPage() {
                 },
               },
               output: {
-                format: { type: "audio/pcm" },
+                format: pcmFmt,
                 voice: tokenData.agent.voice,
                 speed: 1.0,
               },

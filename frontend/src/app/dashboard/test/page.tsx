@@ -793,8 +793,11 @@ export default function TestAgentPage() {
                 };
 
         // OpenAI Realtime v2 session.update format — audio config nested under audio.input/output
+        // rate: 24000 is required for audio/pcm in v2; omitting it causes the API to silently
+        // drop the entire audio.input section, disabling transcription.
+        const pcmFmt = { type: "audio/pcm", rate: 24000 };
         const audioInput: Record<string, unknown> = {
-          format: { type: "audio/pcm" },
+          format: pcmFmt,
           transcription: {
             model: "gpt-4o-transcribe",
             language: getWhisperCode(language) ?? undefined,
@@ -813,7 +816,7 @@ export default function TestAgentPage() {
             audio: {
               input: audioInput,
               output: {
-                format: { type: "audio/pcm" },
+                format: pcmFmt,
                 voice: voice,
                 speed: 1.0,
               },
