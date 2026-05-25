@@ -982,13 +982,9 @@ export default function TestAgentPage() {
               const toolResult = await toolResponse.json();
               console.log("[WebRTC] Tool result:", toolResult);
 
-              // Extract and strip workflow_instruction before sending result to model
-              const workflowInstruction: string | null = toolResult.workflow_instruction ?? null;
-              if (workflowInstruction) {
-                delete toolResult.workflow_instruction;
-              }
-
-              // Send function call output back to the model
+              // Send function call output back to the model.
+              // workflow_instruction (if present) stays inside the output so the
+              // model sees routing context in one pass — no extra user-message injection.
               const outputEvent = {
                 type: "conversation.item.create",
                 item: {
@@ -998,22 +994,6 @@ export default function TestAgentPage() {
                 },
               };
               dataChannel.send(JSON.stringify(outputEvent));
-
-              // If the workflow returned a next-node instruction, inject it as a
-              // synthetic user turn so the model follows the routing immediately.
-              if (workflowInstruction) {
-                dataChannel.send(
-                  JSON.stringify({
-                    type: "conversation.item.create",
-                    item: {
-                      type: "message",
-                      role: "user",
-                      content: [{ type: "input_text", text: workflowInstruction }],
-                    },
-                  })
-                );
-                console.log("[WebRTC] Injected workflow instruction for next node");
-              }
 
               // Trigger response generation
               const responseCreate = { type: "response.create" };

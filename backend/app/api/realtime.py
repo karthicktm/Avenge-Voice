@@ -814,6 +814,26 @@ async def get_ephemeral_token(  # noqa: PLR0912,PLR0915
                             wf_session_id=wf_session_id,
                             workflow_id=str(agent.workflow_id),
                         )
+
+                        # Pre-warm embeddings for categorize nodes in the background
+                        # so the first categorize call hits cache instead of the DB.
+                        import asyncio as _asyncio
+
+                        async def _prewarm(
+                            _nodes: list[Any],
+                            _reg: Any,
+                            _cfg: Any,
+                        ) -> None:
+                            for _node in _nodes:
+                                if _node.get("type") == "categorize":
+                                    _tn = (_node.get("config") or {}).get("tree_name", "")
+                                    if _tn:
+                                        with contextlib.suppress(Exception):
+                                            await _reg.prewarm_tree_embeddings(_tn, _cfg)
+
+                        _asyncio.create_task(  # noqa: RUF006
+                            _prewarm(wf.nodes, tool_registry, wf_llm_config)
+                        )
                 except Exception:
                     token_logger.exception("wf_session_init_failed_continuing")
 
