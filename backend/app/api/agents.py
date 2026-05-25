@@ -127,6 +127,7 @@ class AgentResponse(BaseModel):
     system_prompt: str
     language: str
     use_best_practices: bool
+    workflow_id: str | None = None
     voice: str
     enabled_tools: list[str]
     enabled_tool_ids: dict[str, list[str]]
@@ -551,6 +552,7 @@ def _agent_to_response(agent: Agent) -> AgentResponse:
         created_at=agent.created_at.isoformat(),
         updated_at=agent.updated_at.isoformat(),
         last_call_at=agent.last_call_at.isoformat() if agent.last_call_at else None,
+        workflow_id=str(agent.workflow_id) if agent.workflow_id else None,
     )
 
 
