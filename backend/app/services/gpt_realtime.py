@@ -678,7 +678,7 @@ class GPTRealtimeSession:
                             self.agent_config["workflow_id"] = str(_a.workflow_id)
                             self.agent_config["workflow_nodes"] = _wf.nodes or []
                             self.agent_config["workflow_edges"] = _wf.edges or []
-                            self.logger.info(
+                            self.logger.warning(
                                 "workflow_autoloaded",
                                 workflow_id=str(_a.workflow_id),
                                 nodes=len(_wf.nodes or []),
@@ -706,7 +706,7 @@ class GPTRealtimeSession:
                     edges=workflow_edges,
                     llm_config=wf_llm_config,
                 )
-                self.logger.info(
+                self.logger.warning(
                     "workflow_executor_initialised",
                     workflow_id=workflow_id_str,
                     nodes=len(workflow_nodes),
@@ -1096,7 +1096,7 @@ class GPTRealtimeSession:
                         "action_type": _ex.context_bag.get("action_type"),
                     }
                     _wf_routed = True
-                    self.logger.info(
+                    self.logger.warning(
                         "wf_categorize_intercepted",
                         tree_name=_tree_name,
                         prewarmed_count=len(_prewarmed),
