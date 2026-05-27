@@ -55,6 +55,7 @@ import {
   Check,
   Settings2,
   PhoneIncoming,
+  Phone,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { getWebhookInfo, configurePhoneNumberWebhook } from "@/lib/api/telephony";
@@ -960,7 +961,14 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
             </Badge>
           </div>
         </div>
-        <AlertDialog>
+        <div className="flex items-center gap-2">
+          <Link href={`/dashboard/agents/${agentId}/test-call`}>
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+              <Phone className="h-3 w-3" />
+              Test Call
+            </Button>
+          </Link>
+          <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="destructive" size="sm" className="h-8">
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
@@ -1015,7 +1023,8 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
-        </AlertDialog>
+          </AlertDialog>
+        </div>
       </div>
 
       <Form {...form}>
