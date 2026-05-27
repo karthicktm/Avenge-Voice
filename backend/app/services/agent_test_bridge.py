@@ -208,7 +208,32 @@ class AgentTestBridge:
     # ── event loops ──────────────────────────────────────────────────────────
 
     async def _caller_event_loop(self) -> None:
-        pass  # implemented in Task 6
+        current_speech = ""
+        async for event in self._caller_conn:
+            if self._stop_event.is_set():
+                break
+            event_type = event.type
+
+            if event_type == "response.audio.delta":
+                audio_b64 = getattr(event, "delta", "")
+                if audio_b64:
+                    await self._caller_audio_queue.put(audio_b64)
+
+            elif event_type == "response.audio_transcript.delta":
+                current_speech += getattr(event, "delta", "")
+                await self.events.put({"type": "caller.speech.delta", "text": current_speech})
+
+            elif event_type == "response.audio_transcript.done":
+                text = getattr(event, "transcript", current_speech)
+                await self.events.put({"type": "caller.speech.done", "text": text})
+                current_speech = ""
+                self._turn_count += 1
+
+            elif event_type == "response.function_call_arguments.done":
+                if getattr(event, "name", "") == "end_call":
+                    await self.events.put({"type": "session.complete", "reason": "end_call"})
+                    self._stop_event.set()
+                    break
 
     async def _agent_event_loop(self) -> None:
         pass  # implemented in Task 7

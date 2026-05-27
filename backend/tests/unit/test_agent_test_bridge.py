@@ -78,6 +78,69 @@ async def test_forward_agent_audio_to_caller_calls_append() -> None:
     bridge._caller_conn.input_audio_buffer.append.assert_called_once_with(audio=b64)
 
 
+@pytest.mark.asyncio
+async def test_caller_event_loop_emits_speech_delta_and_done() -> None:
+    """Caller transcript events are emitted to the events queue."""
+    bridge = _make_bridge()
+
+    delta_event = MagicMock()
+    delta_event.type = "response.audio_transcript.delta"
+    delta_event.delta = "Hello, I need"
+
+    done_event = MagicMock()
+    done_event.type = "response.audio_transcript.done"
+    done_event.transcript = "Hello, I need help."
+
+    stop_event = MagicMock()
+    stop_event.type = "session.created"  # unrecognized — just breaks the loop
+
+    async def _fake_conn_iter():
+        yield delta_event
+        yield done_event
+        bridge._stop_event.set()
+        yield stop_event
+
+    bridge._caller_conn = _fake_conn_iter()
+
+    await bridge._caller_event_loop()
+
+    events = []
+    while not bridge.events.empty():
+        events.append(await bridge.events.get())
+
+    types = [e["type"] for e in events]
+    assert "caller.speech.delta" in types
+    assert "caller.speech.done" in types
+    delta_texts = [e["text"] for e in events if e["type"] == "caller.speech.delta"]
+    assert "Hello, I need" in delta_texts
+
+
+@pytest.mark.asyncio
+async def test_caller_event_loop_end_call_sets_complete() -> None:
+    """end_call function invocation emits session.complete and sets stop_event."""
+    bridge = _make_bridge()
+
+    end_call_event = MagicMock()
+    end_call_event.type = "response.function_call_arguments.done"
+    end_call_event.name = "end_call"
+    end_call_event.arguments = "{}"
+
+    async def _fake_conn_iter():
+        yield end_call_event
+
+    bridge._caller_conn = _fake_conn_iter()
+
+    await bridge._caller_event_loop()
+
+    assert bridge._stop_event.is_set()
+    events = []
+    while not bridge.events.empty():
+        events.append(await bridge.events.get())
+    complete_events = [e for e in events if e["type"] == "session.complete"]
+    assert len(complete_events) == 1
+    assert complete_events[0]["reason"] == "end_call"
+
+
 def _make_bridge() -> "AgentTestBridge":
     bridge = AgentTestBridge(
         agent_id=uuid.uuid4(),
