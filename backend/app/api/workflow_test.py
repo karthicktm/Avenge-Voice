@@ -185,6 +185,77 @@ async def _load_prewarmed(workspace_id: str, tree_name: str) -> list[dict[str, A
     return trees.get(tree_name, [])
 
 
+class _NodeResult:
+    """Intermediate result from processing a single workflow node."""
+
+    __slots__ = ("node_output", "resolution_layer", "simulated", "simulation_detail")
+
+    def __init__(self) -> None:
+        self.node_output: str = ""
+        self.resolution_layer: str | None = None
+        self.simulated: bool = False
+        self.simulation_detail: dict[str, Any] | None = None
+
+
+async def _process_node(
+    executor: WorkflowExecutor,
+    node: dict[str, Any],
+    caller_input: str,
+    workspace_id: str,
+) -> _NodeResult:
+    """Dispatch node processing and return structured output."""
+    result = _NodeResult()
+    node_type: str = node.get("type", "")
+    node_label: str = node.get("label", "")
+
+    if node_type == "entry":
+        next_id = executor.route()
+        if next_id:
+            executor.current_node_id = next_id
+        result.node_output = executor.build_node_instruction() or "Hello! How can I help you today?"
+
+    elif node_type == "categorize":
+        cfg = node.get("config") or {}
+        tree_name = cfg.get("tree_name", "")
+        preloaded = await _load_prewarmed(workspace_id, tree_name)
+        await executor.run_categorize(caller_input, preloaded)
+        result.resolution_layer = executor.context_bag.get("resolution_layer")
+        result.node_output = executor.build_node_instruction()
+
+    elif node_type == "condition":
+        next_id = executor.route_condition()
+        if not next_id:
+            next_id = executor.route()
+            if next_id:
+                executor.current_node_id = next_id
+        result.node_output = f"Condition evaluated: routed to {executor.current_node_id}"
+
+    elif node_type in _SIMULATED_TYPES:
+        cfg = node.get("config") or {}
+        template = cfg.get("template", "")
+        resolved = executor.resolve_template(template) if template else ""
+        result.simulated = True
+        result.simulation_detail = {
+            "node_type": node_type,
+            "node_label": node_label,
+            "would_have": {
+                "target": executor.context_bag.get("transfer_target"),
+                "script": resolved or executor.context_bag.get("approved_script"),
+                "email_target": executor.context_bag.get("email_target"),
+                "sms_body": resolved,
+            },
+        }
+        result.node_output = f"[Simulated] {node_label}: {resolved or node_type}"
+        next_id = executor.route()
+        if next_id:
+            executor.current_node_id = next_id
+
+    elif node_type == "end_call":
+        result.node_output = executor.build_node_instruction() or "Thank you for calling. Goodbye!"
+
+    return result
+
+
 @router.post("/{workflow_id}/test/{session_id}/step", response_model=StepOut)
 async def step_test_session(
     workflow_id: uuid.UUID,
@@ -214,29 +285,10 @@ async def step_test_session(
         raise HTTPException(status_code=403, detail="Session workflow mismatch")
 
     workspace_id = state.get("workspace_id", str(wf.workspace_id))
-
-    node = executor.current_node or {}
-    node_type = node.get("type", "")
-    node_label = node.get("label", "")  # noqa: F841  # used in simulation_detail block (Task 3)
-    simulated = False
-    simulation_detail: dict[str, Any] | None = None
-    node_output = ""
-    resolution_layer: str | None = None
     t0 = time.monotonic()
 
-    if node_type == "entry":
-        next_id = executor.route()
-        if next_id:
-            executor.current_node_id = next_id
-        node_output = executor.build_node_instruction() or "Hello! How can I help you today?"
-
-    elif node_type == "categorize":
-        cfg = node.get("config") or {}
-        tree_name = cfg.get("tree_name", "")
-        preloaded = await _load_prewarmed(workspace_id, tree_name)
-        await executor.run_categorize(body.caller_input, preloaded)
-        resolution_layer = executor.context_bag.get("resolution_layer")
-        node_output = executor.build_node_instruction()
+    node = executor.current_node or {}
+    result = await _process_node(executor, node, body.caller_input, workspace_id)
 
     await _save_executor(session_id, executor, {"is_test": True, "workspace_id": workspace_id})
     elapsed = (time.monotonic() - t0) * 1000
@@ -248,10 +300,10 @@ async def step_test_session(
         current_node_type=next_node.get("type", ""),
         current_node_label=next_node.get("label", ""),
         context_bag=executor.context_bag,
-        node_output=node_output,
-        simulated=simulated,
-        simulation_detail=simulation_detail,
+        node_output=result.node_output,
+        simulated=result.simulated,
+        simulation_detail=result.simulation_detail,
         elapsed_ms=round(elapsed, 1),
-        resolution_layer=resolution_layer,
+        resolution_layer=result.resolution_layer,
         is_complete=next_node.get("type") == "end_call",
     )

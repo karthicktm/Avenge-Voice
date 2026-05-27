@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import fakeredis
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.core.auth import get_current_user
@@ -53,6 +54,35 @@ def _make_test_user() -> User:
     )
     user.id = 1  # type: ignore[assignment]
     return user
+
+
+@pytest_asyncio.fixture
+async def async_client() -> AsyncGenerator[AsyncClient, None]:
+    """Shared async HTTP client with auth + DB overrides for step tests."""
+    test_user = _make_test_user()
+
+    mock_db = AsyncMock()
+    mock_db.get.return_value = MOCK_WORKFLOW
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalar_one_or_none.return_value = MagicMock()
+    mock_db.execute.return_value = mock_execute_result
+
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        yield mock_db  # type: ignore[misc]
+
+    async def override_get_current_user() -> User:
+        return test_user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    transport = ASGITransport(app=app)  # type: ignore[arg-type]
+    try:
+        with patch("app.api.workflow_test.get_user_api_keys", return_value=MOCK_USER_SETTINGS):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                yield client
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -212,6 +242,82 @@ async def test_step_entry_auto_advances() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["current_node_type"] == "categorize"
+
+
+NODES_WITH_CONDITION = [
+    {"id": "n1", "type": "entry", "label": "Entry"},
+    {"id": "n2", "type": "categorize", "label": "Categorize", "config": {"tree_name": "t"}},
+    {
+        "id": "n3",
+        "type": "condition",
+        "label": "Condition",
+        "config": {"condition": "action_type == transfer"},
+    },
+    {
+        "id": "n4",
+        "type": "transfer",
+        "label": "Transfer",
+        "config": {"template": "Transferring to {{transfer_target}}"},
+    },
+    {"id": "n5", "type": "end_call", "label": "End Call"},
+]
+EDGES_WITH_CONDITION = [
+    {"id": "e1", "from": "n1", "to": "n2"},
+    {"id": "e2", "from": "n2", "to": "n3"},
+    {"id": "e3", "from": "n3", "to": "n4", "sourceHandle": "yes"},
+    {"id": "e4", "from": "n3", "to": "n5", "sourceHandle": "no"},
+    {"id": "e5", "from": "n4", "to": "n5"},
+]
+CONDITION_STATE = {
+    "workflow_id": WORKFLOW_ID,
+    "workspace_id": WORKSPACE_ID,
+    "nodes": NODES_WITH_CONDITION,
+    "edges": EDGES_WITH_CONDITION,
+    "current_node_id": "n3",
+    "context_bag": {"action_type": "transfer", "transfer_target": "+491234"},
+    "is_test": True,
+}
+TRANSFER_STATE = {**CONDITION_STATE, "current_node_id": "n4"}
+
+
+@pytest.mark.asyncio
+async def test_step_condition_routes_to_yes(async_client: AsyncClient) -> None:
+    with patch("app.api.workflow_test.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_redis.get.return_value = json.dumps(CONDITION_STATE)
+        mock_redis.set = AsyncMock()
+        mock_get_redis.return_value = mock_redis
+
+        resp = await async_client.post(
+            f"/api/v1/workflows/{WORKFLOW_ID}/test/{SESSION_ID}/step",
+            json={"caller_input": ""},
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["current_node_type"] == "transfer"
+
+
+@pytest.mark.asyncio
+async def test_step_transfer_node_simulated(async_client: AsyncClient) -> None:
+    with patch("app.api.workflow_test.get_redis") as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_redis.get.return_value = json.dumps(TRANSFER_STATE)
+        mock_redis.set = AsyncMock()
+        mock_get_redis.return_value = mock_redis
+
+        resp = await async_client.post(
+            f"/api/v1/workflows/{WORKFLOW_ID}/test/{SESSION_ID}/step",
+            json={"caller_input": ""},
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["simulated"] is True
+    assert data["simulation_detail"]["node_type"] == "transfer"
+    assert data["simulation_detail"]["would_have"]["target"] == "+491234"
 
 
 @pytest.mark.asyncio
