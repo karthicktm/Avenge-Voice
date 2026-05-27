@@ -236,4 +236,60 @@ class AgentTestBridge:
                     break
 
     async def _agent_event_loop(self) -> None:
-        pass  # implemented in Task 7
+        import json
+        import time
+
+        if not self._agent_session or not self._agent_session.connection:
+            return
+
+        current_speech = ""
+        async for event in self._agent_session.connection:
+            if self._stop_event.is_set():
+                break
+            event_type = event.type
+
+            if event_type == "response.audio.delta":
+                audio_b64 = getattr(event, "delta", "")
+                if audio_b64:
+                    await self._agent_audio_queue.put(audio_b64)
+
+            elif event_type == "response.audio_transcript.delta":
+                current_speech += getattr(event, "delta", "")
+                await self.events.put({"type": "agent.speech.delta", "text": current_speech})
+
+            elif event_type == "response.audio_transcript.done":
+                text = getattr(event, "transcript", current_speech)
+                await self.events.put({"type": "agent.speech.done", "text": text})
+                current_speech = ""
+
+            elif event_type == "response.function_call_arguments.done":
+                tool_name = getattr(event, "name", "")
+                raw_args = getattr(event, "arguments", "{}")
+                try:
+                    tool_args: dict[str, Any] = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                except json.JSONDecodeError:
+                    tool_args = {}
+
+                await self.events.put({"type": "agent.tool_call", "tool": tool_name, "args": tool_args})
+
+                t0 = time.monotonic()
+                result = await self._agent_session.handle_function_call_event(event)
+                elapsed_ms = (time.monotonic() - t0) * 1000
+
+                await self.events.put({
+                    "type": "agent.tool_result",
+                    "tool": tool_name,
+                    "result": result,
+                    "elapsed_ms": elapsed_ms,
+                })
+
+                # Emit current workflow node if executor is active
+                executor = self._agent_session.workflow_executor
+                if executor:
+                    node = executor.current_node or {}
+                    await self.events.put({
+                        "type": "agent.workflow_node",
+                        "node_id": executor.current_node_id,
+                        "node_type": node.get("type", ""),
+                        "node_label": node.get("label", ""),
+                    })

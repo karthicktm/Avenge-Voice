@@ -141,6 +141,71 @@ async def test_caller_event_loop_end_call_sets_complete() -> None:
     assert complete_events[0]["reason"] == "end_call"
 
 
+@pytest.mark.asyncio
+async def test_agent_event_loop_emits_speech_done() -> None:
+    """Agent transcript done event is emitted to events queue."""
+    bridge = _make_bridge()
+    bridge._agent_session = MagicMock()
+    bridge._agent_session.handle_function_call_event = AsyncMock(return_value={"success": True})
+    bridge._agent_session.workflow_executor = None
+
+    done_event = MagicMock()
+    done_event.type = "response.audio_transcript.done"
+    done_event.transcript = "Thank you for calling."
+
+    async def _fake_conn_iter():
+        yield done_event
+        bridge._stop_event.set()
+
+    bridge._agent_session.connection = _fake_conn_iter()
+
+    await bridge._agent_event_loop()
+
+    events = []
+    while not bridge.events.empty():
+        events.append(await bridge.events.get())
+
+    done_events = [e for e in events if e["type"] == "agent.speech.done"]
+    assert len(done_events) == 1
+    assert done_events[0]["text"] == "Thank you for calling."
+
+
+@pytest.mark.asyncio
+async def test_agent_event_loop_emits_tool_call_and_result() -> None:
+    """Tool call events are emitted before and after execution."""
+    bridge = _make_bridge()
+    bridge._agent_session = MagicMock()
+    bridge._agent_session.handle_function_call_event = AsyncMock(
+        return_value={"success": True, "matched": True}
+    )
+    bridge._agent_session.workflow_executor = None
+
+    tool_event = MagicMock()
+    tool_event.type = "response.function_call_arguments.done"
+    tool_event.name = "categorize"
+    tool_event.arguments = '{"description": "broken product"}'
+
+    async def _fake_conn_iter():
+        yield tool_event
+        bridge._stop_event.set()
+
+    bridge._agent_session.connection = _fake_conn_iter()
+
+    await bridge._agent_event_loop()
+
+    events = []
+    while not bridge.events.empty():
+        events.append(await bridge.events.get())
+
+    types = [e["type"] for e in events]
+    assert "agent.tool_call" in types
+    assert "agent.tool_result" in types
+
+    tool_call_event = next(e for e in events if e["type"] == "agent.tool_call")
+    assert tool_call_event["tool"] == "categorize"
+    assert tool_call_event["args"] == {"description": "broken product"}
+
+
 def _make_bridge() -> "AgentTestBridge":
     bridge = AgentTestBridge(
         agent_id=uuid.uuid4(),
