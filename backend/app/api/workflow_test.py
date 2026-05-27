@@ -7,6 +7,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
+import anthropic
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -348,3 +349,107 @@ async def delete_test_session(
 ) -> None:
     redis = await get_redis()
     await redis.delete(_redis_key(session_id))
+
+
+# ── AI step ───────────────────────────────────────────────────────────────────
+
+_AI_CALLER_SYSTEM = (
+    "You are simulating a caller on a voice support line. "
+    "Persona: {persona}. "
+    "Current workflow node: {node_type} — {node_label}. "
+    "Conversation so far: {transcript}. "
+    "Respond ONLY as the caller would speak — natural, conversational, one or two sentences. "
+    "Do not explain yourself. Do not break character."
+)
+
+_COPILOT_SUGGESTION_COUNT = 3
+
+_AI_CALLER_COPILOT_SYSTEM = (
+    "You are simulating a caller on a voice support line. "
+    "Persona: {persona}. "
+    "Current workflow node: {node_type} — {node_label}. "
+    "Generate exactly 3 short, distinct things the caller might say next. "
+    "One per line. No labels, numbers, or punctuation at the start. "
+    "Do not explain yourself. Vary the phrasing meaningfully."
+)
+
+
+class AiStepRequest(BaseModel):
+    persona: str
+    mode: str  # "autopilot" | "copilot"
+    transcript: str = ""
+
+
+class AiStepOut(BaseModel):
+    session_id: str
+    mode: str
+    ai_input: str | None = None
+    suggestions: list[str] | None = None
+    step_result: StepOut | None = None
+
+
+async def _call_claude(system: str, user_msg: str, api_key: str, max_tokens: int = 100) -> str:
+    client = anthropic.AsyncAnthropic(api_key=api_key or None)
+    msg = await client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    block = msg.content[0]
+    if not isinstance(block, anthropic.types.TextBlock):
+        raise HTTPException(status_code=502, detail="AI caller returned unexpected content type")
+    return block.text.strip()
+
+
+@router.post("/{workflow_id}/test/{session_id}/ai-step", response_model=AiStepOut)
+async def ai_step_test_session(
+    workflow_id: uuid.UUID,
+    session_id: str,
+    body: AiStepRequest,
+    user: VerifiedUser,
+    db: AsyncSession = Depends(get_db),
+) -> AiStepOut:
+    wf = await db.get(Workflow, workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    openai_key = await _get_openai_key(user, wf, db)
+    executor, _ = await _load_executor(session_id, openai_key)
+    node = executor.current_node or {}
+    node_type = node.get("type", "")
+    node_label = node.get("label", "")
+    anthropic_key = settings.ANTHROPIC_API_KEY or ""
+
+    if body.mode == "copilot":
+        system = _AI_CALLER_COPILOT_SYSTEM.format(
+            persona=body.persona, node_type=node_type, node_label=node_label
+        )
+        raw = await _call_claude(
+            system, body.transcript or "Start of call", anthropic_key, max_tokens=150
+        )
+        suggestions = [line.strip() for line in raw.splitlines() if line.strip()][
+            :_COPILOT_SUGGESTION_COUNT
+        ]
+        while len(suggestions) < _COPILOT_SUGGESTION_COUNT:
+            suggestions.append(suggestions[0] if suggestions else "Hello")
+        return AiStepOut(session_id=session_id, mode="copilot", suggestions=suggestions)
+
+    system = _AI_CALLER_SYSTEM.format(
+        persona=body.persona,
+        node_type=node_type,
+        node_label=node_label,
+        transcript=body.transcript or "Start of call",
+    )
+    ai_input = await _call_claude(system, "What would you say now?", anthropic_key)
+
+    step_result = await step_test_session(
+        workflow_id=workflow_id,
+        session_id=session_id,
+        body=StepRequest(caller_input=ai_input),
+        user=user,
+        db=db,
+    )
+    return AiStepOut(
+        session_id=session_id, mode="autopilot", ai_input=ai_input, step_result=step_result
+    )

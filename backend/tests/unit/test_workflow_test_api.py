@@ -418,3 +418,75 @@ async def test_delete_session(async_client: AsyncClient) -> None:
 
     assert resp.status_code == 204
     mock_redis.delete.assert_called_once_with(f"wf_test_session:{SESSION_ID}")
+
+
+@pytest.mark.asyncio
+async def test_ai_step_autopilot_returns_one_response(async_client: AsyncClient) -> None:
+    import anthropic as _anthropic
+
+    text_block = _anthropic.types.TextBlock(type="text", text="I have a billing question")
+    mock_message = MagicMock()
+    mock_message.content = [text_block]
+
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = json.dumps(CATEGORIZE_STATE)
+    mock_redis.set = AsyncMock()
+
+    async def patched_get_redis() -> Any:
+        return mock_redis
+
+    mock_anthropic_client = AsyncMock()
+    mock_anthropic_client.messages.create = AsyncMock(return_value=mock_message)
+
+    with (
+        patch("app.api.workflow_test.get_redis", patched_get_redis),
+        patch("app.api.workflow_test.anthropic.AsyncAnthropic", return_value=mock_anthropic_client),
+        patch(
+            "app.services.workflow_engine.executor.WorkflowExecutor.run_categorize",
+            new_callable=AsyncMock,
+        ),
+    ):
+        resp = await async_client.post(
+            f"/api/v1/workflows/{WORKFLOW_ID}/test/{SESSION_ID}/ai-step",
+            json={"persona": "frustrated billing customer", "mode": "autopilot"},
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "ai_input" in data
+    assert data["ai_input"] == "I have a billing question"
+
+
+@pytest.mark.asyncio
+async def test_ai_step_copilot_returns_three_suggestions(async_client: AsyncClient) -> None:
+    import anthropic as _anthropic
+
+    text_block = _anthropic.types.TextBlock(type="text", text="Option 1\nOption 2\nOption 3")
+    mock_message = MagicMock()
+    mock_message.content = [text_block]
+
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = json.dumps(CATEGORIZE_STATE)
+    mock_redis.set = AsyncMock()
+
+    async def patched_get_redis() -> Any:
+        return mock_redis
+
+    mock_anthropic_client = AsyncMock()
+    mock_anthropic_client.messages.create = AsyncMock(return_value=mock_message)
+
+    with (
+        patch("app.api.workflow_test.get_redis", patched_get_redis),
+        patch("app.api.workflow_test.anthropic.AsyncAnthropic", return_value=mock_anthropic_client),
+    ):
+        resp = await async_client.post(
+            f"/api/v1/workflows/{WORKFLOW_ID}/test/{SESSION_ID}/ai-step",
+            json={"persona": "frustrated billing customer", "mode": "copilot"},
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "suggestions" in data
+    assert len(data["suggestions"]) == 3
