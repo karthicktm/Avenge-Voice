@@ -124,7 +124,29 @@ class AgentTestBridge:
         pass  # implemented in Task 4
 
     async def _connect_caller_session(self) -> None:
-        pass  # implemented in Task 3
+        model = "gpt-4o-realtime-preview"
+        if self._agent_session and self._agent_session.agent_config:
+            model = self._agent_session.agent_config.get("llm_model", model)
+
+        client = AsyncOpenAI(api_key=self.openai_api_key)
+        self._caller_conn = await client.realtime.connect(model=model).__aenter__()
+
+        await self._caller_conn.session.update(
+            session={
+                "voice": "alloy",
+                "instructions": build_caller_system_prompt(self.scenario),
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.5,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 500,
+                },
+                "tools": [_END_CALL_TOOL],
+                "tool_choice": "auto",
+                "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
+            }
+        )
+        self._log.info("caller_session_connected")
 
     # ── audio forwarding ─────────────────────────────────────────────────────
 
