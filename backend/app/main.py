@@ -22,6 +22,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.api import (
+    agent_test,
     agents,
     auth,
     billing,
@@ -252,6 +253,8 @@ app.include_router(lookup.router, prefix=settings.API_V1_PREFIX)  # Lookup API
 app.include_router(category_trees.router, prefix=settings.API_V1_PREFIX)  # Category Trees API
 app.include_router(workflows.router, prefix=settings.API_V1_PREFIX)  # Workflow Engine API
 app.include_router(workflow_test.router)  # Workflow Test Session API
+app.include_router(agent_test.http_router)  # Agent Test Call HTTP API
+app.include_router(agent_test.ws_router)  # Agent Test Call WebSocket
 app.include_router(site_indexer.router)  # Site indexer API (web crawl)
 app.include_router(embed.router)  # Public embed API (unauthenticated)
 app.include_router(embed.ws_router)  # Public embed WebSocket
