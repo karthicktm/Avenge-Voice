@@ -79,7 +79,7 @@ class AgentTestBridge:
         await self._caller_conn.response.create()
 
     async def run(self) -> None:
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         async def _guard() -> None:
             while not self._stop_event.is_set():
@@ -88,7 +88,7 @@ class AgentTestBridge:
                     await self.events.put({"type": "session.complete", "reason": "max_turns"})
                     self._stop_event.set()
                     return
-                if asyncio.get_event_loop().time() - start_time >= MAX_DURATION_SECONDS:
+                if asyncio.get_running_loop().time() - start_time >= MAX_DURATION_SECONDS:
                     await self.events.put({"type": "session.complete", "reason": "max_duration"})
                     self._stop_event.set()
                     return

@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -17,7 +18,7 @@ from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.db.redis import get_redis
 from app.db.session import get_db
 from app.models.agent import Agent
-from app.models.workspace import AgentWorkspace
+from app.models.workspace import AgentWorkspace, Workspace
 from app.services.agent_test_bridge import AgentTestBridge, TestScenario
 
 if TYPE_CHECKING:
@@ -50,6 +51,16 @@ def _redis_key(session_id: str) -> str:
     return f"agent_test:{session_id}"
 
 
+def _cleanup_session(session_id: str) -> Callable[[asyncio.Task[None]], None]:
+    """Return a done-callback that removes session entries when the task finishes."""
+
+    def _cb(t: asyncio.Task[None]) -> None:
+        _active_bridges.pop(session_id, None)
+        _bridge_tasks.pop(session_id, None)
+
+    return _cb
+
+
 async def _load_agent_and_workspace(
     agent_id: uuid.UUID,
     user: VerifiedUser,
@@ -76,14 +87,12 @@ async def _load_agent_and_workspace(
 
     # Resolve workspace: find the agent's default workspace owned by this user.
     # Join AgentWorkspace → Workspace to ensure ownership.
-    from app.models.workspace import Workspace
-
     aw_result = await db.execute(
         select(AgentWorkspace).where(
             AgentWorkspace.agent_id == agent_id,
         )
     )
-    agent_workspace = aw_result.scalar_one_or_none()
+    agent_workspace = aw_result.scalars().first()
 
     if not agent_workspace:
         raise HTTPException(status_code=404, detail="No workspace found for this agent.")
@@ -154,7 +163,10 @@ async def create_test_call(
     )
 
     await bridge.start()
-    task: asyncio.Task[None] = asyncio.create_task(bridge.run())
+    task: asyncio.Task[None] = asyncio.create_task(
+        bridge.run(), name=f"agent_test_bridge_{session_id}"
+    )
+    task.add_done_callback(_cleanup_session(session_id))
 
     _active_bridges[session_id] = bridge
     _bridge_tasks[session_id] = task
@@ -183,7 +195,7 @@ async def delete_test_call(
     agent_id: uuid.UUID,
     session_id: str,
     user: VerifiedUser,
-    db: AsyncSession = Depends(get_db),
+    db: "AsyncSession" = Depends(get_db),  # noqa: ARG001
 ) -> None:
     """Stop and delete an active test call session.
 
@@ -193,6 +205,14 @@ async def delete_test_call(
         user: Verified user making the request.
         db: Database session.
     """
+    # Verify ownership via Redis metadata
+    redis = await get_redis()
+    raw = await redis.get(_redis_key(session_id))
+    if raw:
+        state = json.loads(raw)
+        if str(state.get("user_id")) != str(user.id):
+            raise HTTPException(status_code=403, detail="Access denied")
+
     bridge = _active_bridges.pop(session_id, None)
     task = _bridge_tasks.pop(session_id, None)
 
@@ -201,7 +221,6 @@ async def delete_test_call(
     if task and not task.done():
         task.cancel()
 
-    redis = await get_redis()
     await redis.delete(_redis_key(session_id))
     logger.info("agent_test_session_deleted", session_id=session_id)
 
@@ -210,16 +229,38 @@ async def delete_test_call(
 async def agent_test_websocket(
     websocket: WebSocket,
     session_id: str,
+    token: str = Query(default=""),
 ) -> None:
     """Stream test call events to a WebSocket client.
 
     Forwards events from the AgentTestBridge event queue until the session
     completes, errors, or the client disconnects.
 
+    Authentication is done via the 'token' query parameter (JWT bearer token).
+
     Args:
         websocket: Client WebSocket connection.
         session_id: Test session ID to stream events from.
+        token: JWT access token for authentication.
     """
+    from app.core.auth import decode_access_token
+
+    # Verify token before accepting the connection
+    payload = decode_access_token(token) if token else None
+    if not payload:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
+    # Verify the session belongs to this user
+    redis = await get_redis()
+    raw = await redis.get(_redis_key(session_id))
+    if raw:
+        state = json.loads(raw)
+        token_user_id = payload.get("sub")
+        if token_user_id is None or str(state.get("user_id")) != str(token_user_id):
+            await websocket.close(code=4003, reason="Access denied")
+            return
+
     await websocket.accept()
 
     bridge = _active_bridges.get(session_id)
