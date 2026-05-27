@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 
 from app.api.settings import get_user_api_keys
 from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.db.redis import get_redis
-from app.db.session import get_db
+from app.db.session import AsyncSessionLocal, get_db
 from app.models.agent import Agent
 from app.models.workspace import AgentWorkspace, Workspace
 from app.services.agent_test_bridge import AgentTestBridge, TestScenario
@@ -31,6 +31,7 @@ http_router = APIRouter(prefix="/api/v1/agents", tags=["agent-test"])
 ws_router = APIRouter(prefix="/ws", tags=["agent-test-ws"])
 
 _TTL = 3600
+_MAX_FIELD_LENGTH = 500
 _active_bridges: dict[str, AgentTestBridge] = {}
 _bridge_tasks: dict[str, asyncio.Task[None]] = {}
 
@@ -41,6 +42,16 @@ class TestCallRequest(BaseModel):
     persona: str
     goal: str
 
+    @field_validator("persona", "goal")
+    @classmethod
+    def validate_non_empty_and_bounded(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be empty")
+        if len(v) > _MAX_FIELD_LENGTH:
+            raise ValueError("must be 500 characters or fewer")
+        return v
+
 
 class TestCallResponse(BaseModel):
     """Response containing the new test session ID."""
@@ -50,6 +61,13 @@ class TestCallResponse(BaseModel):
 
 def _redis_key(session_id: str) -> str:
     return f"agent_test:{session_id}"
+
+
+async def _run_bridge_with_own_session(bridge: AgentTestBridge, sid: str) -> None:
+    """Run the bridge inside its own database session so the session outlives the HTTP handler."""
+    async with AsyncSessionLocal() as own_db:
+        bridge.db = own_db
+        await bridge.run()
 
 
 def _cleanup_session(session_id: str) -> Callable[[asyncio.Task[None]], None]:
@@ -165,7 +183,8 @@ async def create_test_call(
 
     await bridge.start()
     task: asyncio.Task[None] = asyncio.create_task(
-        bridge.run(), name=f"agent_test_bridge_{session_id}"
+        _run_bridge_with_own_session(bridge, session_id),
+        name=f"agent_test_bridge_{session_id}",
     )
     task.add_done_callback(_cleanup_session(session_id))
 
@@ -209,10 +228,12 @@ async def delete_test_call(
     # Verify ownership via Redis metadata
     redis = await get_redis()
     raw = await redis.get(_redis_key(session_id))
-    if raw:
-        state = json.loads(raw)
-        if str(state.get("user_id")) != str(user.id):
-            raise HTTPException(status_code=403, detail="Access denied")
+    if not raw:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = json.loads(raw)
+    if str(state.get("user_id")) != str(user.id):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     bridge = _active_bridges.pop(session_id, None)
     task = _bridge_tasks.pop(session_id, None)

@@ -95,17 +95,18 @@ class AgentTestBridge:
                     self._stop_event.set()
                     return
 
-        try:
-            await asyncio.gather(
-                self._caller_event_loop(),
-                self._agent_event_loop(),
-                self._forward_caller_audio_to_agent(),
-                self._forward_agent_audio_to_caller(),
-                _guard(),
-                return_exceptions=True,
-            )
-        except Exception as e:
-            await self.events.put({"type": "session.error", "message": str(e)})
+        results = await asyncio.gather(
+            self._caller_event_loop(),
+            self._agent_event_loop(),
+            self._forward_caller_audio_to_agent(),
+            self._forward_agent_audio_to_caller(),
+            _guard(),
+            return_exceptions=True,
+        )
+        for r in results:
+            if isinstance(r, BaseException) and not isinstance(r, asyncio.CancelledError):
+                await self.events.put({"type": "session.error", "message": str(r)})
+                break
 
     async def stop(self) -> None:
         self._stop_event.set()
