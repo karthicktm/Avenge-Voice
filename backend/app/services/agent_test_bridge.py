@@ -121,7 +121,42 @@ class AgentTestBridge:
     # ── session setup ────────────────────────────────────────────────────────
 
     async def _setup_agent_session(self) -> None:
-        pass  # implemented in Task 4
+        from sqlalchemy import select
+
+        from app.models.agent import Agent
+
+        result = await self.db.execute(select(Agent).where(Agent.id == self.agent_id))
+        agent = result.scalar_one_or_none()
+        if not agent:
+            raise ValueError(f"Agent {self.agent_id} not found")
+
+        agent_config: dict[str, Any] = {
+            "system_prompt": agent.system_prompt,
+            "enabled_tools": agent.enabled_tools or [],
+            "enabled_tool_ids": agent.enabled_tool_ids or {},
+            "tool_configs": agent.tool_configs or {},
+            "language": agent.language or "en-US",
+            "voice": agent.voice or "shimmer",
+            "temperature": agent.temperature,
+            "agent_id": str(agent.id),
+            "llm_model": (agent.provider_config or {}).get("llm_model", "gpt-4o-realtime-preview"),
+            "turn_detection_mode": agent.turn_detection_mode or "normal",
+            "turn_detection_threshold": agent.turn_detection_threshold,
+            "turn_detection_prefix_padding_ms": agent.turn_detection_prefix_padding_ms,
+            "turn_detection_silence_duration_ms": agent.turn_detection_silence_duration_ms,
+            "transcription_model": agent.transcription_model or "gpt-4o-mini-transcribe",
+            # Suppress initial greeting — caller speaks first in test mode
+            "initial_greeting": None,
+        }
+
+        self._agent_session = GPTRealtimeSession(
+            db=self.db,
+            user_id=self.user_id,
+            agent_config=agent_config,
+            workspace_id=self.workspace_id,
+        )
+        await self._agent_session.initialize()
+        self._log.info("agent_session_initialized")
 
     async def _connect_caller_session(self) -> None:
         model = "gpt-4o-realtime-preview"
