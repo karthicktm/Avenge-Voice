@@ -186,10 +186,24 @@ class AgentTestBridge:
     # ── audio forwarding ─────────────────────────────────────────────────────
 
     async def _forward_caller_audio_to_agent(self) -> None:
-        pass  # implemented in Task 5
+        import base64
+
+        while not self._stop_event.is_set():
+            try:
+                audio_b64 = await asyncio.wait_for(self._caller_audio_queue.get(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
+            if self._agent_session:
+                await self._agent_session.send_audio(base64.b64decode(audio_b64))
 
     async def _forward_agent_audio_to_caller(self) -> None:
-        pass  # implemented in Task 5
+        while not self._stop_event.is_set():
+            try:
+                audio_b64 = await asyncio.wait_for(self._agent_audio_queue.get(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
+            if self._caller_conn:
+                await self._caller_conn.input_audio_buffer.append(audio=audio_b64)
 
     # ── event loops ──────────────────────────────────────────────────────────
 
