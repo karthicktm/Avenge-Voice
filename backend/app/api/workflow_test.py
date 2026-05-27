@@ -99,9 +99,13 @@ async def _save_executor(
     session_id: str, executor: WorkflowExecutor, extra: dict[str, Any]
 ) -> None:
     """Persist executor state back to Redis."""
-    redis = await get_redis()
-    state = {**executor.to_state(), **extra}
-    await redis.set(_redis_key(session_id), json.dumps(state), ex=TTL)
+    try:
+        redis = await get_redis()
+        state = {**executor.to_state(), **extra}
+        await redis.set(_redis_key(session_id), json.dumps(state), ex=TTL)
+    except Exception:
+        logger.exception("wf_test_save_failed", session_id=session_id)
+        raise HTTPException(status_code=503, detail="Failed to persist session state") from None
 
 
 async def _get_openai_key(user: VerifiedUser, workflow: Workflow, db: AsyncSession) -> str:
@@ -225,9 +229,7 @@ async def _process_node(
     elif node_type == "condition":
         next_id = executor.route_condition()
         if not next_id:
-            next_id = executor.route()
-            if next_id:
-                executor.current_node_id = next_id
+            logger.warning("wf_test_condition_no_route", node_id=executor.current_node_id)
         result.node_output = f"Condition evaluated: routed to {executor.current_node_id}"
 
     elif node_type in _SIMULATED_TYPES:

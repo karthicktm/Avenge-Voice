@@ -282,12 +282,14 @@ TRANSFER_STATE = {**CONDITION_STATE, "current_node_id": "n4"}
 
 @pytest.mark.asyncio
 async def test_step_condition_routes_to_yes(async_client: AsyncClient) -> None:
-    with patch("app.api.workflow_test.get_redis") as mock_get_redis:
-        mock_redis = AsyncMock()
-        mock_redis.get.return_value = json.dumps(CONDITION_STATE)
-        mock_redis.set = AsyncMock()
-        mock_get_redis.return_value = mock_redis
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = json.dumps(CONDITION_STATE)
+    mock_redis.set = AsyncMock()
 
+    async def patched_get_redis() -> Any:
+        return mock_redis
+
+    with patch("app.api.workflow_test.get_redis", patched_get_redis):
         resp = await async_client.post(
             f"/api/v1/workflows/{WORKFLOW_ID}/test/{SESSION_ID}/step",
             json={"caller_input": ""},
@@ -301,12 +303,14 @@ async def test_step_condition_routes_to_yes(async_client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_step_transfer_node_simulated(async_client: AsyncClient) -> None:
-    with patch("app.api.workflow_test.get_redis") as mock_get_redis:
-        mock_redis = AsyncMock()
-        mock_redis.get.return_value = json.dumps(TRANSFER_STATE)
-        mock_redis.set = AsyncMock()
-        mock_get_redis.return_value = mock_redis
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = json.dumps(TRANSFER_STATE)
+    mock_redis.set = AsyncMock()
 
+    async def patched_get_redis() -> Any:
+        return mock_redis
+
+    with patch("app.api.workflow_test.get_redis", patched_get_redis):
         resp = await async_client.post(
             f"/api/v1/workflows/{WORKFLOW_ID}/test/{SESSION_ID}/step",
             json={"caller_input": ""},
