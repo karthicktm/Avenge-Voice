@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -22,6 +21,8 @@ from app.models.workspace import AgentWorkspace, Workspace
 from app.services.agent_test_bridge import AgentTestBridge, TestScenario
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger()
@@ -195,7 +196,7 @@ async def delete_test_call(
     agent_id: uuid.UUID,
     session_id: str,
     user: VerifiedUser,
-    db: "AsyncSession" = Depends(get_db),  # noqa: ARG001
+    db: AsyncSession = Depends(get_db),
 ) -> None:
     """Stop and delete an active test call session.
 

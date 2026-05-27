@@ -7,15 +7,8 @@ import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { getAgent } from "@/lib/api/agents";
-import {
-  startTestCall,
-  stopTestCall,
-  createTestCallWebSocket,
-} from "@/lib/api/agent-test";
-import {
-  TestCallSetup,
-  type TestCallStatus,
-} from "@/components/agent/test/TestCallSetup";
+import { startTestCall, stopTestCall, createTestCallWebSocket } from "@/lib/api/agent-test";
+import { TestCallSetup, type TestCallStatus } from "@/components/agent/test/TestCallSetup";
 import {
   TestCallTranscript,
   type TranscriptEntry,
@@ -83,18 +76,13 @@ function reducer(state: PageState, action: Action): PageState {
       }
 
       if (et === "caller.speech.delta" || et === "agent.speech.delta") {
-        const speaker = et.startsWith("caller")
-          ? ("caller" as const)
-          : ("agent" as const);
+        const speaker = et.startsWith("caller") ? ("caller" as const) : ("agent" as const);
         const text = action.event.text as string;
         const last = state.transcript[state.transcript.length - 1];
         if (last?.speaker === speaker && last.isDelta) {
           return {
             ...state,
-            transcript: [
-              ...state.transcript.slice(0, -1),
-              { ...last, text },
-            ],
+            transcript: [...state.transcript.slice(0, -1), { ...last, text }],
           };
         }
         return {
@@ -107,18 +95,13 @@ function reducer(state: PageState, action: Action): PageState {
       }
 
       if (et === "caller.speech.done" || et === "agent.speech.done") {
-        const speaker = et.startsWith("caller")
-          ? ("caller" as const)
-          : ("agent" as const);
+        const speaker = et.startsWith("caller") ? ("caller" as const) : ("agent" as const);
         const text = action.event.text as string;
         const last = state.transcript[state.transcript.length - 1];
         if (last?.speaker === speaker) {
           return {
             ...state,
-            transcript: [
-              ...state.transcript.slice(0, -1),
-              { ...last, text, isDelta: false },
-            ],
+            transcript: [...state.transcript.slice(0, -1), { ...last, text, isDelta: false }],
           };
         }
         return {
@@ -194,11 +177,7 @@ function reducer(state: PageState, action: Action): PageState {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function AgentTestCallPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function AgentTestCallPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: agentId } = use(params);
   const router = useRouter();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
@@ -218,11 +197,7 @@ export default function AgentTestCallPage({
 
   const handleStart = useCallback(async () => {
     try {
-      const { session_id } = await startTestCall(
-        agentId,
-        state.persona,
-        state.goal,
-      );
+      const { session_id } = await startTestCall(agentId, state.persona, state.goal);
       dispatch({ type: "SESSION_CREATED", sessionId: session_id });
 
       const ws = createTestCallWebSocket(session_id);
@@ -248,9 +223,7 @@ export default function AgentTestCallPage({
         wsRef.current = null;
       };
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to start test call",
-      );
+      toast.error(err instanceof Error ? err.message : "Failed to start test call");
     }
   }, [agentId, state.persona, state.goal]);
 
@@ -263,8 +236,7 @@ export default function AgentTestCallPage({
     dispatch({ type: "STOP" });
   }, [agentId, state.sessionId]);
 
-  const isRunning =
-    state.status === "running" || state.status === "connecting";
+  const isRunning = state.status === "running" || state.status === "connecting";
 
   return (
     <div className="flex h-screen flex-col">
@@ -280,9 +252,7 @@ export default function AgentTestCallPage({
             <ArrowLeft className="h-3 w-3" />
             Back
           </Button>
-          <span className="text-sm font-semibold">
-            Test Call{agent ? `: ${agent.name}` : ""}
-          </span>
+          <span className="text-sm font-semibold">Test Call{agent ? `: ${agent.name}` : ""}</span>
         </div>
       </div>
 
@@ -294,21 +264,16 @@ export default function AgentTestCallPage({
             persona={state.persona}
             goal={state.goal}
             status={state.status}
-            onPersonaChange={(v) =>
-              dispatch({ type: "SET_PERSONA", persona: v })
-            }
+            onPersonaChange={(v) => dispatch({ type: "SET_PERSONA", persona: v })}
             onGoalChange={(v) => dispatch({ type: "SET_GOAL", goal: v })}
-            onStart={handleStart}
-            onStop={handleStop}
+            onStart={() => void handleStart()}
+            onStop={() => void handleStop()}
           />
         </div>
 
         {/* Center: Transcript */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <TestCallTranscript
-            entries={state.transcript}
-            isRunning={isRunning}
-          />
+          <TestCallTranscript entries={state.transcript} isRunning={isRunning} />
         </div>
 
         {/* Right: Agent State */}

@@ -18,7 +18,7 @@ async function apiFetch(url: string, options: RequestInit = {}): Promise<Respons
 export async function startTestCall(
   agentId: string,
   persona: string,
-  goal: string,
+  goal: string
 ): Promise<{ session_id: string }> {
   const res = await apiFetch(`${API_BASE}/api/v1/agents/${agentId}/test-calls`, {
     method: "POST",

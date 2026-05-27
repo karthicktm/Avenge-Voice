@@ -969,60 +969,60 @@ export default function EditAgentPage({ params }: EditAgentPageProps) {
             </Button>
           </Link>
           <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive" size="sm" className="h-8">
-              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-              Delete
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle className="text-destructive">
-                Delete &ldquo;{agent.name}&rdquo;?
-              </AlertDialogTitle>
-              <AlertDialogDescription asChild>
-                <div className="space-y-3">
-                  <p>This action cannot be undone. The following will be permanently deleted:</p>
-                  <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3">
-                    <ul className="space-y-1 text-sm">
-                      <li className="flex items-center justify-between">
-                        <span>Call recordings & transcripts</span>
-                        <span className="font-medium">{agent.total_calls} calls</span>
-                      </li>
-                      <li className="flex items-center justify-between">
-                        <span>Total call duration</span>
-                        <span className="font-medium">
-                          {Math.round(agent.total_duration_seconds / 60)} minutes
-                        </span>
-                      </li>
-                      <li className="flex items-center justify-between">
-                        <span>Agent configuration</span>
-                        <span className="font-medium">All settings</span>
-                      </li>
-                    </ul>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" size="sm" className="h-8">
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-destructive">
+                  Delete &ldquo;{agent.name}&rdquo;?
+                </AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-3">
+                    <p>This action cannot be undone. The following will be permanently deleted:</p>
+                    <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3">
+                      <ul className="space-y-1 text-sm">
+                        <li className="flex items-center justify-between">
+                          <span>Call recordings & transcripts</span>
+                          <span className="font-medium">{agent.total_calls} calls</span>
+                        </li>
+                        <li className="flex items-center justify-between">
+                          <span>Total call duration</span>
+                          <span className="font-medium">
+                            {Math.round(agent.total_duration_seconds / 60)} minutes
+                          </span>
+                        </li>
+                        <li className="flex items-center justify-between">
+                          <span>Agent configuration</span>
+                          <span className="font-medium">All settings</span>
+                        </li>
+                      </ul>
+                    </div>
+                    {agent.total_calls > 0 && (
+                      <p className="text-sm font-medium text-destructive">
+                        Warning: This agent has call history that will be lost.
+                      </p>
+                    )}
                   </div>
-                  {agent.total_calls > 0 && (
-                    <p className="text-sm font-medium text-destructive">
-                      Warning: This agent has call history that will be lost.
-                    </p>
-                  )}
-                </div>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(e) => {
-                  e.preventDefault();
-                  void handleDeleteAgent();
-                }}
-                disabled={isDeleting}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {isDeleting ? "Deleting..." : "Delete Permanently"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void handleDeleteAgent();
+                  }}
+                  disabled={isDeleting}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {isDeleting ? "Deleting..." : "Delete Permanently"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
           </AlertDialog>
         </div>
       </div>

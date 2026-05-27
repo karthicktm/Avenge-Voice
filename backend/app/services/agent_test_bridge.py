@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
+import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +13,8 @@ from openai import AsyncOpenAI
 from app.services.gpt_realtime import GPTRealtimeSession
 
 if TYPE_CHECKING:
+    import uuid
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger()
@@ -52,7 +54,7 @@ class AgentTestBridge:
         self,
         agent_id: uuid.UUID,
         scenario: TestScenario,
-        db: "AsyncSession",
+        db: AsyncSession,
         user_id: int,
         workspace_id: uuid.UUID,
         openai_api_key: str,
@@ -108,15 +110,11 @@ class AgentTestBridge:
     async def stop(self) -> None:
         self._stop_event.set()
         if self._caller_conn:
-            try:
+            with contextlib.suppress(Exception):
                 await self._caller_conn.__aexit__(None, None, None)
-            except Exception:
-                pass
         if self._agent_session:
-            try:
+            with contextlib.suppress(Exception):
                 await self._agent_session.__aexit__(None, None, None)
-            except Exception:
-                pass
 
     # ── session setup ────────────────────────────────────────────────────────
 
@@ -191,7 +189,7 @@ class AgentTestBridge:
         while not self._stop_event.is_set():
             try:
                 audio_b64 = await asyncio.wait_for(self._caller_audio_queue.get(), timeout=0.5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
             if self._agent_session:
                 await self._agent_session.send_audio(base64.b64decode(audio_b64))
@@ -200,7 +198,7 @@ class AgentTestBridge:
         while not self._stop_event.is_set():
             try:
                 audio_b64 = await asyncio.wait_for(self._agent_audio_queue.get(), timeout=0.5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
             if self._caller_conn:
                 await self._caller_conn.input_audio_buffer.append(audio=audio_b64)
@@ -266,30 +264,38 @@ class AgentTestBridge:
                 tool_name = getattr(event, "name", "")
                 raw_args = getattr(event, "arguments", "{}")
                 try:
-                    tool_args: dict[str, Any] = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    tool_args: dict[str, Any] = (
+                        json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    )
                 except json.JSONDecodeError:
                     tool_args = {}
 
-                await self.events.put({"type": "agent.tool_call", "tool": tool_name, "args": tool_args})
+                await self.events.put(
+                    {"type": "agent.tool_call", "tool": tool_name, "args": tool_args}
+                )
 
                 t0 = time.monotonic()
                 result = await self._agent_session.handle_function_call_event(event)
                 elapsed_ms = (time.monotonic() - t0) * 1000
 
-                await self.events.put({
-                    "type": "agent.tool_result",
-                    "tool": tool_name,
-                    "result": result,
-                    "elapsed_ms": elapsed_ms,
-                })
+                await self.events.put(
+                    {
+                        "type": "agent.tool_result",
+                        "tool": tool_name,
+                        "result": result,
+                        "elapsed_ms": elapsed_ms,
+                    }
+                )
 
                 # Emit current workflow node if executor is active
                 executor = self._agent_session.workflow_executor
                 if executor:
                     node = executor.current_node or {}
-                    await self.events.put({
-                        "type": "agent.workflow_node",
-                        "node_id": executor.current_node_id,
-                        "node_type": node.get("type", ""),
-                        "node_label": node.get("label", ""),
-                    })
+                    await self.events.put(
+                        {
+                            "type": "agent.workflow_node",
+                            "node_id": executor.current_node_id,
+                            "node_type": node.get("type", ""),
+                            "node_label": node.get("label", ""),
+                        }
+                    )
