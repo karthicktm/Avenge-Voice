@@ -209,10 +209,15 @@ async def step_test_session(
 
     openai_key = await _get_openai_key(user, wf, db)
     executor, state = await _load_executor(session_id, openai_key)
+
+    if state.get("workflow_id") != str(workflow_id):
+        raise HTTPException(status_code=403, detail="Session workflow mismatch")
+
     workspace_id = state.get("workspace_id", str(wf.workspace_id))
 
     node = executor.current_node or {}
     node_type = node.get("type", "")
+    node_label = node.get("label", "")  # noqa: F841  # used in simulation_detail block (Task 3)
     simulated = False
     simulation_detail: dict[str, Any] | None = None
     node_output = ""
