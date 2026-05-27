@@ -309,3 +309,42 @@ async def step_test_session(
         resolution_layer=result.resolution_layer,
         is_complete=next_node.get("type") == "end_call",
     )
+
+
+# ── context patch ─────────────────────────────────────────────────────────────
+
+
+class ContextPatchRequest(BaseModel):
+    context_bag: dict[str, Any]
+
+
+@router.patch("/{workflow_id}/test/{session_id}/context", response_model=TestSessionOut)
+async def patch_context(
+    workflow_id: uuid.UUID,
+    session_id: str,
+    body: ContextPatchRequest,
+    user: VerifiedUser,
+    db: AsyncSession = Depends(get_db),
+) -> TestSessionOut:
+    wf = await db.get(Workflow, workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    openai_key = await _get_openai_key(user, wf, db)
+    executor, state = await _load_executor(session_id, openai_key)
+    executor.context_bag.update(body.context_bag)
+    workspace_id = state.get("workspace_id", str(wf.workspace_id))
+    await _save_executor(session_id, executor, {"is_test": True, "workspace_id": workspace_id})
+    return _session_out(executor, session_id)
+
+
+# ── delete session ────────────────────────────────────────────────────────────
+
+
+@router.delete("/{workflow_id}/test/{session_id}", status_code=204)
+async def delete_test_session(
+    workflow_id: uuid.UUID,
+    session_id: str,
+    user: VerifiedUser,
+) -> None:
+    redis = await get_redis()
+    await redis.delete(_redis_key(session_id))

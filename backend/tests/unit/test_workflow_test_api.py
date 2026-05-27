@@ -378,3 +378,43 @@ async def test_step_categorize_runs_pipeline() -> None:
     data = resp.json()
     assert "elapsed_ms" in data
     mock_run.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_patch_context_updates_bag(async_client: AsyncClient) -> None:
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = json.dumps(CATEGORIZE_STATE)
+    mock_redis.set = AsyncMock()
+
+    async def patched_get_redis() -> Any:
+        return mock_redis
+
+    with patch("app.api.workflow_test.get_redis", patched_get_redis):
+        resp = await async_client.patch(
+            f"/api/v1/workflows/{WORKFLOW_ID}/test/{SESSION_ID}/context",
+            json={"context_bag": {"action_type": "emergency", "custom_key": "custom_val"}},
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["context_bag"]["action_type"] == "emergency"
+    assert data["context_bag"]["custom_key"] == "custom_val"
+
+
+@pytest.mark.asyncio
+async def test_delete_session(async_client: AsyncClient) -> None:
+    mock_redis = AsyncMock()
+    mock_redis.delete = AsyncMock()
+
+    async def patched_get_redis() -> Any:
+        return mock_redis
+
+    with patch("app.api.workflow_test.get_redis", patched_get_redis):
+        resp = await async_client.delete(
+            f"/api/v1/workflows/{WORKFLOW_ID}/test/{SESSION_ID}",
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert resp.status_code == 204
+    mock_redis.delete.assert_called_once_with(f"wf_test_session:{SESSION_ID}")
