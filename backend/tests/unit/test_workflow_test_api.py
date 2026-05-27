@@ -150,3 +150,121 @@ async def test_start_returns_404_for_missing_workflow() -> None:
 
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Workflow not found"
+
+
+SESSION_ID = str(uuid.uuid4())
+ENTRY_STATE = {
+    "workflow_id": WORKFLOW_ID,
+    "workspace_id": WORKSPACE_ID,
+    "nodes": MOCK_WORKFLOW.nodes,
+    "edges": MOCK_WORKFLOW.edges,
+    "current_node_id": "n1",
+    "context_bag": {},
+    "is_test": True,
+}
+CATEGORIZE_STATE = {**ENTRY_STATE, "current_node_id": "n2"}
+
+
+@pytest.mark.asyncio
+async def test_step_entry_auto_advances() -> None:
+    """POSTing to step on an entry node auto-advances to the next node."""
+    test_user = _make_test_user()
+
+    mock_db = AsyncMock()
+    mock_db.get.return_value = MOCK_WORKFLOW
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalar_one_or_none.return_value = MagicMock()
+    mock_db.execute.return_value = mock_execute_result
+
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        yield mock_db  # type: ignore[misc]
+
+    async def override_get_current_user() -> User:
+        return test_user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    transport = ASGITransport(app=app)  # type: ignore[arg-type]
+
+    # mock_redis.get returns the session JSON for the first call (load_executor)
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = json.dumps(ENTRY_STATE)
+    mock_redis.set = AsyncMock()
+
+    async def patched_get_redis() -> Any:
+        return mock_redis
+
+    try:
+        with (
+            patch("app.api.workflow_test.get_redis", patched_get_redis),
+            patch("app.api.workflow_test.get_user_api_keys", return_value=MOCK_USER_SETTINGS),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    f"/api/v1/workflows/{WORKFLOW_ID}/test/{SESSION_ID}/step",
+                    json={"caller_input": ""},
+                    headers={"Authorization": "Bearer test-token"},
+                )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["current_node_type"] == "categorize"
+
+
+@pytest.mark.asyncio
+async def test_step_categorize_runs_pipeline() -> None:
+    """POSTing to step on a categorize node invokes run_categorize with caller input."""
+    test_user = _make_test_user()
+
+    mock_db = AsyncMock()
+    mock_db.get.return_value = MOCK_WORKFLOW
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalar_one_or_none.return_value = MagicMock()
+    mock_db.execute.return_value = mock_execute_result
+
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        yield mock_db  # type: ignore[misc]
+
+    async def override_get_current_user() -> User:
+        return test_user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    transport = ASGITransport(app=app)  # type: ignore[arg-type]
+
+    # First get call returns session JSON; second (prewarmed trees) returns None
+    mock_redis = AsyncMock()
+    mock_redis.get.side_effect = [json.dumps(CATEGORIZE_STATE), None]
+    mock_redis.set = AsyncMock()
+
+    async def patched_get_redis() -> Any:
+        return mock_redis
+
+    mock_run = AsyncMock()
+
+    try:
+        with (
+            patch("app.api.workflow_test.get_redis", patched_get_redis),
+            patch("app.api.workflow_test.get_user_api_keys", return_value=MOCK_USER_SETTINGS),
+            patch(
+                "app.services.workflow_engine.executor.WorkflowExecutor.run_categorize",
+                mock_run,
+            ),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    f"/api/v1/workflows/{WORKFLOW_ID}/test/{SESSION_ID}/step",
+                    json={"caller_input": "I need billing help"},
+                    headers={"Authorization": "Bearer test-token"},
+                )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "elapsed_ms" in data
+    mock_run.assert_called_once()
