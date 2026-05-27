@@ -63,6 +63,11 @@ async def test_start_creates_redis_session() -> None:
 
     mock_db = AsyncMock()
     mock_db.get.return_value = MOCK_WORKFLOW
+    # scalar_one_or_none() is a sync call on the result of db.execute(); return a
+    # truthy MagicMock so the workspace ownership check passes.
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalar_one_or_none.return_value = MagicMock()
+    mock_db.execute.return_value = mock_execute_result
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield mock_db  # type: ignore[misc]
@@ -132,13 +137,15 @@ async def test_start_returns_404_for_missing_workflow() -> None:
     app.dependency_overrides[get_redis] = override_get_redis
 
     transport = ASGITransport(app=app)  # type: ignore[arg-type]
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            f"/api/v1/workflows/{uuid.uuid4()}/test/start",
-            headers={"Authorization": "Bearer test-token"},
-        )
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/v1/workflows/{uuid.uuid4()}/test/start",
+                headers={"Authorization": "Bearer test-token"},
+            )
+    finally:
+        app.dependency_overrides.clear()
 
-    app.dependency_overrides.clear()
     await fake_redis.aclose()
 
     assert resp.status_code == 404

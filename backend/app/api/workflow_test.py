@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from app.api.settings import get_user_api_keys
 from app.core.auth import VerifiedUser, user_id_to_uuid
@@ -16,6 +17,7 @@ from app.core.config import settings
 from app.db.redis import get_redis
 from app.db.session import get_db
 from app.models.workflow import Workflow
+from app.models.workspace import Workspace
 from app.services.workflow_engine.executor import WorkflowExecutor
 from app.services.workflow_engine.llm_client import LLMConfig
 
@@ -77,7 +79,12 @@ def _session_out(executor: WorkflowExecutor, session_id: str) -> TestSessionOut:
 
 
 async def _load_executor(session_id: str, api_key: str) -> tuple[WorkflowExecutor, dict[str, Any]]:
-    """Load executor from Redis. Raises 404 if session not found."""
+    """Load executor from Redis. Raises 404 if session not found.
+
+    NOTE (Task 2): Endpoints that receive a workflow_id URL parameter should
+    additionally validate that state.get("workflow_id") == str(workflow_id)
+    to prevent a session from being driven against a mismatched workflow.
+    """
     redis = await get_redis()
     raw = await redis.get(_redis_key(session_id))
     if not raw:
@@ -115,6 +122,16 @@ async def start_test_session(
     wf = await db.get(Workflow, workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Verify the calling user owns the workspace this workflow belongs to.
+    ws_result = await db.execute(
+        select(Workspace).where(
+            Workspace.id == wf.workspace_id,
+            Workspace.user_id == user.id,
+        )
+    )
+    if ws_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     openai_key = await _get_openai_key(user, wf, db)
     llm_config = _make_llm_config(openai_key)
