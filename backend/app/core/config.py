@@ -157,6 +157,7 @@ class Settings(BaseSettings):
 
     # Voice & AI Services
     OPENAI_API_KEY: str | None = None
+    ANTHROPIC_API_KEY: str | None = None
     DEEPGRAM_API_KEY: str | None = None
     ELEVENLABS_API_KEY: str | None = None
 

@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  FlaskConical,
+  FolderOpen,
   GitBranch,
+  MoreVertical,
+  AlertCircle,
+  Pencil,
   Plus,
   Trash2,
-  Pencil,
-  FolderOpen,
-  AlertCircle,
-  MoreVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +60,7 @@ interface WorkspaceOption {
 
 export default function WorkflowsPage() {
   const qc = useQueryClient();
+  const router = useRouter();
   const [workspaceId, setWorkspaceId] = useState("");
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [newName, setNewName] = useState("");
@@ -235,6 +238,15 @@ export default function WorkflowsPage() {
                         >
                           <Pencil className="mr-2 h-4 w-4" />
                           Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/dashboard/workflows/${wf.id}/test`);
+                          }}
+                        >
+                          <FlaskConical className="mr-2 h-4 w-4" />
+                          Test
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
