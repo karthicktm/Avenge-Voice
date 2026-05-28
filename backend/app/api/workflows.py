@@ -1,7 +1,7 @@
 """Workflows API — CRUD for workflow graphs and agent attachment."""
 
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,10 +9,14 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import VerifiedUser
+from app.api.settings import get_user_api_keys
+from app.core.auth import VerifiedUser, user_id_to_uuid
+from app.core.config import settings as app_settings
 from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.workflow import Workflow
+from app.services.workflow_generator import GeneratedWorkflow as _GeneratedWorkflow
+from app.services.workflow_generator import GenerateRequest, generate_workflow
 
 logger = structlog.get_logger()
 
@@ -43,6 +47,21 @@ class WorkflowOut(BaseModel):
     edges: list[dict[str, Any]]
 
     model_config = {"from_attributes": True}
+
+
+class GenerateWorkflowIn(BaseModel):
+    workspace_id: uuid.UUID
+    workflow_id: uuid.UUID
+    prompt: str
+    provider: Literal["openai", "anthropic", "google"] = "openai"
+    model: str = "gpt-4o-mini"
+
+
+class GenerateWorkflowOut(BaseModel):
+    intent: Literal["node", "workflow"]
+    nodes: list[dict[str, Any]]
+    edges: list[dict[str, Any]]
+    agent_name: str | None = None  # echoed back so the UI can confirm context was used
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
@@ -79,6 +98,85 @@ async def list_workflows(
         .order_by(Workflow.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+def _build_agent_context(agent: Agent) -> str:
+    """Build a detailed context string from agent configuration for the LLM prompt.
+
+    Includes full system prompt, all enabled integrations, and per-integration
+    tool IDs so the generator can select appropriate node types.
+    """
+    parts: list[str] = [f"Name: {agent.name}"]
+
+    if agent.description:
+        parts.append(f"Description: {agent.description}")
+
+    if agent.system_prompt:
+        parts.append(f"System prompt:\n{agent.system_prompt}")
+
+    if agent.initial_greeting:
+        parts.append(f"Initial greeting: {agent.initial_greeting}")
+
+    if agent.enabled_tool_ids:
+        tool_lines = []
+        for integration_id, tool_ids in agent.enabled_tool_ids.items():
+            if tool_ids:
+                tool_lines.append(f"  - {integration_id}: {', '.join(tool_ids)}")
+            else:
+                tool_lines.append(f"  - {integration_id}")
+        if tool_lines:
+            parts.append("Integrations and tools:\n" + "\n".join(tool_lines))
+    elif agent.enabled_tools:
+        parts.append(f"Integrations: {', '.join(agent.enabled_tools)}")
+
+    parts.append(f"Language: {agent.language}")
+    parts.append(f"Pricing tier: {agent.pricing_tier}")
+
+    return "\n".join(parts)
+
+
+@router.post("/generate", response_model=GenerateWorkflowOut)
+async def generate_workflow_endpoint(
+    body: GenerateWorkflowIn,
+    user: VerifiedUser,
+    db: AsyncSession = Depends(get_db),
+) -> GenerateWorkflowOut:
+    user_uuid = user_id_to_uuid(user.id)
+    user_settings = await get_user_api_keys(user_uuid, db, workspace_id=body.workspace_id)
+
+    if body.provider == "anthropic":
+        api_key = app_settings.ANTHROPIC_API_KEY or ""
+    elif body.provider == "google":
+        api_key = (user_settings.google_api_key if user_settings else None) or ""
+    else:
+        api_key = (
+            (user_settings.openai_api_key if user_settings else None)
+            or app_settings.OPENAI_API_KEY
+            or ""
+        )
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail=f"No {body.provider} API key configured")
+
+    agent_result = await db.execute(select(Agent).where(Agent.workflow_id == body.workflow_id))
+    agent = agent_result.scalar_one_or_none()
+    agent_context = _build_agent_context(agent) if agent else ""
+
+    result: _GeneratedWorkflow = await generate_workflow(
+        GenerateRequest(
+            prompt=body.prompt,
+            provider=body.provider,
+            model=body.model,
+            api_key=api_key,
+            agent_context=agent_context,
+        )
+    )
+    return GenerateWorkflowOut(
+        intent=result.intent,
+        nodes=result.nodes,
+        edges=result.edges,
+        agent_name=agent.name if agent else None,
+    )
 
 
 @router.get("/{workflow_id}", response_model=WorkflowOut)
