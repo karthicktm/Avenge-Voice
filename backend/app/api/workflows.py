@@ -158,6 +158,15 @@ async def generate_workflow_endpoint(
     if not api_key:
         raise HTTPException(status_code=400, detail=f"No {body.provider} API key configured")
 
+    wf_check = await db.execute(
+        select(Workflow).where(
+            Workflow.id == body.workflow_id,
+            Workflow.workspace_id == body.workspace_id,
+        )
+    )
+    if not wf_check.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
     agent_result = await db.execute(select(Agent).where(Agent.workflow_id == body.workflow_id))
     agent = agent_result.scalar_one_or_none()
     agent_context = _build_agent_context(agent) if agent else ""
