@@ -37,6 +37,7 @@ import {
   Bot,
   ChevronRight,
   AlertCircle,
+  Wand2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,10 @@ import {
   type WorkflowNodeType,
 } from "@/lib/api/workflows";
 import { listCategoryTrees } from "@/lib/api/category-trees";
+import { fetchAgents } from "@/lib/api/agents";
+import { PromptBar } from "@/components/workflow/PromptBar";
+import { WorkflowPreviewModal } from "@/components/workflow/WorkflowPreviewModal";
+import { type GenerateWorkflowResponse } from "@/lib/api/workflows";
 
 // ── ReactFlow node type registry ─────────────────────────────────────────────
 
@@ -310,6 +315,8 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
   const [edges, setEdges, onEdgesChange] = useEdgesState(wfEdgesToFlow(workflow.edges));
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [showPromptBar, setShowPromptBar] = useState(false);
+  const [pendingResult, setPendingResult] = useState<GenerateWorkflowResponse | null>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   const { data: trees = [] } = useQuery({
@@ -317,6 +324,14 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
     queryFn: async () => {
       const result = await listCategoryTrees(workflow.workspace_id);
       return result.map((t: { tree_name: string }) => t.tree_name);
+    },
+  });
+
+  const { data: attachedAgent = null } = useQuery({
+    queryKey: ["attached-agent", workflow.id],
+    queryFn: async () => {
+      const agents = await fetchAgents();
+      return agents.find((a) => a.workflow_id === workflow.id) ?? null;
     },
   });
 
@@ -415,6 +430,28 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
     );
   }
 
+  function handleReplace() {
+    if (!pendingResult) return;
+    setNodes(wfNodesToFlow(pendingResult.nodes));
+    setEdges(wfEdgesToFlow(pendingResult.edges));
+    setPendingResult(null);
+    setShowPromptBar(false);
+  }
+
+  function handleAppend() {
+    if (!pendingResult) return;
+    const maxX = nodes.reduce((m, n) => Math.max(m, n.position.x + 200), 0);
+    const offset = nodes.length > 0 ? maxX : 0;
+    const shifted = pendingResult.nodes.map((n) => ({
+      ...n,
+      position: { x: (n.position?.x ?? 400) + offset, y: n.position?.y ?? 50 },
+    }));
+    setNodes((prev) => [...prev, ...wfNodesToFlow(shifted)]);
+    setEdges((prev) => [...prev, ...wfEdgesToFlow(pendingResult.edges)]);
+    setPendingResult(null);
+    setShowPromptBar(false);
+  }
+
   return (
     <div className="flex h-full flex-col bg-background">
       {/* ── Toolbar ── */}
@@ -432,6 +469,17 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
         )}
 
         <div className="flex-1" />
+
+        <Button
+          variant={showPromptBar ? "secondary" : "ghost"}
+          size="sm"
+          onClick={() => setShowPromptBar((v) => !v)}
+          className="gap-1.5"
+          title="Generate nodes with AI"
+        >
+          <Wand2 className="h-3.5 w-3.5" />
+          AI Generate
+        </Button>
 
         <span className="text-xs text-muted-foreground">⌘S to save · Delete to remove node</span>
 
@@ -490,6 +538,21 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
 
         {/* ── Canvas ── */}
         <div ref={reactFlowWrapper} className="relative flex-1">
+          {showPromptBar && (
+            <PromptBar
+              workspaceId={workflow.workspace_id}
+              workflowId={workflow.id}
+              agentName={attachedAgent?.name ?? null}
+              onGenerated={setPendingResult}
+              onClose={() => setShowPromptBar(false)}
+            />
+          )}
+          <WorkflowPreviewModal
+            result={pendingResult}
+            onReplace={handleReplace}
+            onAppend={handleAppend}
+            onDiscard={() => setPendingResult(null)}
+          />
           <ReactFlow
             nodes={nodes}
             edges={edges}
