@@ -101,6 +101,9 @@ async def list_workflows(
     return list(result.scalars().all())
 
 
+_MAX_SYSTEM_PROMPT_CHARS = 1500
+
+
 def _build_agent_context(agent: Agent) -> str:
     """Build a detailed context string from agent configuration for the LLM prompt.
 
@@ -113,7 +116,10 @@ def _build_agent_context(agent: Agent) -> str:
         parts.append(f"Description: {agent.description}")
 
     if agent.system_prompt:
-        parts.append(f"System prompt:\n{agent.system_prompt}")
+        prompt_text = agent.system_prompt[:_MAX_SYSTEM_PROMPT_CHARS]
+        if len(agent.system_prompt) > _MAX_SYSTEM_PROMPT_CHARS:
+            prompt_text += "\n[truncated]"
+        parts.append(f"System prompt:\n{prompt_text}")
 
     if agent.initial_greeting:
         parts.append(f"Initial greeting: {agent.initial_greeting}")

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
+
+from fastapi import HTTPException
 
 from app.services.workflow_engine.llm_client import LLMConfig, call_llm
 
@@ -36,6 +39,8 @@ AVAILABLE NODE TYPES AND THEIR CONFIGS:
 - webhook: {"method": "POST", "url": "<url>", "body_template": "{}", "response_key": ""} — HTTP call
 - voicemail: {"prompt": "<instruction>"} — take voicemail
 - end_call: {} — terminate call
+- lookup_transfer: {"phonebook_id": "", "fallback_number": ""} — phonebook lookup, then transfer call
+- subagent: {"system_prompt": "", "voice": ""} — override agent prompt/model/voice for this step
 
 CONTEXT VARIABLES (use {{variable}} in templates):
 {{caller_number}}, {{label}}, {{code}}, {{action_type}}, {{transfer_target}}
@@ -76,10 +81,8 @@ class GeneratedWorkflow:
 
 def _strip_fences(text: str) -> str:
     text = text.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
-        text = "\n".join(lines[1:end])
+    text = re.sub(r"^```[a-z]*\n?", "", text)
+    text = re.sub(r"\n?```\s*$", "", text)
     return text.strip()
 
 
@@ -105,8 +108,14 @@ async def generate_workflow(req: GenerateRequest) -> GeneratedWorkflow:
 
     config = LLMConfig(provider=req.provider, model=req.model, api_key=req.api_key)
     raw = await call_llm(config, _SYSTEM, user_prompt, max_tokens=2000)
-    data: dict[str, Any] = json.loads(_strip_fences(raw))
-    nodes: list[dict[str, Any]] = data["nodes"]
-    edges: list[dict[str, Any]] = data.get("edges", [])
+    try:
+        data: dict[str, Any] = json.loads(_strip_fences(raw))
+        nodes: list[dict[str, Any]] = data["nodes"]
+        edges: list[dict[str, Any]] = data.get("edges", [])
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="LLM returned an unparseable response — try rephrasing your prompt",
+        ) from exc
     _remap_ids(nodes, edges)
     return GeneratedWorkflow(intent=data["intent"], nodes=nodes, edges=edges)
