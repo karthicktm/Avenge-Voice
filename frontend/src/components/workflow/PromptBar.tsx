@@ -14,11 +14,31 @@ import {
 import { generateWorkflowFromPrompt, type GenerateWorkflowResponse } from "@/lib/api/workflows";
 
 const MODELS = [
-  { value: "openai:gpt-4o-mini", label: "GPT-4o Mini (fast)" },
-  { value: "openai:gpt-4o", label: "GPT-4o" },
-  { value: "anthropic:claude-haiku-4-5-20251001", label: "Claude Haiku (fast)" },
-  { value: "anthropic:claude-sonnet-4-6", label: "Claude Sonnet" },
-  { value: "google:gemini-2.0-flash", label: "Gemini Flash (fast)" },
+  {
+    value: "openai:gpt-4o-mini",
+    label: "GPT-4o Mini (fast)",
+    provider: "openai" as const,
+    model: "gpt-4o-mini",
+  },
+  { value: "openai:gpt-4o", label: "GPT-4o", provider: "openai" as const, model: "gpt-4o" },
+  {
+    value: "anthropic:claude-haiku-4-5-20251001",
+    label: "Claude Haiku (fast)",
+    provider: "anthropic" as const,
+    model: "claude-haiku-4-5-20251001",
+  },
+  {
+    value: "anthropic:claude-sonnet-4-6",
+    label: "Claude Sonnet",
+    provider: "anthropic" as const,
+    model: "claude-sonnet-4-6",
+  },
+  {
+    value: "google:gemini-2.0-flash",
+    label: "Gemini Flash (fast)",
+    provider: "google" as const,
+    model: "gemini-2.0-flash",
+  },
 ];
 
 interface PromptBarProps {
@@ -47,15 +67,14 @@ export function PromptBar({
     setLoading(true);
     setError(null);
     try {
-      const parts = model.split(":");
-      const provider = parts[0] as "openai" | "anthropic" | "google";
-      const modelName = parts[1] ?? "";
+      const selectedModel = MODELS.find((m) => m.value === model);
+      if (!selectedModel) return;
       const result = await generateWorkflowFromPrompt({
         workspace_id: workspaceId,
         workflow_id: workflowId,
         prompt,
-        provider,
-        model: modelName,
+        provider: selectedModel.provider,
+        model: selectedModel.model,
       });
       onGenerated(result);
     } catch (err) {
@@ -89,9 +108,8 @@ export function PromptBar({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              void handleGenerate();
-            }
+            if (e.key === "Enter") void handleGenerate();
+            if (e.key === "Escape") onClose();
           }}
           className="flex-1 border-0 shadow-none focus-visible:ring-0"
           disabled={loading}
@@ -115,7 +133,7 @@ export function PromptBar({
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generate"}
         </Button>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close prompt bar">
           <X className="h-4 w-4" />
         </Button>
       </div>
