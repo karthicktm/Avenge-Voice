@@ -440,14 +440,17 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
 
   function handleAppend() {
     if (!pendingResult) return;
-    const maxX = nodes.reduce((m, n) => Math.max(m, n.position.x + 200), 0);
-    const offset = nodes.length > 0 ? maxX : 0;
-    const shifted = pendingResult.nodes.map((n) => ({
-      ...n,
-      position: { x: (n.position?.x ?? 400) + offset, y: n.position?.y ?? 50 },
-    }));
-    setNodes((prev) => [...prev, ...wfNodesToFlow(shifted)]);
-    setEdges((prev) => [...prev, ...wfEdgesToFlow(pendingResult.edges)]);
+    const result = pendingResult;
+    setNodes((prev) => {
+      const maxX = prev.reduce((m, n) => Math.max(m, n.position.x + 200), 0);
+      const offset = prev.length > 0 ? maxX : 0;
+      const shifted = result.nodes.map((n) => ({
+        ...n,
+        position: { x: (n.position?.x ?? 400) + offset, y: n.position?.y ?? 50 },
+      }));
+      return [...prev, ...wfNodesToFlow(shifted)];
+    });
+    setEdges((prev) => [...prev, ...wfEdgesToFlow(result.edges)]);
     setPendingResult(null);
     setShowPromptBar(false);
   }
