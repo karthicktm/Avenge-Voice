@@ -41,7 +41,12 @@ export function WorkflowPreviewModal({
   onDiscard,
 }: WorkflowPreviewModalProps) {
   return (
-    <Dialog open={!!result} onOpenChange={() => onDiscard()}>
+    <Dialog
+      open={!!result}
+      onOpenChange={(open) => {
+        if (!open) onDiscard();
+      }}
+    >
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>
@@ -55,7 +60,7 @@ export function WorkflowPreviewModal({
               <Badge variant="secondary" className="shrink-0 text-xs">
                 {TYPE_LABEL[node.type ?? ""] ?? node.type}
               </Badge>
-              <span className="truncate text-sm">{node.label}</span>
+              <span className="truncate text-sm">{node.label ?? node.type}</span>
             </div>
           ))}
         </div>
