@@ -7,7 +7,6 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
-import anthropic
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -18,6 +17,7 @@ from app.core.auth import VerifiedUser, user_id_to_uuid
 from app.core.config import settings
 from app.db.redis import get_redis
 from app.db.session import get_db
+from app.models.agent import Agent
 from app.models.workflow import Workflow
 from app.models.workspace import Workspace
 from app.services.workflow_engine.executor import WorkflowExecutor
@@ -55,6 +55,13 @@ class TestSessionOut(BaseModel):
     current_node_label: str
     context_bag: dict[str, Any]
     is_complete: bool
+
+
+class VoiceConfigOut(BaseModel):
+    provider: str  # "openai" | "elevenlabs" | "browser"
+    tts_model: str
+    voice: str
+    available: bool
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -114,6 +121,50 @@ async def _get_openai_key(user: VerifiedUser, workflow: Workflow, db: AsyncSessi
     user_settings = await get_user_api_keys(user_uuid, db, workspace_id=workflow.workspace_id)
     key = (user_settings.openai_api_key if user_settings else None) or settings.OPENAI_API_KEY or ""
     return key
+
+
+async def _resolve_voice_config(
+    workflow_id: uuid.UUID,
+    user: VerifiedUser,
+    db: AsyncSession,
+) -> VoiceConfigOut:
+    """Resolve TTS voice config from the agent attached to this workflow."""
+    agent_result = await db.execute(select(Agent).where(Agent.workflow_id == workflow_id))
+    agent = agent_result.scalar_one_or_none()
+
+    wf = await db.get(Workflow, workflow_id)
+    workspace_id = wf.workspace_id if wf else None
+    user_uuid = user_id_to_uuid(user.id)
+    user_settings = await get_user_api_keys(user_uuid, db, workspace_id=workspace_id)
+
+    def _openai_key() -> str | None:
+        return (user_settings.openai_api_key if user_settings else None) or settings.OPENAI_API_KEY
+
+    def _elevenlabs_key() -> str | None:
+        return (
+            user_settings.elevenlabs_api_key if user_settings else None
+        ) or settings.ELEVENLABS_API_KEY
+
+    # Determine tier and voice from the attached agent (if any).
+    if agent is None:
+        tier, voice = None, "shimmer"
+    else:
+        tier, voice = agent.pricing_tier, agent.voice or "shimmer"
+
+    # Budget tier: prefer ElevenLabs flash model when a key is available.
+    if tier == "budget":
+        el = _elevenlabs_key()
+        if el:
+            return VoiceConfigOut(
+                provider="elevenlabs", tts_model="eleven_flash_v2_5", voice=voice, available=True
+            )
+
+    # No tier, or budget without ElevenLabs key, or premium/balanced: use OpenAI tts-1.
+    oai_voice = voice if tier not in (None, "budget") else "shimmer"
+    oai = _openai_key()
+    if oai:
+        return VoiceConfigOut(provider="openai", tts_model="tts-1", voice=oai_voice, available=True)
+    return VoiceConfigOut(provider="browser", tts_model="", voice="", available=False)
 
 
 # ── start ─────────────────────────────────────────────────────────────────────
@@ -226,6 +277,12 @@ async def _process_node(
         await executor.run_categorize(caller_input, preloaded)
         result.resolution_layer = executor.context_bag.get("resolution_layer")
         result.node_output = executor.build_node_instruction()
+
+    elif node_type == "instruction":
+        result.node_output = executor.build_node_instruction() or node_label
+        next_id = executor.route()
+        if next_id:
+            executor.current_node_id = next_id
 
     elif node_type == "condition":
         next_id = executor.route_condition()
@@ -351,6 +408,29 @@ async def delete_test_session(
     await redis.delete(_redis_key(session_id))
 
 
+# ── voice config ──────────────────────────────────────────────────────────────
+
+
+@router.get("/{workflow_id}/test/voice-config", response_model=VoiceConfigOut)
+async def get_voice_config(
+    workflow_id: uuid.UUID,
+    user: VerifiedUser,
+    db: AsyncSession = Depends(get_db),
+) -> VoiceConfigOut:
+    wf = await db.get(Workflow, workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    ws_result = await db.execute(
+        select(Workspace).where(
+            Workspace.id == wf.workspace_id,
+            Workspace.user_id == user.id,
+        )
+    )
+    if ws_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return await _resolve_voice_config(workflow_id, user, db)
+
+
 # ── AI step ───────────────────────────────────────────────────────────────────
 
 _AI_CALLER_SYSTEM = (
@@ -388,18 +468,20 @@ class AiStepOut(BaseModel):
     step_result: StepOut | None = None
 
 
-async def _call_claude(system: str, user_msg: str, api_key: str, max_tokens: int = 100) -> str:
-    client = anthropic.AsyncAnthropic(api_key=api_key or None)
-    msg = await client.messages.create(
-        model="claude-haiku-4-5-20251001",
+async def _call_openai_chat(system: str, user_msg: str, api_key: str, max_tokens: int = 100) -> str:
+    from openai import AsyncOpenAI
+
+    client = AsyncOpenAI(api_key=api_key)
+    response = await client.chat.completions.create(
+        model="gpt-4o-mini",
         max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": user_msg}],
+        temperature=0.7,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_msg},
+        ],
     )
-    block = msg.content[0]
-    if not isinstance(block, anthropic.types.TextBlock):
-        raise HTTPException(status_code=502, detail="AI caller returned unexpected content type")
-    return block.text.strip()
+    return (response.choices[0].message.content or "").strip()
 
 
 @router.post("/{workflow_id}/test/{session_id}/ai-step", response_model=AiStepOut)
@@ -419,14 +501,13 @@ async def ai_step_test_session(
     node = executor.current_node or {}
     node_type = node.get("type", "")
     node_label = node.get("label", "")
-    anthropic_key = settings.ANTHROPIC_API_KEY or ""
 
     if body.mode == "copilot":
         system = _AI_CALLER_COPILOT_SYSTEM.format(
             persona=body.persona, node_type=node_type, node_label=node_label
         )
-        raw = await _call_claude(
-            system, body.transcript or "Start of call", anthropic_key, max_tokens=150
+        raw = await _call_openai_chat(
+            system, body.transcript or "Start of call", openai_key, max_tokens=150
         )
         suggestions = [line.strip() for line in raw.splitlines() if line.strip()][
             :_COPILOT_SUGGESTION_COUNT
@@ -441,7 +522,7 @@ async def ai_step_test_session(
         node_label=node_label,
         transcript=body.transcript or "Start of call",
     )
-    ai_input = await _call_claude(system, "What would you say now?", anthropic_key)
+    ai_input = await _call_openai_chat(system, "What would you say now?", openai_key)
 
     step_result = await step_test_session(
         workflow_id=workflow_id,
