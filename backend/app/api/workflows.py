@@ -15,6 +15,7 @@ from app.core.config import settings as app_settings
 from app.db.session import get_db
 from app.models.agent import Agent
 from app.models.workflow import Workflow
+from app.models.workspace import Workspace
 from app.services.workflow_generator import GeneratedWorkflow as _GeneratedWorkflow
 from app.services.workflow_generator import GenerateRequest, generate_workflow
 
@@ -142,6 +143,16 @@ async def generate_workflow_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> GenerateWorkflowOut:
     user_uuid = user_id_to_uuid(user.id)
+
+    ws_check = await db.execute(
+        select(Workspace).where(
+            Workspace.id == body.workspace_id,
+            Workspace.user_id == user.id,
+        )
+    )
+    if not ws_check.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
     user_settings = await get_user_api_keys(user_uuid, db, workspace_id=body.workspace_id)
 
     if body.provider == "anthropic":
