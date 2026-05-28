@@ -111,3 +111,34 @@ export async function detachWorkflow(workflowId: string, agentId: string): Promi
   });
   if (!res.ok) throw new Error(`Failed to detach workflow: ${res.statusText}`);
 }
+
+// ── AI workflow generation ─────────────────────────────────────────────────────
+
+export interface GenerateWorkflowRequest {
+  workspace_id: string;
+  workflow_id: string;
+  prompt: string;
+  provider: "openai" | "anthropic" | "google";
+  model: string;
+}
+
+export interface GenerateWorkflowResponse {
+  intent: "node" | "workflow";
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  agent_name: string | null;
+}
+
+export async function generateWorkflowFromPrompt(
+  request: GenerateWorkflowRequest
+): Promise<GenerateWorkflowResponse> {
+  const res = await apiFetch(`${API_BASE}/api/v1/workflows/generate`, {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Failed to generate workflow");
+  }
+  return res.json();
+}

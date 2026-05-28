@@ -46,6 +46,7 @@ async function fetchWithTimeout(
 
 export interface Agent {
   id: string;
+  workflow_id: string | null;
   name: string;
   description: string | null;
   pricing_tier: string;
