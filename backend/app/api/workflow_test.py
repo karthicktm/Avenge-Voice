@@ -124,18 +124,16 @@ async def _get_openai_key(user: VerifiedUser, workflow: Workflow, db: AsyncSessi
 
 
 async def _resolve_voice_config(
-    workflow_id: uuid.UUID,
+    wf: Workflow,
     user: VerifiedUser,
     db: AsyncSession,
 ) -> VoiceConfigOut:
     """Resolve TTS voice config from the agent attached to this workflow."""
-    agent_result = await db.execute(select(Agent).where(Agent.workflow_id == workflow_id))
+    agent_result = await db.execute(select(Agent).where(Agent.workflow_id == wf.id))
     agent = agent_result.scalar_one_or_none()
 
-    wf = await db.get(Workflow, workflow_id)
-    workspace_id = wf.workspace_id if wf else None
     user_uuid = user_id_to_uuid(user.id)
-    user_settings = await get_user_api_keys(user_uuid, db, workspace_id=workspace_id)
+    user_settings = await get_user_api_keys(user_uuid, db, workspace_id=wf.workspace_id)
 
     def _openai_key() -> str | None:
         return (user_settings.openai_api_key if user_settings else None) or settings.OPENAI_API_KEY
@@ -145,25 +143,32 @@ async def _resolve_voice_config(
             user_settings.elevenlabs_api_key if user_settings else None
         ) or settings.ELEVENLABS_API_KEY
 
-    # Determine tier and voice from the attached agent (if any).
-    if agent is None:
-        tier, voice = None, "shimmer"
-    else:
-        tier, voice = agent.pricing_tier, agent.voice or "shimmer"
+    def _openai_shimmer_or_browser() -> VoiceConfigOut:
+        oai = _openai_key()
+        if oai:
+            return VoiceConfigOut(
+                provider="openai", tts_model="tts-1", voice="shimmer", available=True
+            )
+        return VoiceConfigOut(provider="browser", tts_model="", voice="", available=False)
 
-    # Budget tier: prefer ElevenLabs flash model when a key is available.
-    if tier == "budget":
+    if agent is None:
+        return _openai_shimmer_or_browser()
+
+    voice = agent.voice or "shimmer"
+
+    if agent.pricing_tier == "budget":
         el = _elevenlabs_key()
         if el:
             return VoiceConfigOut(
                 provider="elevenlabs", tts_model="eleven_flash_v2_5", voice=voice, available=True
             )
+        return _openai_shimmer_or_browser()
 
-    # No tier, or budget without ElevenLabs key, or premium/balanced: use OpenAI tts-1.
-    oai_voice = voice if tier not in (None, "budget") else "shimmer"
+    # premium, premium-mini, balanced → approximate with OpenAI tts-1 for test simulation
+    # (production balanced uses Google TTS; premium-mini uses Realtime — both unavailable here)
     oai = _openai_key()
     if oai:
-        return VoiceConfigOut(provider="openai", tts_model="tts-1", voice=oai_voice, available=True)
+        return VoiceConfigOut(provider="openai", tts_model="tts-1", voice=voice, available=True)
     return VoiceConfigOut(provider="browser", tts_model="", voice="", available=False)
 
 
@@ -428,7 +433,7 @@ async def get_voice_config(
     )
     if ws_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=403, detail="Access denied")
-    return await _resolve_voice_config(workflow_id, user, db)
+    return await _resolve_voice_config(wf, user, db)
 
 
 # ── AI step ───────────────────────────────────────────────────────────────────
