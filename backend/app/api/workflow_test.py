@@ -7,8 +7,11 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -62,6 +65,11 @@ class VoiceConfigOut(BaseModel):
     tts_model: str
     voice: str
     available: bool
+
+
+class SpeakRequest(BaseModel):
+    text: str
+    session_id: str
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -170,6 +178,30 @@ async def _resolve_voice_config(
     if oai:
         return VoiceConfigOut(provider="openai", tts_model="tts-1", voice=voice, available=True)
     return VoiceConfigOut(provider="browser", tts_model="", voice="", available=False)
+
+
+async def _speak_openai(text: str, model: str, voice: str, api_key: str) -> bytes:
+    client = AsyncOpenAI(api_key=api_key)
+    response = await client.audio.speech.create(
+        model=model,
+        voice=voice,
+        input=text,
+        response_format="mp3",
+    )
+    return response.content
+
+
+async def _speak_elevenlabs(text: str, model: str, voice_id: str, api_key: str) -> bytes:
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+            headers={"xi-api-key": api_key, "Content-Type": "application/json"},
+            json={"text": text, "model_id": model, "output_format": "mp3_44100_128"},
+            timeout=30.0,
+        )
+    if r.status_code != httpx.codes.OK:
+        raise HTTPException(status_code=502, detail="ElevenLabs TTS failed")
+    return r.content
 
 
 # ── start ─────────────────────────────────────────────────────────────────────
@@ -434,6 +466,56 @@ async def get_voice_config(
     if ws_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=403, detail="Access denied")
     return await _resolve_voice_config(wf, user, db)
+
+
+@router.post("/{workflow_id}/test/speak")
+async def speak_text(
+    workflow_id: uuid.UUID,
+    body: SpeakRequest,
+    user: VerifiedUser,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    wf = await db.get(Workflow, workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    ws_result = await db.execute(
+        select(Workspace).where(
+            Workspace.id == wf.workspace_id,
+            Workspace.user_id == user.id,
+        )
+    )
+    if ws_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    voice_config = await _resolve_voice_config(wf, user, db)
+
+    if not voice_config.available or voice_config.provider == "browser":
+        raise HTTPException(status_code=503, detail="No TTS provider available")
+
+    user_uuid = user_id_to_uuid(user.id)
+    user_settings = await get_user_api_keys(user_uuid, db, workspace_id=wf.workspace_id)
+
+    if voice_config.provider == "openai":
+        oai_key = (
+            (user_settings.openai_api_key if user_settings else None)
+            or settings.OPENAI_API_KEY
+            or ""
+        )
+        audio = await _speak_openai(body.text, voice_config.tts_model, voice_config.voice, oai_key)
+        return Response(content=audio, media_type="audio/mpeg")
+
+    if voice_config.provider == "elevenlabs":
+        el_key = (
+            (user_settings.elevenlabs_api_key if user_settings else None)
+            or settings.ELEVENLABS_API_KEY
+            or ""
+        )
+        audio = await _speak_elevenlabs(
+            body.text, voice_config.tts_model, voice_config.voice, el_key
+        )
+        return Response(content=audio, media_type="audio/mpeg")
+
+    raise HTTPException(status_code=502, detail="Unknown TTS provider")
 
 
 # ── AI step ───────────────────────────────────────────────────────────────────

@@ -147,3 +147,27 @@ async def test_resolve_voice_config_budget_agent_fallback_openai(mock_db, mock_u
     assert result.voice == "shimmer"
     assert result.tts_model == "tts-1"
     assert result.available is True
+
+
+@pytest.mark.asyncio
+async def test_speak_openai_returns_mp3(mock_db, mock_user):
+    """OpenAI provider: _speak_openai returns MP3 bytes from OpenAI TTS."""
+    fake_audio = b"FAKE_MP3_BYTES"
+
+    mock_speech = MagicMock()
+    mock_speech.content = fake_audio
+
+    mock_openai_client = AsyncMock()
+    mock_openai_client.audio.speech.create = AsyncMock(return_value=mock_speech)
+
+    with patch("app.api.workflow_test.AsyncOpenAI", return_value=mock_openai_client):
+        from app.api.workflow_test import _speak_openai
+        result = await _speak_openai("Hello world", "tts-1", "shimmer", "sk-x")
+
+    assert result == fake_audio
+    mock_openai_client.audio.speech.create.assert_awaited_once_with(
+        model="tts-1",
+        voice="shimmer",
+        input="Hello world",
+        response_format="mp3",
+    )
