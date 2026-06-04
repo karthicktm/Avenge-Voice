@@ -106,7 +106,7 @@ class TestKeywordMatch:
         # n2: "water damage broken here" → overlap 1 → 1/4 = 0.25, below threshold
         # Use n2 with a label that crosses threshold but has lower score
         high_node = _make_node("n1", label="pipe water")  # 2/2 = 1.0
-        low_node = _make_node("n2", label="water pool")   # 1/2 = 0.5, at threshold exactly
+        low_node = _make_node("n2", label="water pool")  # 1/2 = 0.5, at threshold exactly
         result = _keyword_match("water pipe", [low_node, high_node])
         assert len(result) == 2
         assert result[0][0]["id"] == "n1"  # higher score first
@@ -442,6 +442,67 @@ class TestConditionNodeRouting:
     def test_not_equal_condition(self) -> None:
         nodes = [
             {"id": "cond", "type": "condition", "config": {"condition": "action_type != no_match"}},
+            {"id": "yes_node", "type": "transfer"},
+            {"id": "no_node", "type": "end_call"},
+        ]
+        edges = [
+            {"from": "cond", "to": "yes_node", "sourceHandle": "yes"},
+            {"from": "cond", "to": "no_node", "sourceHandle": "no"},
+        ]
+        ex = WorkflowExecutor(uuid.uuid4(), nodes, edges, _cfg())
+        ex.current_node_id = "cond"
+        ex.context_bag["action_type"] = "transfer"
+        next_id = ex.route_condition()
+        assert next_id == "yes_node"
+
+    def test_object_format_true_condition_routes_yes(self) -> None:
+        """Frontend saves condition config as {key, operator, value} object."""
+        nodes = [
+            {
+                "id": "cond",
+                "type": "condition",
+                "config": {"key": "action_type", "operator": "==", "value": "existing_tenant"},
+            },
+            {"id": "yes_node", "type": "transfer"},
+            {"id": "no_node", "type": "collect_email"},
+        ]
+        edges = [
+            {"from": "cond", "to": "yes_node", "sourceHandle": "yes"},
+            {"from": "cond", "to": "no_node", "sourceHandle": "no"},
+        ]
+        ex = WorkflowExecutor(uuid.uuid4(), nodes, edges, _cfg())
+        ex.current_node_id = "cond"
+        ex.context_bag["action_type"] = "existing_tenant"
+        next_id = ex.route_condition()
+        assert next_id == "yes_node"
+
+    def test_object_format_false_condition_routes_no(self) -> None:
+        nodes = [
+            {
+                "id": "cond",
+                "type": "condition",
+                "config": {"key": "action_type", "operator": "==", "value": "existing_tenant"},
+            },
+            {"id": "yes_node", "type": "transfer"},
+            {"id": "no_node", "type": "collect_email"},
+        ]
+        edges = [
+            {"from": "cond", "to": "yes_node", "sourceHandle": "yes"},
+            {"from": "cond", "to": "no_node", "sourceHandle": "no"},
+        ]
+        ex = WorkflowExecutor(uuid.uuid4(), nodes, edges, _cfg())
+        ex.current_node_id = "cond"
+        ex.context_bag["action_type"] = "new_tenant"
+        next_id = ex.route_condition()
+        assert next_id == "no_node"
+
+    def test_object_format_not_equal_condition(self) -> None:
+        nodes = [
+            {
+                "id": "cond",
+                "type": "condition",
+                "config": {"key": "action_type", "operator": "!=", "value": "no_match"},
+            },
             {"id": "yes_node", "type": "transfer"},
             {"id": "no_node", "type": "end_call"},
         ]

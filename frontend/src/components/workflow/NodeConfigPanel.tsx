@@ -104,25 +104,21 @@ export function NodeConfigPanel({
     onChange(node.id, { ...cfg, [key]: value });
   }
 
-  const isTerminal = type === "entry" || type === "end_call";
-
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <span className="text-sm font-semibold capitalize">{type?.replace(/_/g, " ")} node</span>
         <div className="flex items-center gap-1">
-          {!isTerminal && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-              title="Delete node"
-              onClick={() => onDelete(node.id)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            title="Delete node"
+            onClick={() => onDelete(node.id)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
@@ -131,17 +127,15 @@ export function NodeConfigPanel({
 
       {/* Fields */}
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        {/* Label — all nodes except fixed-label entry/end_call */}
-        {!isTerminal && (
-          <div>
-            <Label>Label</Label>
-            <Input
-              value={(data.label as string) ?? ""}
-              onChange={(e) => onLabelChange(node.id, e.target.value)}
-              placeholder="Node label"
-            />
-          </div>
-        )}
+        {/* Label */}
+        <div>
+          <Label>Label</Label>
+          <Input
+            value={(data.label as string) ?? ""}
+            onChange={(e) => onLabelChange(node.id, e.target.value)}
+            placeholder="Node label"
+          />
+        </div>
 
         {/* CATEGORIZE */}
         {type === "categorize" && (

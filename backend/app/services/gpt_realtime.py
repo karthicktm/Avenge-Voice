@@ -775,6 +775,19 @@ class GPTRealtimeSession:
         enabled_tool_ids = self.agent_config.get("enabled_tool_ids", {})
         tools = self.tool_registry.get_all_tool_definitions(enabled_tools, enabled_tool_ids)
 
+        # Auto-inject categorize tool when a workflow with categorize nodes is active.
+        # The routing note appended to instructions tells the LLM to call `categorize`,
+        # but without the tool definition in the session OpenAI will refuse the call.
+        if self.workflow_executor and not any(t.get("name") == "categorize" for t in tools):
+            has_categorize_node = any(
+                n.get("type") == "categorize" for n in self.workflow_executor.nodes_by_id.values()
+            )
+            if has_categorize_node:
+                from app.services.tools.categorize_tools import CategorizeTools
+
+                tools = tools + CategorizeTools.get_tool_definitions()
+                self.logger.warning("categorize_tool_injected_for_workflow")
+
         # Get workspace timezone if available
         workspace_timezone = "UTC"
         if self.workspace_id:
@@ -813,6 +826,21 @@ class GPTRealtimeSession:
 
         # Build instructions with language directive and timezone
         system_prompt = self.agent_config.get("system_prompt", "You are a helpful voice assistant.")
+
+        # When a workflow is active, strip lookup from the instruction builder so
+        # [LOOKUP RESULTS] is not baked into the initial instructions.  The tool
+        # itself stays registered so it can be called once the workflow routes to
+        # a lookup step.  Without this, the [LOOKUP RESULTS] directive tells the
+        # agent to ask for property details first, conflicting with the workflow
+        # routing note that says to call categorize first.
+        _instruction_enabled_tools = list(enabled_tools)
+        if self.workflow_executor:
+            _instruction_enabled_tools = [
+                t
+                for t in _instruction_enabled_tools
+                if t not in ("lookup", "lookup_transfer") and not t.startswith("lookup")
+            ]
+
         language = self.agent_config.get("language", "en-US")
         use_best_practices = self.agent_config.get("use_best_practices", True)
         # Default to marin for natural conversational tone
@@ -843,7 +871,7 @@ class GPTRealtimeSession:
         conversation_instructions = build_instructions_with_language(
             system_prompt,
             language,
-            enabled_tools=enabled_tools,
+            enabled_tools=_instruction_enabled_tools,
             timezone=workspace_timezone,
             knowledge_base_info=knowledge_base_info,
             use_best_practices=use_best_practices,
@@ -853,7 +881,7 @@ class GPTRealtimeSession:
         session_update_instructions = build_instructions_with_language(
             system_prompt,
             language,
-            enabled_tools=enabled_tools,
+            enabled_tools=_instruction_enabled_tools,
             timezone=workspace_timezone,
             knowledge_base_info=knowledge_base_info,
             use_best_practices=use_best_practices,
@@ -864,6 +892,24 @@ class GPTRealtimeSession:
         # Store the full (language-directive) version for conversation injection.
         self._session_instructions = conversation_instructions
         instructions = session_update_instructions
+
+        # Append the workflow routing note to the session instructions when a workflow
+        # is active. trigger_initial_greeting() also injects this, but it is only called
+        # from telephony. Adding it here ensures the test-bridge and WebSocket paths
+        # get it too, so the LLM knows to call `categorize` from the very first turn.
+        if self.workflow_executor:
+            wf_routing = self._build_workflow_entry_routing_note()
+            if wf_routing:
+                instructions = instructions + wf_routing
+                self._session_instructions = conversation_instructions + wf_routing
+            else:
+                # Entry routes to a non-categorize node — advance executor and
+                # inject the first node's directive so the LLM acts on it from
+                # the very first turn instead of ignoring the workflow entirely.
+                wf_start = self._build_workflow_start_instruction()
+                if wf_start:
+                    instructions = instructions + wf_start
+                    self._session_instructions = conversation_instructions + wf_start
 
         # Use agent's VAD settings (from DB) instead of hardcoded values
         vad_prefix_padding_ms = self.agent_config.get("turn_detection_prefix_padding_ms", 300)
@@ -1078,17 +1124,49 @@ class GPTRealtimeSession:
             if name == "categorize" and self.workflow_executor is not None:
                 _ex = self.workflow_executor
                 _cur_type = (_ex.current_node or {}).get("type", "")
-                if _cur_type == "entry":
-                    _next_id = _ex.route()
-                    if (
-                        _next_id
-                        and (_ex.nodes_by_id.get(_next_id) or {}).get("type") == "categorize"
-                    ):
-                        _ex.current_node_id = _next_id
-                        _cur_type = "categorize"
-                        self.logger.warning(
-                            "wf_entry_advanced_to_categorize", next_node_id=_next_id
-                        )
+                if _cur_type in ("entry", "condition"):
+                    _next_id = _ex.route() if _cur_type == "entry" else None
+                    if _cur_type == "condition":
+                        # Advance past the condition by taking the branch that leads to
+                        # a categorize node (context_bag is still empty here, so we
+                        # can't evaluate the condition yet — just find the first
+                        # reachable categorize across both branches).
+                        for _edge in _ex.edges:
+                            if _edge.get("from") == _ex.current_node_id:
+                                _branch_id = _edge.get("to")
+                                if (
+                                    _branch_id
+                                    and (_ex.nodes_by_id.get(_branch_id) or {}).get("type")
+                                    == "categorize"
+                                ):
+                                    _next_id = _branch_id
+                                    break
+                    if _next_id:
+                        _next_node_type = (_ex.nodes_by_id.get(_next_id) or {}).get("type", "")
+                        if _next_node_type == "categorize":
+                            _ex.current_node_id = _next_id
+                            _cur_type = "categorize"
+                            self.logger.warning(
+                                "wf_entry_advanced_to_categorize", next_node_id=_next_id
+                            )
+                        elif _next_node_type == "condition":
+                            # entry → condition → categorize (one more hop)
+                            _ex.current_node_id = _next_id
+                            for _edge in _ex.edges:
+                                if _edge.get("from") == _next_id:
+                                    _branch_id2 = _edge.get("to")
+                                    if (
+                                        _branch_id2
+                                        and (_ex.nodes_by_id.get(_branch_id2) or {}).get("type")
+                                        == "categorize"
+                                    ):
+                                        _ex.current_node_id = _branch_id2
+                                        _cur_type = "categorize"
+                                        self.logger.warning(
+                                            "wf_cond_advanced_to_categorize",
+                                            next_node_id=_branch_id2,
+                                        )
+                                        break
 
                 if _cur_type == "categorize":
                     _text = str(arguments.get("text", ""))
@@ -1409,6 +1487,12 @@ class GPTRealtimeSession:
                     + self._LANG_NOTE
                 )
 
+            if node_type == "condition":
+                # context_bag is now populated — evaluate the condition and route to the
+                # correct branch, then build the instruction for that branch node.
+                ex.route_condition()
+                return self._build_current_node_instruction()
+
             if instruction:
                 return f"Do the following: {instruction} " + self._LANG_NOTE
             return (
@@ -1422,6 +1506,100 @@ class GPTRealtimeSession:
                 "The issue has been categorised. Summarise the result and tell the caller "
                 "what happens next. " + self._LANG_NOTE
             )
+
+    def _build_workflow_start_instruction(self) -> str:  # noqa: PLR0911, PLR0912
+        """Return a session-start directive when entry routes to a non-categorize node.
+
+        Advances the executor past the entry node so subsequent tool-call handling
+        starts from the correct position. Returns "" for categorize entries (handled
+        by _build_workflow_entry_routing_note) and when executor is not at entry.
+        """
+        if not self.workflow_executor:
+            return ""
+        ex = self.workflow_executor
+        cur = ex.current_node
+        if not cur or cur.get("type") != "entry":
+            return ""
+        next_id = ex.route()
+        if not next_id:
+            return ""
+        next_node = ex.nodes_by_id.get(next_id)
+        if not next_node or next_node.get("type") == "categorize":
+            return ""
+
+        # Advance executor to the first real node
+        ex.current_node_id = next_id
+
+        node_type = next_node.get("type", "")
+        cfg = next_node.get("config") or {}
+        # build_node_instruction() resolves {{variable}} tokens from context_bag
+        instruction = ex.build_node_instruction()
+
+        if node_type == "transfer":
+            raw_target = str(cfg.get("transfer_target", ""))
+            target = ex.resolve_template(raw_target) or "the appropriate team"
+            preamble = f"Say: {instruction}" if instruction else "Transfer the caller immediately."
+            return (
+                f"\n\n[WORKFLOW] {preamble} Then transfer the call to {target}. {self._LANG_NOTE}"
+            )
+
+        if node_type == "instruction":
+            # Skip duplicate greeting: agent already has an opening script via initial_greeting
+            if self.agent_config.get("initial_greeting"):
+                return ""
+            text = f"Say exactly: {instruction}" if instruction else "Greet the caller and proceed."
+            return f"\n\n[WORKFLOW] {text} {self._LANG_NOTE}"
+
+        if node_type == "collect_email":
+            preamble = (
+                f"Start with: {instruction}"
+                if instruction
+                else "Collect caller information and send an email report."
+            )
+            return (
+                f"\n\n[WORKFLOW] {preamble} Ask for each piece of information one at a time. "
+                f"Once you have everything, confirm it back before sending. {self._LANG_NOTE}"
+            )
+
+        if node_type == "appointment":
+            preamble = (
+                f"Start with: {instruction}"
+                if instruction
+                else "Help the caller book an appointment."
+            )
+            return (
+                f"\n\n[WORKFLOW] {preamble} Ask for their preferred date, time, "
+                f"full name, and callback number. {self._LANG_NOTE}"
+            )
+
+        if node_type == "voicemail":
+            prompt = str(cfg.get("prompt") or "Please leave your message after the tone.")
+            return (
+                f"\n\n[WORKFLOW] Tell the caller: '{prompt}' "
+                f"Then listen and record their message. {self._LANG_NOTE}"
+            )
+
+        if node_type == "end_call":
+            return f"\n\n[WORKFLOW] Say a brief, warm farewell and end the call. {self._LANG_NOTE}"
+
+        if node_type == "condition":
+            # Condition at entry: context_bag is empty so we can't evaluate it yet.
+            # Tell the LLM to ask the caller to describe their situation first; the
+            # categorize intercept will route through the condition once context is known.
+            label = str(next_node.get("label") or "")
+            topic = f"({label})" if label else ""
+            return (
+                f"\n\n[WORKFLOW — OVERRIDES ALL OTHER INSTRUCTIONS] "
+                f"Your FIRST and ONLY step right now: ask the caller to describe their "
+                f"reason for calling {topic}. "
+                f"CRITICAL: Do NOT ask for a property name, address, or location — "
+                f"ignore the [LOOKUP RESULTS] instructions until the workflow routes "
+                f"you to do so. {self._LANG_NOTE}"
+            )
+
+        if instruction:
+            return f"\n\n[WORKFLOW] {instruction} {self._LANG_NOTE}"
+        return ""
 
     def _build_workflow_entry_routing_note(self) -> str:
         """Return a mandatory routing instruction for the first agent turn.
@@ -1438,15 +1616,37 @@ class GPTRealtimeSession:
         if not next_id:
             return ""
         next_node = ex.nodes_by_id.get(next_id)
-        if not next_node or next_node.get("type") != "categorize":
+        if not next_node:
             return ""
-        cfg = next_node.get("config") or {}
+
+        # Resolve the categorize node — it may be directly after entry, or one hop
+        # further through a condition node (entry → condition → categorize branch).
+        categorize_node = None
+        if next_node.get("type") == "categorize":
+            categorize_node = next_node
+        elif next_node.get("type") == "condition":
+            # Look at both branches of the condition for a categorize node.
+            for edge in ex.edges:
+                if edge.get("from") == next_id:
+                    branch_id = edge.get("to")
+                    if branch_id:
+                        branch_node = ex.nodes_by_id.get(branch_id)
+                        if branch_node and branch_node.get("type") == "categorize":
+                            categorize_node = branch_node
+                            break
+
+        if not categorize_node:
+            return ""
+        cfg = categorize_node.get("config") or {}
         tree_name = cfg.get("tree_name", "")
         if not tree_name:
             return ""
         return (
-            f"\n\nWORKFLOW ROUTING: Once the caller has clearly stated their issue or "
-            f"reason for calling, call the `categorize` tool with "
+            f"\n\nWORKFLOW ROUTING (OVERRIDES ALL OTHER INSTRUCTIONS): "
+            f"Do NOT ask for a property name, address, or location — the workflow will "
+            f"tell you when that is needed. "
+            f"Once the caller has clearly stated their issue or reason for calling, "
+            f"call the `categorize` tool with "
             f'tree_name="{tree_name}" and quote the caller\'s actual words verbatim as '
             f"the `text` argument. Use only what the caller actually said — do not "
             f"paraphrase or invent details. The result will tell you what to do next."

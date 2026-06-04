@@ -179,9 +179,7 @@ async def _llm_hierarchical_select(
                 line += f"  [{node.example_query}]"
             candidate_lines.append(line)
 
-        path_context = (
-            f"Path chosen so far: {' → '.join(chosen_path)}\n" if chosen_path else ""
-        )
+        path_context = f"Path chosen so far: {' → '.join(chosen_path)}\n" if chosen_path else ""
         user_message = (
             f"Problem: {text!r}\n"
             f"{path_context}"

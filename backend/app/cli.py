@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.user import User, UserRole
+from app.models.workflow import Workflow as _Workflow  # noqa: F401 — ensures SA registry resolves Agent.workflow
 
 logger = structlog.get_logger()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

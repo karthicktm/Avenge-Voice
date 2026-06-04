@@ -14,6 +14,7 @@ interface Props {
   isPaused: boolean;
   isRunning: boolean;
   copilotSuggestions: string[];
+  workspaceId: string;
   onModeChange: (mode: TestMode) => void;
   onPersonaChange: (persona: string) => void;
   onManualStep: (input: string) => void;
@@ -30,6 +31,7 @@ export function TestInputBar({
   isPaused,
   isRunning,
   copilotSuggestions,
+  workspaceId,
   onModeChange,
   onPersonaChange,
   onManualStep,
@@ -49,11 +51,14 @@ export function TestInputBar({
     recorder.ondataavailable = (e) => chunks.push(e.data);
     recorder.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
+      setVoiceActive(false);
       const blob = new Blob(chunks, { type: "audio/webm" });
       const formData = new FormData();
       formData.append("audio", blob);
       try {
-        const res = await fetch("/api/v1/realtime/transcribe", {
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+        const params = workspaceId ? `?workspace_id=${workspaceId}` : "";
+        const res = await fetch(`${API_BASE}/api/v1/realtime/transcribe${params}`, {
           method: "POST",
           body: formData,
           headers: {
@@ -62,12 +67,13 @@ export function TestInputBar({
         });
         if (res.ok) {
           const { text: transcribed } = (await res.json()) as { text: string };
-          setText(transcribed);
+          if (transcribed.trim()) {
+            onManualStep(transcribed.trim());
+          }
         }
       } catch {
-        // Transcription endpoint unavailable — user can still type
+        // Transcription unavailable — user can still type manually
       }
-      setVoiceActive(false);
     };
     mediaRef.current = recorder;
     recorder.start();

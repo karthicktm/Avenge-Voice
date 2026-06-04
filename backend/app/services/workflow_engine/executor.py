@@ -162,8 +162,18 @@ class WorkflowExecutor:
             label = matched_node.get("label") or ""
             path_string = matched_node.get("path", "") or ""
 
-            # When the category tree doesn't have action_type set in metadata,
-            # infer it from the matched label and path using keyword rules.
+            # Fall back to extracting action_type from metadata alternatives:
+            # 1. "example_query" field using "action_type=<value>" convention
+            # 2. Keyword inference from label/path as last resort
+            if not action_type:
+                eq = meta.get("example_query", "")
+                if eq and "action_type=" in eq:
+                    action_type = eq.split("action_type=", 1)[1].split(",")[0].strip()
+                    self._log.info(
+                        "wf_action_type_from_example_query",
+                        label=label,
+                        action_type=action_type,
+                    )
             if not action_type:
                 action_type = self._infer_action_type(label, path_string)
                 self._log.warning(
@@ -276,7 +286,11 @@ class WorkflowExecutor:
         if node is None or node.get("type") != "condition":
             return self.route()
         cfg = node.get("config") or {}
-        condition_expr = cfg.get("condition", "")
+        # Support both string format ("action_type == value") and the object format
+        # {"key": "action_type", "operator": "==", "value": "..."} saved by the UI.
+        condition_expr: str = cfg.get("condition") or ""
+        if not condition_expr and cfg.get("key"):
+            condition_expr = f"{cfg['key']} {cfg.get('operator', '==')} {cfg.get('value', '')}"
         result = self._eval_condition(condition_expr) if condition_expr else False
         handle = "yes" if result else "no"
         next_id = self.route(source_handle=handle)
@@ -309,28 +323,56 @@ class WorkflowExecutor:
         template = cfg.get("template", "")
         return self.resolve_template(template) if template else ""
 
+    def has_condition_at_entry(self) -> bool:
+        """Return True when the node immediately after entry is a condition node."""
+        next_id = self.route()
+        if not next_id:
+            return False
+        node = self.nodes_by_id.get(next_id)
+        return bool(node and node.get("type") == "condition")
+
     def build_entry_routing_note(self) -> str:
         """Return a routing instruction to inject at session start.
 
         Tells the model which tool to call once the caller has stated their
-        issue.  Returns empty string if the next node is not a categorize node.
+        issue.  Looks one hop through a condition node to find a categorize
+        node.  Returns empty string if no categorize node is reachable.
         """
         next_id = self.route()
         if not next_id:
             return ""
         next_node = self.nodes_by_id.get(next_id)
-        if not next_node or next_node.get("type") != "categorize":
+        if not next_node:
             return ""
-        cfg = next_node.get("config") or {}
+
+        # Resolve the categorize node — directly after entry, or through a condition.
+        categorize_node = None
+        if next_node.get("type") == "categorize":
+            categorize_node = next_node
+        elif next_node.get("type") == "condition":
+            for edge in self.edges:
+                if edge.get("from") == next_id:
+                    branch_id = edge.get("to")
+                    if branch_id:
+                        branch_node = self.nodes_by_id.get(branch_id)
+                        if branch_node and branch_node.get("type") == "categorize":
+                            categorize_node = branch_node
+                            break
+
+        if not categorize_node:
+            return ""
+        cfg = categorize_node.get("config") or {}
         tree_name = cfg.get("tree_name", "")
         if not tree_name:
             return ""
         return (
-            f"\n\nWORKFLOW ROUTING: Once the caller has clearly stated their issue or "
-            f"reason for calling, call the `categorize` tool with "
-            f'tree_name="{tree_name}" and quote the caller\'s actual words verbatim as '
-            f"the `text` argument. Use only what the caller actually said — do not "
-            f"paraphrase or invent details. The result will tell you what to do next."
+            f"\n\n[WORKFLOW — MANDATORY, OVERRIDES ALL OTHER INSTRUCTIONS]\n"
+            f"PRIORITY: ask them to describe their reason for calling. "
+            f"Do NOT answer any question. Do NOT offer help. Do NOT ask for a property name "
+            f"or address. Keep asking until you have a clear answer.\n"
+            f"Once the caller answers, IMMEDIATELY call the `categorize` tool with "
+            f'tree_name="{tree_name}" and the caller\'s EXACT words as the `text` argument. '
+            f"Quote verbatim — do not paraphrase. The result tells you what to do next."
         )
 
     def to_state(self) -> dict[str, Any]:

@@ -9,7 +9,16 @@ from typing import Any
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -530,9 +539,14 @@ async def create_webrtc_session(  # noqa: PLR0912, PLR0915
 
     pcm_fmt: dict[str, Any] = {"type": "audio/pcm", "rate": 24000}
 
+    transcription_cfg: dict[str, Any] = {"model": agent.transcription_model or "gpt-4o-transcribe"}
+    if agent.language and agent.language != "auto":
+        # OpenAI Realtime API only accepts ISO-639-1 base codes (e.g. "sv", not "sv-SE")
+        transcription_cfg["language"] = agent.language.split("-")[0]
+
     audio_input: dict[str, Any] = {
         "format": pcm_fmt,
-        "transcription": {"model": agent.transcription_model or "gpt-4o-transcribe"},
+        "transcription": transcription_cfg,
     }
     if turn_detection is not None:
         audio_input["turn_detection"] = turn_detection
@@ -759,20 +773,23 @@ async def get_ephemeral_token(  # noqa: PLR0912,PLR0915
                         document_count=len(doc_names),
                     )
 
-            # Build instructions with language for the frontend to use
+            # Build instructions with language for the frontend to use.
+            # When the workflow starts with a condition node, strip lookup from the
+            # instruction builder so [LOOKUP RESULTS] is never included initially —
+            # the agent must route through the workflow before asking for property
+            # details.  We must build the executor first to detect this, so defer
+            # instruction building until after workflow initialisation below.
             system_prompt = agent.system_prompt or "You are a helpful voice assistant."
-            instructions_with_language = build_instructions_with_language(
-                system_prompt,
-                agent.language,
-                enabled_tools=enabled_tools,
-                timezone=workspace_timezone,
-                knowledge_base_info=knowledge_base_info,
-                use_best_practices=agent.use_best_practices,
-            )
 
             # Workflow initialisation — if agent has a workflow, build executor,
             # append routing note to instructions, and store state in Redis so
             # tool calls can restore the executor without a persistent session.
+            # Determine instruction_enabled_tools — strip lookup when a condition
+            # node sits immediately after entry so [LOOKUP RESULTS] is not baked in.
+            # We detect this after building the executor (below) but need a default now.
+            instruction_enabled_tools: list[str] = list(enabled_tools)
+            routing_note: str = ""
+
             wf_session_id: str | None = None
             if agent.workflow_id:
                 try:
@@ -796,9 +813,103 @@ async def get_ephemeral_token(  # noqa: PLR0912,PLR0915
                             edges=wf.edges or [],
                             llm_config=wf_llm_config,
                         )
+
+                        # Strip lookup from the instruction builder whenever a workflow
+                        # is active — the [LOOKUP RESULTS] instruction would tell the
+                        # agent to ask for property details first, conflicting with the
+                        # workflow routing note that says to call categorize first.
+                        # The workflow will inject lookup instructions when needed.
+                        instruction_enabled_tools = [
+                            t
+                            for t in instruction_enabled_tools
+                            if t not in ("lookup", "lookup_transfer") and not t.startswith("lookup")
+                        ]
+
                         routing_note = executor.build_entry_routing_note()
+
+                        # Fetch info_to_collect from tree root to use as the specific
+                        # question the agent must ask.  We also bake it into the
+                        # initial_greeting so the model asks it from the first word.
+                        workflow_question: str = ""
                         if routing_note:
-                            instructions_with_language += routing_note
+                            # Walk the flow via edges to find the first categorize node,
+                            # not array order (array order can differ from flow order).
+                            _entry_next = executor.nodes_by_id.get(executor.route() or "")
+                            if _entry_next and _entry_next.get("type") == "categorize":
+                                first_cat: dict[str, Any] | None = _entry_next
+                            else:
+                                # Try through a condition one hop further
+                                first_cat = None
+                                if _entry_next and _entry_next.get("type") == "condition":
+                                    for _e in executor.edges:
+                                        if _e.get("from") == _entry_next.get("id"):
+                                            _branch = executor.nodes_by_id.get(_e.get("to") or "")
+                                            if _branch and _branch.get("type") == "categorize":
+                                                first_cat = _branch
+                                                break
+                                # Fallback: first categorize in array
+                                if not first_cat:
+                                    first_cat = next(
+                                        (n for n in wf.nodes if n.get("type") == "categorize"), None
+                                    )
+                            tree_nm = ((first_cat or {}).get("config") or {}).get("tree_name", "")
+                            token_logger.warning(
+                                "wf_tree_lookup_debug",
+                                first_cat_label=(first_cat or {}).get("label"),
+                                tree_nm=tree_nm,
+                            )
+                            if tree_nm:
+                                try:
+                                    from app.models.category_tree import CategoryTree
+
+                                    root_result = await db.execute(
+                                        select(CategoryTree)
+                                        .where(CategoryTree.tree_name == tree_nm)
+                                        .where(CategoryTree.parent_id.is_(None))
+                                        .limit(1)
+                                    )
+                                    root_node = root_result.scalar_one_or_none()
+                                    token_logger.warning(
+                                        "wf_tree_root_debug",
+                                        root_found=root_node is not None,
+                                        node_metadata=root_node.node_metadata if root_node else None,
+                                    )
+                                    if root_node:
+                                        root_meta = root_node.node_metadata or {}
+                                        workflow_question = root_meta.get("info_to_collect", "")
+                                except Exception:
+                                    token_logger.warning("tree_info_to_collect_lookup_failed", exc_info=True)
+
+                        if workflow_question:
+                            routing_note = routing_note.replace(
+                                "ask them to describe their reason for calling.",
+                                f'ask them: "{workflow_question}".',
+                            )
+
+                        # For entry → condition with no reachable categorize, inject a
+                        # condition directive that suppresses the property-details ask.
+                        if not routing_note and executor.has_condition_at_entry():
+                            next_id = executor.route()
+                            cond_node = executor.nodes_by_id.get(next_id or "") if next_id else None
+                            cond_label = str((cond_node or {}).get("label") or "")
+                            topic = f"({cond_label})" if cond_label else ""
+                            routing_note = (
+                                f"\n\n[WORKFLOW — OVERRIDES ALL OTHER INSTRUCTIONS] "
+                                f"Your FIRST and ONLY step right now: ask the caller to describe "
+                                f"their reason for calling {topic}. "
+                                f"CRITICAL: Do NOT ask for a property name, address, or location."
+                            )
+
+                        # Auto-inject categorize tool if the workflow has categorize nodes
+                        # and it isn't already in the tool list (e.g. from enabled_tools).
+                        has_categorize_node = any(n.get("type") == "categorize" for n in wf.nodes)
+                        if has_categorize_node and not any(
+                            t.get("name") == "categorize" for t in tools
+                        ):
+                            from app.services.tools.categorize_tools import CategorizeTools
+
+                            tools = tools + CategorizeTools.get_tool_definitions()
+                            token_logger.warning("categorize_tool_injected_for_workflow")
 
                         wf_session_id = str(uuid.uuid4())
                         from app.db.redis import get_redis
@@ -837,6 +948,27 @@ async def get_ephemeral_token(  # noqa: PLR0912,PLR0915
                 except Exception:
                     token_logger.exception("wf_session_init_failed_continuing")
 
+            # Build instructions now that we know whether lookup should be suppressed.
+            instructions_with_language = build_instructions_with_language(
+                system_prompt,
+                agent.language,
+                enabled_tools=instruction_enabled_tools,
+                timezone=workspace_timezone,
+                knowledge_base_info=knowledge_base_info,
+                use_best_practices=agent.use_best_practices,
+            )
+            # Prepend routing note so it takes priority over the rest of the system prompt.
+            if routing_note:
+                instructions_with_language = (
+                    routing_note.lstrip() + "\n\n" + instructions_with_language
+                )
+
+            token_logger.warning(
+                "wf_routing_note_debug",
+                routing_note=routing_note[:500] if routing_note else "",
+                instructions_tail=instructions_with_language[-800:],
+            )
+
             # Return token data with agent info and tools
             # GA /client_secrets response: {value: "ek_...", expires_at: ..., session: {...}}
             return {
@@ -853,7 +985,13 @@ async def get_ephemeral_token(  # noqa: PLR0912,PLR0915
                     "voice": agent_voice,
                     "instructions": instructions_with_language,
                     "enabled_tools": agent.enabled_tools,
-                    "initial_greeting": agent.initial_greeting,
+                    # When the workflow has a question to ask callers, append it
+                    # to the initial greeting so the model asks it from the first word.
+                    "initial_greeting": (
+                        f"{agent.initial_greeting} {workflow_question}"
+                        if workflow_question and agent.initial_greeting
+                        else workflow_question or agent.initial_greeting
+                    ),
                 },
                 "session_config": session_config,
                 "tools": tools,
@@ -975,3 +1113,41 @@ async def save_transcript(
         "success": True,
         "call_id": str(call_record.id),
     }
+
+
+# =============================================================================
+# Audio transcription (used by workflow test voice input)
+# =============================================================================
+
+
+@webrtc_router.post("/transcribe")
+async def transcribe_audio(
+    current_user: VerifiedUser,
+    audio: UploadFile = File(...),
+    workspace_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Transcribe an uploaded audio blob via OpenAI Whisper.
+
+    Accepts multipart/form-data with a single 'audio' field and an optional
+    workspace_id query parameter to use workspace-scoped API keys.
+    Returns {"text": "<transcription>"}.
+    """
+    from openai import AsyncOpenAI
+
+    user_uuid = user_id_to_uuid(current_user.id)
+    workspace_uuid = uuid.UUID(workspace_id) if workspace_id else None
+    api_key = await get_openai_api_key_for_workspace(
+        user_uuid, workspace_uuid, db, logger.bind(endpoint="transcribe")
+    )
+
+    audio_bytes = await audio.read()
+    filename = audio.filename or "audio.webm"
+    content_type = audio.content_type or "audio/webm"
+
+    client = AsyncOpenAI(api_key=api_key)
+    transcript = await client.audio.transcriptions.create(
+        model="whisper-1",
+        file=(filename, audio_bytes, content_type),
+    )
+    return {"text": transcript.text}

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import uuid
 from unittest.mock import AsyncMock, MagicMock
@@ -65,7 +64,7 @@ async def test_forward_agent_audio_to_caller_calls_append() -> None:
     bridge._caller_conn.input_audio_buffer = AsyncMock()
     bridge._caller_conn.input_audio_buffer.append = AsyncMock()
 
-    b64 = base64.b64encode(b"\xAA\xBB").decode()
+    b64 = base64.b64encode(b"\xaa\xbb").decode()
     await bridge._agent_audio_queue.put(b64)
 
     async def _side_effect(**kwargs: object) -> None:
@@ -206,7 +205,7 @@ async def test_agent_event_loop_emits_tool_call_and_result() -> None:
     assert tool_call_event["args"] == {"description": "broken product"}
 
 
-def _make_bridge() -> "AgentTestBridge":
+def _make_bridge() -> AgentTestBridge:
     bridge = AgentTestBridge(
         agent_id=uuid.uuid4(),
         scenario=TestScenario(persona="test", goal="test"),

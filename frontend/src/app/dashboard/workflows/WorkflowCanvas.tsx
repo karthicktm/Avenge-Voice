@@ -9,8 +9,13 @@ import {
   addEdge,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
   type Connection,
   type Edge,
+  type EdgeProps,
   type Node,
   MarkerType,
   BackgroundVariant,
@@ -85,6 +90,57 @@ const nodeTypes = {
   subagent: SubagentNode,
   end_call: EndCallNode,
 };
+
+// ── Custom deletable edge ─────────────────────────────────────────────────────
+
+function DeletableEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style,
+  markerEnd,
+  label,
+}: EdgeProps) {
+  const { setEdges } = useReactFlow();
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+  return (
+    <>
+      <BaseEdge path={edgePath} style={style} markerEnd={markerEnd} />
+      <EdgeLabelRenderer>
+        <div
+          style={{ transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)` }}
+          className="nodrag nopan pointer-events-auto absolute flex items-center gap-1"
+        >
+          {label && (
+            <span className="rounded bg-white/90 px-1.5 py-0.5 text-[11px] font-medium leading-tight shadow-sm">
+              {label}
+            </span>
+          )}
+          <button
+            className="flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] leading-none text-gray-400 opacity-0 shadow-sm ring-1 ring-gray-200 transition-opacity hover:bg-red-50 hover:text-red-500 hover:opacity-100 group-hover/edge:opacity-100 [.react-flow__edge.selected_&]:opacity-100 [.react-flow__edge:hover_&]:opacity-100"
+            onClick={() => setEdges((es) => es.filter((e) => e.id !== id))}
+            title="Remove connection"
+          >
+            ×
+          </button>
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+
+const edgeTypes = { deletable: DeletableEdge };
 
 // ── Node palette definition ───────────────────────────────────────────────────
 
@@ -260,6 +316,7 @@ function wfEdgesToFlow(edges: WorkflowEdge[]): Edge[] {
     const isYes = e.sourceHandle === "yes";
     return {
       id: e.id,
+      type: "deletable",
       source: e.from,
       target: e.to,
       sourceHandle: e.sourceHandle,
@@ -269,8 +326,6 @@ function wfEdgesToFlow(edges: WorkflowEdge[]): Edge[] {
         color: isNo ? "#ef4444" : isYes ? "#22c55e" : "#6366f1",
       },
       style: { stroke: isNo ? "#ef4444" : isYes ? "#22c55e" : "#6366f1", strokeWidth: 2 },
-      labelStyle: { fontSize: 11, fontWeight: 500 },
-      labelBgStyle: { fill: "#fff", fillOpacity: 0.85 },
     };
   });
 }
@@ -560,6 +615,7 @@ export function WorkflowCanvas({ workflow, onBack, onSaved }: Props) {
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
