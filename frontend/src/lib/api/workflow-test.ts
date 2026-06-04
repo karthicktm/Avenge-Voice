@@ -119,3 +119,29 @@ export async function deleteTestSession(workflowId: string, sessionId: string): 
     method: "DELETE",
   });
 }
+
+export interface VoiceConfig {
+  provider: "openai" | "elevenlabs" | "browser";
+  tts_model: string;
+  voice: string;
+  available: boolean;
+}
+
+export async function getVoiceConfig(workflowId: string): Promise<VoiceConfig> {
+  const res = await apiFetch(`${API_BASE}/api/v1/workflows/${workflowId}/test/voice-config`);
+  if (!res.ok) throw new Error(`Failed to get voice config: ${res.statusText}`);
+  return res.json() as Promise<VoiceConfig>;
+}
+
+export async function speakText(
+  workflowId: string,
+  sessionId: string,
+  text: string
+): Promise<ArrayBuffer> {
+  const res = await apiFetch(`${API_BASE}/api/v1/workflows/${workflowId}/test/speak`, {
+    method: "POST",
+    body: JSON.stringify({ text, session_id: sessionId }),
+  });
+  if (!res.ok) throw new Error(`TTS failed: ${res.statusText}`);
+  return res.arrayBuffer();
+}
