@@ -556,8 +556,6 @@ class AiStepOut(BaseModel):
 
 
 async def _call_openai_chat(system: str, user_msg: str, api_key: str, max_tokens: int = 100) -> str:
-    from openai import AsyncOpenAI
-
     client = AsyncOpenAI(api_key=api_key)
     response = await client.chat.completions.create(
         model="gpt-4o-mini",
