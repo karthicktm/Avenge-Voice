@@ -12,6 +12,7 @@ import { TestNodeList } from "@/components/workflow/test/TestNodeList";
 import {
   aiStepTestSession,
   deleteTestSession,
+  getVoiceConfig,
   patchTestContext,
   startTestSession,
   stepTestSession,
@@ -20,8 +21,11 @@ import {
   type StepOut,
   type TestMode,
   type TranscriptMessage,
+  type VoiceConfig,
 } from "@/lib/api/workflow-test";
 import { getWorkflow, type WorkflowNode } from "@/lib/api/workflows";
+import { useVoiceMode } from "@/hooks/use-voice-mode";
+import { VoiceModeBar } from "@/components/workflow/test/VoiceModeBar";
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -41,6 +45,8 @@ interface PageState {
   copilotSuggestions: string[];
   lastSimulationDetail: Record<string, unknown> | null;
   workflowName: string;
+  workspaceId: string;
+  voiceConfig: VoiceConfig | null;
 }
 
 type Action =
@@ -50,6 +56,7 @@ type Action =
       nodes: WorkflowNode[];
       nodeId: string;
       workflowName: string;
+      workspaceId: string;
     }
   | { type: "STEP_DONE"; result: StepOut; callerText: string; inputMode: TestMode | "ai" }
   | { type: "SET_MODE"; mode: TestMode }
@@ -59,6 +66,7 @@ type Action =
   | { type: "SET_PAUSED"; value: boolean }
   | { type: "SET_COPILOT_SUGGESTIONS"; suggestions: string[] }
   | { type: "CONTEXT_PATCHED"; contextBag: Record<string, unknown> }
+  | { type: "SET_VOICE_CONFIG"; config: VoiceConfig }
   | { type: "RESET" };
 
 function initialState(): PageState {
@@ -78,6 +86,8 @@ function initialState(): PageState {
     copilotSuggestions: [],
     lastSimulationDetail: null,
     workflowName: "",
+    workspaceId: "",
+    voiceConfig: null,
   };
 }
 
@@ -94,6 +104,7 @@ function reducer(state: PageState, action: Action): PageState {
         currentNodeId: action.nodeId,
         nodeStatuses: statuses,
         workflowName: action.workflowName,
+        workspaceId: action.workspaceId,
         isComplete: false,
       };
     }
@@ -165,6 +176,8 @@ function reducer(state: PageState, action: Action): PageState {
       return { ...state, copilotSuggestions: action.suggestions };
     case "CONTEXT_PATCHED":
       return { ...state, contextBag: action.contextBag, isPaused: false, isComplete: false };
+    case "SET_VOICE_CONFIG":
+      return { ...state, voiceConfig: action.config };
     case "RESET":
       return initialState();
     default:
@@ -179,6 +192,11 @@ export default function WorkflowTestPage() {
   const router = useRouter();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const autopilotRef = useRef(false);
+  const transcriptRef = useRef(state.transcript);
+  transcriptRef.current = state.transcript;
+  const executeStepRef = useRef<
+    ((text: string, mode: TestMode | "ai") => Promise<void>) | undefined
+  >(undefined);
 
   useEffect(() => {
     async function init() {
@@ -193,7 +211,14 @@ export default function WorkflowTestPage() {
           nodes: wf.nodes,
           nodeId: session.current_node_id,
           workflowName: wf.name,
+          workspaceId: wf.workspace_id,
         });
+        try {
+          const vConfig = await getVoiceConfig(workflowId);
+          dispatch({ type: "SET_VOICE_CONFIG", config: vConfig });
+        } catch {
+          // voice config is non-critical; hook falls back to browser
+        }
       } catch {
         toast.error("Failed to start test session");
       }
@@ -207,6 +232,13 @@ export default function WorkflowTestPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflowId]);
 
+  const voiceMode = useVoiceMode({
+    workflowId,
+    sessionId: state.sessionId,
+    voiceConfig: state.voiceConfig,
+    onStep: (text) => void executeStepRef.current?.(text, "manual"),
+  });
+
   const executeStep = useCallback(
     async (callerText: string, inputMode: TestMode | "ai") => {
       if (!state.sessionId || state.isRunning || state.isPaused) return;
@@ -214,6 +246,7 @@ export default function WorkflowTestPage() {
       try {
         const result = await stepTestSession(workflowId, state.sessionId, callerText);
         dispatch({ type: "STEP_DONE", result, callerText, inputMode });
+        voiceMode.handleStepDone(result);
       } catch (err) {
         if (err instanceof Error && err.message === "SESSION_EXPIRED") {
           toast.error("Test session expired. Restarting...");
@@ -224,12 +257,14 @@ export default function WorkflowTestPage() {
         }
       }
     },
-    [state.sessionId, state.isRunning, state.isPaused, workflowId]
+    [state.sessionId, state.isRunning, state.isPaused, workflowId, voiceMode]
   );
+
+  executeStepRef.current = executeStep;
 
   const executeAiStep = useCallback(async () => {
     if (!state.sessionId || state.isRunning || state.isPaused) return;
-    const transcriptText = state.transcript.map((m) => `${m.speaker}: ${m.text}`).join("\n");
+    const transcriptText = transcriptRef.current.map((m) => `${m.speaker}: ${m.text}`).join("\n");
     dispatch({ type: "SET_RUNNING", value: true });
     try {
       const result: AiStepOut = await aiStepTestSession(
@@ -251,14 +286,7 @@ export default function WorkflowTestPage() {
       toast.error("AI step failed");
       dispatch({ type: "SET_RUNNING", value: false });
     }
-  }, [
-    state.sessionId,
-    state.isRunning,
-    state.isPaused,
-    state.transcript,
-    state.persona,
-    workflowId,
-  ]);
+  }, [state.sessionId, state.isRunning, state.isPaused, state.persona, workflowId]);
 
   useEffect(() => {
     if (!state.isRunning && autopilotRef.current && !state.isPaused && !state.isComplete) {
@@ -315,7 +343,14 @@ export default function WorkflowTestPage() {
       nodes: wf.nodes,
       nodeId: session.current_node_id,
       workflowName: wf.name,
+      workspaceId: wf.workspace_id,
     });
+    try {
+      const vConfig = await getVoiceConfig(workflowId);
+      dispatch({ type: "SET_VOICE_CONFIG", config: vConfig });
+    } catch {
+      // voice config is non-critical; hook falls back to browser
+    }
   }
 
   const currentNode = state.nodes.find((n) => n.id === state.currentNodeId);
@@ -367,6 +402,14 @@ export default function WorkflowTestPage() {
         </div>
       </div>
 
+      <VoiceModeBar
+        inputMode={voiceMode.inputMode}
+        voiceState={voiceMode.voiceState}
+        onModeChange={voiceMode.setInputMode}
+        onPTTStart={voiceMode.startPTT}
+        onPTTStop={voiceMode.stopPTT}
+      />
+
       {/* 3-panel body */}
       <div className="flex flex-1 overflow-hidden">
         <TestNodeList
@@ -383,26 +426,29 @@ export default function WorkflowTestPage() {
             isRunning={state.isRunning}
             currentNodeType={currentNode?.type ?? ""}
           />
-          <TestInputBar
-            mode={state.mode}
-            persona={state.persona}
-            currentNodeType={currentNode?.type ?? ""}
-            isPaused={state.isPaused}
-            isRunning={state.isRunning}
-            copilotSuggestions={state.copilotSuggestions}
-            onModeChange={(m) => {
-              dispatch({ type: "SET_MODE", mode: m });
-              if (m === "copilot") void handleCopilotFetch();
-              if (m !== "autopilot") autopilotRef.current = false;
-            }}
-            onPersonaChange={(p) => dispatch({ type: "SET_PERSONA", persona: p })}
-            onManualStep={(input) => void executeStep(input, "manual")}
-            onCopilotPick={(s) => void executeStep(s, "copilot")}
-            onAutopilotToggle={() => {
-              autopilotRef.current = !autopilotRef.current;
-              if (autopilotRef.current) void executeAiStep();
-            }}
-          />
+          {voiceMode.inputMode === "off" && (
+            <TestInputBar
+              mode={state.mode}
+              persona={state.persona}
+              currentNodeType={currentNode?.type ?? ""}
+              isPaused={state.isPaused}
+              isRunning={state.isRunning}
+              copilotSuggestions={state.copilotSuggestions}
+              workspaceId={state.workspaceId}
+              onModeChange={(m) => {
+                dispatch({ type: "SET_MODE", mode: m });
+                if (m === "copilot") void handleCopilotFetch();
+                if (m !== "autopilot") autopilotRef.current = false;
+              }}
+              onPersonaChange={(p) => dispatch({ type: "SET_PERSONA", persona: p })}
+              onManualStep={(input) => void executeStep(input, "manual")}
+              onCopilotPick={(s) => void executeStep(s, "copilot")}
+              onAutopilotToggle={() => {
+                autopilotRef.current = !autopilotRef.current;
+                if (autopilotRef.current) void executeAiStep();
+              }}
+            />
+          )}
         </div>
 
         <TestContextBag
