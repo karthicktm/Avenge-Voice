@@ -789,6 +789,7 @@ async def get_ephemeral_token(  # noqa: PLR0912,PLR0915
             # We detect this after building the executor (below) but need a default now.
             instruction_enabled_tools: list[str] = list(enabled_tools)
             routing_note: str = ""
+            workflow_question: str = ""
 
             wf_session_id: str | None = None
             if agent.workflow_id:
@@ -830,7 +831,6 @@ async def get_ephemeral_token(  # noqa: PLR0912,PLR0915
                         # Fetch info_to_collect from tree root to use as the specific
                         # question the agent must ask.  We also bake it into the
                         # initial_greeting so the model asks it from the first word.
-                        workflow_question: str = ""
                         if routing_note:
                             # Walk the flow via edges to find the first categorize node,
                             # not array order (array order can differ from flow order).
